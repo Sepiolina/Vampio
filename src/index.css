@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: var(--bg-primary);
+  --color-secondary: var(--bg-secondary);
+  --color-tertiary: var(--bg-tertiary);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-content: var(--text-main);
+  --color-content-muted: var(--text-muted);
+  --color-border-subtle: var(--border-subtle);
+}
+
+:root {
+  --bg-primary: #090d16;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1f2937;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --text-main: #f9fafb;
+  --text-muted: #9ca3af;
+  --border-subtle: #374151;
+}
+
+html.theme-slate, body.theme-slate, .theme-slate {
+  --bg-primary: #090d16;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1f2937;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --text-main: #f9fafb;
+  --text-muted: #9ca3af;
+  --border-subtle: #374151;
+}
+
+html.theme-cream, body.theme-cream, .theme-cream {
+  --bg-primary: #fbfbf9;
+  --bg-secondary: #f4f4ee;
+  --bg-tertiary: #e7e7de;
+  --accent: #ea580c;
+  --accent-hover: #c2410c;
+  --text-main: #18181b;
+  --text-muted: #52525b;
+  --border-subtle: #d4d4d8;
+}
+
+html.theme-nordic, body.theme-nordic, .theme-nordic {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border-subtle: #cbd5e1;
+}
+
+html.theme-sage, body.theme-sage, .theme-sage {
+  --bg-primary: #f6f8f5;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #edf2ed;
+  --accent: #15803d;
+  --accent-hover: #166534;
+  --text-main: #142817;
+  --text-muted: #4e6552;
+  --border-subtle: #cbd7cc;
+}
+
+html.theme-lavender, body.theme-lavender, .theme-lavender {
+  --bg-primary: #f9f8fc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f2edf9;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --text-main: #1e1533;
+  --text-muted: #655780;
+  --border-subtle: #d6cced;
+}
+
+html.theme-sandstone, body.theme-sandstone, .theme-sandstone {
+  --bg-primary: #faf6f0;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f3ece0;
+  --accent: #b45309;
+  --accent-hover: #92400e;
+  --text-main: #271f16;
+  --text-muted: #6e5f4d;
+  --border-subtle: #d8cbbb;
+}
+
+html.theme-rose, body.theme-rose, .theme-rose {
+  --bg-primary: #fff8f9;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #faebef;
+  --accent: #e11d48;
+  --accent-hover: #be123c;
+  --text-main: #2b1218;
+  --text-muted: #724c55;
+  --border-subtle: #f0ccd5;
+}
+
+html.theme-strawberry, body.theme-strawberry, .theme-strawberry {
+  --bg-primary: #18060c;
+  --bg-secondary: #270a14;
+  --bg-tertiary: #3b1020;
+  --accent: #f43f5e;
+  --accent-hover: #e11d48;
+  --text-main: #fff1f2;
+  --text-muted: #fda4af;
+  --border-subtle: #881337;
+}
+
+html.theme-kiwi, body.theme-kiwi, .theme-kiwi {
+  --bg-primary: #05140b;
+  --bg-secondary: #0c2014;
+  --bg-tertiary: #163321;
+  --accent: #84cc16;
+  --accent-hover: #65a30d;
+  --text-main: #f7fee7;
+  --text-muted: #bef264;
+  --border-subtle: #365314;
+}
+
+html.theme-neon, body.theme-neon, .theme-neon {
+  --bg-primary: #030712;
+  --bg-secondary: #0b1324;
+  --bg-tertiary: #13223f;
+  --accent: #06b6d4;
+  --accent-hover: #0891b2;
+  --text-main: #f0fdfa;
+  --text-muted: #94a3b8;
+  --border-subtle: #1e293b;
+}
+
+@layer base {
+  html, body {
+    background-color: var(--bg-primary);
+    color: var(--text-main);
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  /* Default hide scrollbar when not hovered on scrollable elements */
+  *,
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-auto {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  *:hover,
+  .overflow-x-auto:hover,
+  .overflow-y-auto:hover,
+  .overflow-auto:hover {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-subtle) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  *:hover::-webkit-scrollbar-thumb {
+    background: var(--border-subtle);
+  }
+
+  *:hover::-webkit-scrollbar-thumb:hover {
+    background: var(--bg-tertiary);
+  }
+}

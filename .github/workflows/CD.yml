@@ -1,142 +1,137 @@
-name: CD - Build & Release Executables
+name: CD (Release Standalone .exe)
 
 on:
   push:
     tags:
-      - 'v*' # Triggers on tags like v1.0, v2026.1, etc.
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        default: 'manual-release'
+      draft:
+        description: 'Create as Draft Release'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false # Ensures one OS failure won't kill other builds prematurely
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-        cache: 'pip'
-
-    - name: Install System Dependencies (Linux only)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-tk xvfb
-
-    - name: Install Python Dependencies
-      shell: bash # <--- Add this line here to force Windows to use Bash
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-    - name: Build Executable with PyInstaller
-      run: |
-        python -c "
-        import PyInstaller.__main__, sys
-        sep = ';' if sys.platform == 'win32' else ':'
-        PyInstaller.__main__.run([
-            'vampio.py',
-            '--noconfirm',
-            '--onefile',
-            '--windowed',
-            '--name=Vampio',
-            '--paths=.',
-            f'--add-data=writers{sep}writers',
-            '--collect-all=writers'
-        ])
-        "
-
-    # --- CROSS-PLATFORM HEADLESS SMOKE TESTS ---
-    - name: Smoke Test (Linux Execution)
-      if: runner.os == 'Linux'
-      run: |
-        # Runs the GUI app inside a virtual desktop frame buffer.
-        # If the app launches successfully, it hangs in loop, timeout returns 124 (Pass).
-        # If it crashes immediately due to missing modules, it returns 1 (Fail).
-        timeout 8 xvfb-run ./dist/Vampio || exit_code=$?
-        if [ "$exit_code" -eq 124 ]; then
-          echo "Smoke test passed: Executable initialized flawlessly."
-        else
-          echo "Smoke test failed: App crashed instantly with exit code $exit_code"
-          exit 1
-        fi
-
-    - name: Smoke Test (macOS Execution)
-      if: runner.os == 'macOS'
-      run: |
-        ./dist/Vampio &
-        APP_PID=$!
-        
-        sleep 8
-
-        if kill -0 $APP_PID 2>/dev/null; then
-          echo "Smoke test passed: Executable initialized flawlessly."
-          kill -9 $APP_PID # Cleanly terminate the test app
-        else
-          echo "Smoke test failed: App crashed instantly upon launch."
-          exit 1
-        fi
-
-    - name: Smoke Test (Windows Execution)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        # Spawns process asynchronously, sleeps, then evaluates if it stayed alive.
-        $proc = Start-Process -FilePath "dist/Vampio.exe" -PassThru -NoNewWindow
-        Start-Sleep -Seconds 8
-        if ($proc.HasExited) {
-            Write-Error "Smoke test failed: Application crashed instantly upon launch."
-            exit 1
-        } else {
-            Write-Output "Smoke test passed: Executable initialized flawlessly."
-            Stop-Process -Id $proc.Id -Force
-        }
-
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Vampio-${{ runner.os }}
-        path: dist/*
-        if-no-files-found: error
-
-  release:
-    name: Create GitHub Release
-    needs: build
+  validate:
+    name: Validate CI Before Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Verify build
+        run: npm run build
+
+  build-standalone-exe:
+    name: Build Standalone Windows .exe
+    needs: validate
+    runs-on: windows-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
 
-    - name: Zip Artifacts for Release
-      run: |
-        cd artifacts
-        zip -r Vampio-Linux.zip Vampio-Linux/
-        zip -r Vampio-Windows.zip Vampio-Windows/
-        zip -r Vampio-macOS.zip Vampio-macOS/
+      - name: Install dependencies
+        run: npm ci || npm install
 
-    - name: Create Release and Upload Assets
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          artifacts/Vampio-Linux.zip
-          artifacts/Vampio-Windows.zip
-          artifacts/Vampio-macOS.zip
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Inline Assets into Standalone Server
+        run: npm run bundle:assets
+
+      - name: Create Single Executable .exe (Node SEA)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release
+
+          Write-Host "Generating SEA blob from sea-config.json..."
+          node --experimental-sea-config sea-config.json
+
+          Write-Host "Copying native node.exe binary..."
+          $nodePath = (Get-Command node).Source
+          Copy-Item $nodePath release\Synthetix.exe
+
+          Write-Host "Injecting SEA blob into Synthetix.exe..."
+          npx --yes postject release\Synthetix.exe NODE_SEA_BLOB sea-prep.blob --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+
+          if (Test-Path release\Synthetix.exe) {
+            $size = (Get-Item release\Synthetix.exe).Length / 1MB
+            Write-Host "Successfully produced standalone Synthetix.exe ($([math]::Round($size, 2)) MB)"
+          } else {
+            Write-Error "Failed to generate Synthetix.exe"
+            exit 1
+          }
+
+      - name: Generate SHA-256 Checksum
+        shell: pwsh
+        run: |
+          cd release
+          $hash = (Get-FileHash -Algorithm SHA256 Synthetix.exe).Hash
+          "$hash  Synthetix.exe" | Out-File -Encoding ascii Synthetix.exe.sha256
+          Get-Content Synthetix.exe.sha256
+
+      - name: Upload .exe as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Synthetix-Standalone-Windows-x64
+          path: |
+            release/Synthetix.exe
+            release/Synthetix.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ github.ref_name || inputs.release_tag }}
+          name: Synthetix Release ${{ github.ref_name || inputs.release_tag }}
+          draft: ${{ inputs.draft || false }}
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Synthetix Standalone Executable Release
+
+            This release includes a **completely standalone single `.exe` file** for Windows.
+
+            ### Highlights:
+            - **No installer needed**: Simply download `Synthetix.exe` and double-click to launch.
+            - **No external bundles**: All UI assets, styles, icons, and generator engines are baked directly inside the single binary.
+            - **100% Offline**: Runs on an internal embedded loopback server (`http://127.0.0.1`) with zero telemetry or cloud dependencies.
+            - **Auto-launch**: Automatically opens your default web browser to the Synthetix workspace upon launching.
+
+            ### Verification:
+            Compare the SHA-256 checksum with `Synthetix.exe.sha256`.
+          files: |
+            release/Synthetix.exe
+            release/Synthetix.exe.sha256

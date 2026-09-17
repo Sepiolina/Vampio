@@ -1,0 +1,6 @@
+{
+  "name": "Vampio - Synthetic Data Generator",
+  "description": "High-performance synthetic data generator with offline Excel/CSV schema pattern extraction, cross-column logic, and instant streaming preview.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
