@@ -15,6 +15,7 @@ VAMPIO is an enterprise-grade, privacy-first synthetic data generation engine an
 | [**Offline Schema Extractor**](./offline-schema-extractor.md) | How the SheetJS-powered pattern recognition engine detects types, enums, and regex formats offline. |
 | [**Search & Tokenized Filters**](./search-and-filters.md) | Syntax guide for the tokenized search bar, cell right-click filters, and boolean logic. |
 | [**Visual Analytics & Distribution**](./visual-analytics.md) | Guide to the 5 visualization modes, streaming buffer windowing, and D3 analytics. |
+| [**Tauri Desktop Compilation**](./tauri-compilation.md) | Guide to running in development mode and building native desktop installers (.exe, .dmg, .AppImage) with Tauri. |
 | [**Generator Engine Architecture**](./generator-engine.md) | Performance internals, deterministic PRNG, File System Access API, and standalone packaging. |
 
 ---

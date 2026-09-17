@@ -50,9 +50,10 @@ The VAMPIO generation core is engineered for low latency, memory efficiency, and
 
 ---
 
-## 📦 Standalone Packaging & CLI Bundling
+## 📦 Native Desktop Packaging with Tauri
 
-VAMPIO includes build scripts for packaging the application as an offline asset bundle or single standalone executable:
+VAMPIO is compiled into a lightweight native desktop binary using Tauri v2:
 
-- `npm run bundle:assets`: Executes `/scripts/bundle-assets.cjs` to compile web assets into static distributions.
-- `npm run package:exe`: Executes `/scripts/package-exe.cjs` to package the Node/Express backend and static Vite UI into a self-contained portable executable.
+- `npm run tauri:dev`: Runs the Vite frontend inside the native Tauri desktop window with live HMR.
+- `npm run tauri:build`: Bundles and compiles release binaries (`.exe`, `.msi`, `.dmg`, `.AppImage`) using the Rust toolchain in `src-tauri/`.
+See [**`docs/tauri-compilation.md`**](./tauri-compilation.md) for full compilation instructions.

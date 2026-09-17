@@ -151,11 +151,11 @@ export const Header: React.FC<Props> = ({
       </div>
 
       {/* Center: Toggleable Workspace Tab Navigation */}
-      <div className="relative flex items-center bg-primary border border-border-subtle p-0.5 rounded-xl shadow-inner order-3 md:order-none w-full md:w-auto justify-center mt-1 md:mt-0">
+      <div className="relative flex items-center bg-primary border border-border-subtle p-0.5 rounded-xl shadow-inner order-3 md:order-none w-full max-w-[340px] md:max-w-none md:w-auto justify-center mx-auto md:mx-0 shrink-0 mt-1 md:mt-0">
         <button
           type="button"
           onClick={() => setActiveTab('schema')}
-          className={`relative flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-colors z-10 ${
+          className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 md:py-1 text-xs font-semibold rounded-lg transition-colors z-10 flex-1 md:flex-initial whitespace-nowrap ${
             activeTab === 'schema'
               ? 'text-white'
               : 'text-content-muted hover:text-content hover:bg-tertiary/20'
@@ -168,9 +168,9 @@ export const Header: React.FC<Props> = ({
               transition={{ type: 'spring', stiffness: 500, damping: 35 }}
             />
           )}
-          <Columns size={12} className="relative z-10" />
+          <Columns size={12} className="relative z-10 flex-shrink-0" />
           <span className="relative z-10">Schema</span>
-          <span className={`relative z-10 text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
+          <span className={`relative z-10 text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors flex-shrink-0 ${
             activeTab === 'schema' ? 'bg-white/20 text-white' : 'bg-secondary text-content-muted'
           }`}>
             {totalColumns}
@@ -180,7 +180,7 @@ export const Header: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => setActiveTab('preview')}
-          className={`relative flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-colors z-10 ${
+          className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 md:py-1 text-xs font-semibold rounded-lg transition-colors z-10 flex-1 md:flex-initial whitespace-nowrap ${
             activeTab === 'preview'
               ? 'text-white'
               : 'text-content-muted hover:text-content hover:bg-tertiary/20'
@@ -193,10 +193,10 @@ export const Header: React.FC<Props> = ({
               transition={{ type: 'spring', stiffness: 500, damping: 35 }}
             />
           )}
-          <Table size={12} className="relative z-10" />
+          <Table size={12} className="relative z-10 flex-shrink-0" />
           <span className="relative z-10">Preview</span>
           {previewRowCount > 0 && (
-            <span className={`relative z-10 text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
+            <span className={`relative z-10 text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors flex-shrink-0 ${
               activeTab === 'preview' ? 'bg-white/20 text-white' : 'bg-secondary text-content-muted'
             }`}>
               {previewRowCount}
@@ -207,12 +207,12 @@ export const Header: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => setActiveTab('split')}
-          className={`relative hidden md:flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-colors z-10 ${
+          className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 md:py-1 text-xs font-semibold rounded-lg transition-colors z-10 flex-1 md:flex-initial whitespace-nowrap ${
             activeTab === 'split'
               ? 'text-white'
               : 'text-content-muted hover:text-content hover:bg-tertiary/20'
           }`}
-          title="Split View (Side by Side)"
+          title="Split View (Side by Side or Stacked)"
         >
           {activeTab === 'split' && (
             <motion.div
@@ -221,8 +221,10 @@ export const Header: React.FC<Props> = ({
               transition={{ type: 'spring', stiffness: 500, damping: 35 }}
             />
           )}
-          <Split size={12} className="relative z-10" />
-          <span className="relative z-10">Split View</span>
+          <Split size={12} className="relative z-10 flex-shrink-0" />
+          <span className="relative z-10">
+            Split<span className="hidden sm:inline"> View</span>
+          </span>
         </button>
       </div>
 
