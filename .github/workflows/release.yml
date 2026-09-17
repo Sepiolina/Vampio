@@ -1,0 +1,91 @@
+name: Release (Tauri Multi-Platform Desktop Build)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        default: 'manual-release'
+      draft:
+        description: 'Create as Draft Release'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-tauri:
+    name: Build (${{ matrix.platform }})
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-latest'
+            args: ''
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Linux system dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install frontend dependencies
+        run: npm ci || npm install
+
+      - name: Build Tauri Desktop Application & Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name || inputs.release_tag }}
+          releaseName: 'VAMPIO v__VERSION__'
+          releaseBody: |
+            ## VAMPIO Native Desktop Release v__VERSION__
+
+            ### Download Links & Platform Packages:
+            - **Windows**: `.exe` standalone installer / `.msi` package
+            - **macOS**: Universal Apple Silicon + Intel `.dmg` / `.app` bundle
+            - **Linux**: `.AppImage` standalone portable / `.deb` package
+
+            ### Features:
+            - 100% offline, privacy-first synthetic data generation engine
+            - Architecture schema extraction (CSV, JSON, SQL, Excel)
+            - Multi-view visual analytics & real-time distribution charts
+            - High-speed File System streaming output
+          releaseDraft: ${{ inputs.draft || false }}
+          prerelease: false
+          args: ${{ matrix.args }}

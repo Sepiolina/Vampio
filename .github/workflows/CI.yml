@@ -1,4 +1,4 @@
-name: CI (Test & Lint)
+name: CI (Test & Frontend Build)
 
 on:
   push:
@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-and-test:
-    name: Lint, Test & Build Check
+  test-and-build:
+    name: Lint, Unit Tests & Vite Build
     runs-on: ubuntu-latest
 
     strategy:
@@ -39,8 +39,5 @@ jobs:
       - name: Run automated unit tests
         run: npm test
 
-      - name: Verify production build
+      - name: Verify Vite production build
         run: npm run build
-
-      - name: Verify standalone asset bundle generation
-        run: npm run bundle:assets
