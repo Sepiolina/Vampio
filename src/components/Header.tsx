@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Zap, 
   Layers, 
@@ -246,8 +246,9 @@ export const Header: React.FC<Props> = ({
 
         {/* Theme Dropdown */}
         <div className="relative" ref={themeDropdownRef}>
-          <button
+          <motion.button
             type="button"
+            whileTap={{ scale: 0.96 }}
             onClick={() => setIsThemeOpen(!isThemeOpen)}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-medium transition-all shadow-xs ${
               isThemeOpen
@@ -257,128 +258,172 @@ export const Header: React.FC<Props> = ({
             title={`Current Theme: ${currentThemeMeta.label} (${currentThemeMeta.isLight ? 'Light' : 'Dark'})`}
             aria-label="Theme menu"
           >
-            {currentThemeMeta.isLight ? (
-              <Sun size={12} className="text-amber-500 flex-shrink-0" />
-            ) : (
-              <Moon size={12} className="text-accent flex-shrink-0" />
-            )}
-            <span
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentThemeMeta.isLight ? 'sun' : 'moon'}
+                initial={{ rotate: -45, scale: 0.7, opacity: 0 }}
+                animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                exit={{ rotate: 45, scale: 0.7, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center justify-center flex-shrink-0"
+              >
+                {currentThemeMeta.isLight ? (
+                  <Sun size={12} className="text-amber-500" />
+                ) : (
+                  <Moon size={12} className="text-accent" />
+                )}
+              </motion.div>
+            </AnimatePresence>
+            <motion.span
+              key={currentThemeMeta.accent}
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 25 }}
               className="w-2.5 h-2.5 rounded-full border border-black/20 shadow-xs flex-shrink-0"
               style={{ backgroundColor: currentThemeMeta.accent }}
             />
             <span className="hidden sm:inline font-semibold text-[11px] max-w-[85px] truncate">
               {currentThemeMeta.label}
             </span>
-            <ChevronDown size={11} className={`text-content-muted transition-transform ${isThemeOpen ? 'rotate-180' : ''}`} />
-          </button>
+            <ChevronDown size={11} className={`text-content-muted transition-transform duration-200 ${isThemeOpen ? 'rotate-180' : ''}`} />
+          </motion.button>
 
-          {isThemeOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-64 bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 flex flex-col p-2 backdrop-blur-md max-h-[80vh] overflow-y-auto">
-              {/* Light Themes Section */}
-              <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center gap-1.5 border-b border-border-subtle/50 mb-1">
-                <Sun size={11} className="text-amber-500" />
-                <span>Light Themes (6)</span>
-              </div>
-              <div className="space-y-0.5 mb-2">
-                {THEME_OPTIONS.filter((t) => t.isLight).map((t) => {
-                  const isActive = theme === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => {
-                        setTheme(t.id);
-                        setIsThemeOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded-lg transition-all text-left ${
-                        isActive
-                          ? 'bg-accent text-white font-bold shadow-xs'
-                          : 'text-content hover:bg-tertiary font-medium'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="flex items-center -space-x-1 flex-shrink-0">
-                          <span
-                            className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
-                            style={{ backgroundColor: t.bg }}
-                          />
-                          <span
-                            className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
-                            style={{ backgroundColor: t.card }}
-                          />
-                          <span
-                            className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
-                            style={{ backgroundColor: t.accent }}
-                          />
+          <AnimatePresence>
+            {isThemeOpen && (
+              <motion.div
+                key="theme-dropdown-popup"
+                initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -6 }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+                className="absolute right-0 top-full mt-1.5 w-64 bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 flex flex-col p-2 backdrop-blur-md max-h-[80vh] overflow-y-auto"
+              >
+                {/* Light Themes Section */}
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center gap-1.5 border-b border-border-subtle/50 mb-1">
+                  <Sun size={11} className="text-amber-500" />
+                  <span>Light Themes (6)</span>
+                </div>
+                <div className="space-y-0.5 mb-2">
+                  {THEME_OPTIONS.filter((t) => t.isLight).map((t) => {
+                    const isActive = theme === t.id;
+                    return (
+                      <motion.button
+                        key={t.id}
+                        type="button"
+                        whileHover={{ x: 2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          setTheme(t.id);
+                          setIsThemeOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded-lg transition-all text-left ${
+                          isActive
+                            ? 'bg-accent text-white font-bold shadow-xs'
+                            : 'text-content hover:bg-tertiary font-medium'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex items-center -space-x-1 flex-shrink-0">
+                            <span
+                              className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
+                              style={{ backgroundColor: t.bg }}
+                            />
+                            <span
+                              className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
+                              style={{ backgroundColor: t.card }}
+                            />
+                            <span
+                              className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
+                              style={{ backgroundColor: t.accent }}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-xs leading-tight truncate">{t.label}</div>
+                            {t.description && (
+                              <div className={`text-[10px] leading-tight truncate ${isActive ? 'text-white/80' : 'text-content-muted'}`}>
+                                {t.description}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <div className="font-semibold text-xs leading-tight truncate">{t.label}</div>
-                          {t.description && (
-                            <div className={`text-[10px] leading-tight truncate ${isActive ? 'text-white/80' : 'text-content-muted'}`}>
-                              {t.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {isActive && <Check size={13} className="flex-shrink-0 ml-1.5" />}
-                    </button>
-                  );
-                })}
-              </div>
+                        {isActive && (
+                          <motion.span
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                          >
+                            <Check size={13} className="flex-shrink-0 ml-1.5" />
+                          </motion.span>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
 
-              {/* Dark Themes Section */}
-              <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center gap-1.5 border-b border-border-subtle/50 mb-1 pt-1 border-t">
-                <Moon size={11} className="text-accent" />
-                <span>Dark Themes (4)</span>
-              </div>
-              <div className="space-y-0.5">
-                {THEME_OPTIONS.filter((t) => !t.isLight).map((t) => {
-                  const isActive = theme === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => {
-                        setTheme(t.id);
-                        setIsThemeOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded-lg transition-all text-left ${
-                        isActive
-                          ? 'bg-accent text-white font-bold shadow-xs'
-                          : 'text-content hover:bg-tertiary font-medium'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="flex items-center -space-x-1 flex-shrink-0">
-                          <span
-                            className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
-                            style={{ backgroundColor: t.bg }}
-                          />
-                          <span
-                            className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
-                            style={{ backgroundColor: t.card }}
-                          />
-                          <span
-                            className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
-                            style={{ backgroundColor: t.accent }}
-                          />
+                {/* Dark Themes Section */}
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center gap-1.5 border-b border-border-subtle/50 mb-1 pt-1 border-t">
+                  <Moon size={11} className="text-accent" />
+                  <span>Dark Themes (4)</span>
+                </div>
+                <div className="space-y-0.5">
+                  {THEME_OPTIONS.filter((t) => !t.isLight).map((t) => {
+                    const isActive = theme === t.id;
+                    return (
+                      <motion.button
+                        key={t.id}
+                        type="button"
+                        whileHover={{ x: 2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          setTheme(t.id);
+                          setIsThemeOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded-lg transition-all text-left ${
+                          isActive
+                            ? 'bg-accent text-white font-bold shadow-xs'
+                            : 'text-content hover:bg-tertiary font-medium'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex items-center -space-x-1 flex-shrink-0">
+                            <span
+                              className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
+                              style={{ backgroundColor: t.bg }}
+                            />
+                            <span
+                              className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
+                              style={{ backgroundColor: t.card }}
+                            />
+                            <span
+                              className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
+                              style={{ backgroundColor: t.accent }}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-xs leading-tight truncate">{t.label}</div>
+                            {t.description && (
+                              <div className={`text-[10px] leading-tight truncate ${isActive ? 'text-white/80' : 'text-content-muted'}`}>
+                                {t.description}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <div className="font-semibold text-xs leading-tight truncate">{t.label}</div>
-                          {t.description && (
-                            <div className={`text-[10px] leading-tight truncate ${isActive ? 'text-white/80' : 'text-content-muted'}`}>
-                              {t.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {isActive && <Check size={13} className="flex-shrink-0 ml-1.5" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                        {isActive && (
+                          <motion.span
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                          >
+                            <Check size={13} className="flex-shrink-0 ml-1.5" />
+                          </motion.span>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Sidebar Toggle Button */}

@@ -1,18 +1,18 @@
 # Visual Analytics & Distribution Panel
 
-The **Visual Analytics & Distribution Panel** provides real-time D3-powered statistical charts and data quality feedback directly above the reactive preview table. It is specifically engineered to handle continuous streaming and large synthetic datasets without freezing the browser or collapsing into microscopic, illegible lines.
+The **Visual Analytics Panel** provides real-time D3-powered statistical charts directly above the preview table. It includes optimizations to handle continuous data streaming.
 
 ---
 
-## ⚡ Streaming Protection & Smart Windowing
+## ⚡ Streaming & Windowing
 
-### The Problem with Unconstrained Streaming
-When generating synthetic data continuously or in large batches (e.g. 500 to 10,000+ rows):
-- Rendering an SVG rect or point for every single row creates thousands of DOM nodes.
-- When bounded to a container height, each row squishes into sub-pixel slivers (`< 0.1px`), destroying legibility and overloading the browser's render tree.
+### Handling Large Datasets
+When generating synthetic data continuously or in large batches:
+- Rendering a data point for every single row can create thousands of DOM nodes.
+- High data volume can overload the browser's render tree.
 
-### The VAMPIO Solution
-VAMPIO resolves this through **Buffer Windowing & Downsampling**:
+### Buffer Windowing
+The application uses **Buffer Windowing & Downsampling** to maintain performance:
 - **Sampling Window Controls**: Switch between **Last 30 rows**, **Last 60 rows**, **Last 100 rows**, or **All (Binned)**.
 - **Fixed Bounded Container**: Fixed height (`230px–260px`) prevents layout thrashing and UI jittering.
 - **Animation Frame Throttling**: Updates during streaming are debounced using `requestAnimationFrame`, sustaining a smooth 60 FPS frame rate.

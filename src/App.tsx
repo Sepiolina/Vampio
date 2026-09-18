@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ColumnSpec, ExportFormat, OutputDestination, PresetSchema, GeneratorStats, ThemeId } from './types';
 import { GeneratorEngine } from './utils/generator';
 import { formatDataset, downloadFile, getMimeType, formatBytes } from './utils/export';
@@ -12,11 +13,13 @@ import { PRESET_SCHEMAS } from './data/presets';
 import { Header, WorkspaceTab } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ColumnCard } from './components/ColumnCard';
-import { PreviewTable } from './components/PreviewTable';
 import { ColumnSearch } from './components/ColumnSearch';
-import { PresetSelector } from './components/PresetSelector';
-import { OfflineExtractorModal } from './components/OfflineExtractorModal';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+
+const PreviewTable = lazy(() => import('./components/PreviewTable').then(module => ({ default: module.PreviewTable })));
+const PresetSelector = lazy(() => import('./components/PresetSelector').then(module => ({ default: module.PresetSelector })));
+const OfflineExtractorModal = lazy(() => import('./components/OfflineExtractorModal').then(module => ({ default: module.OfflineExtractorModal })));
+
 import { 
   Plus, 
   Search, 
@@ -922,15 +925,17 @@ export default function App() {
   // Render Preview Sub-view
   const renderPreviewView = () => (
     <div className="flex-1 h-full overflow-hidden bg-primary">
-      <PreviewTable
-        columns={columns}
-        data={previewData}
-        isStreaming={isStreaming}
-        onRefreshPreview={refreshPreview}
-        previewCount={previewCount}
-        onChangePreviewCount={setPreviewCount}
-        theme={theme}
-      />
+      <Suspense fallback={<div className="flex items-center justify-center h-full text-content-muted">Loading preview...</div>}>
+        <PreviewTable
+          columns={columns}
+          data={previewData}
+          isStreaming={isStreaming}
+          onRefreshPreview={refreshPreview}
+          previewCount={previewCount}
+          onChangePreviewCount={setPreviewCount}
+          theme={theme}
+        />
+      </Suspense>
     </div>
   );
 
@@ -1004,112 +1009,123 @@ export default function App() {
       </div>
 
       {/* Preset Schemas Modal */}
-      <PresetSelector
-        isOpen={isPresetsOpen}
-        onClose={() => setIsPresetsOpen(false)}
-        onSelectPreset={handlePresetSelect}
-        currentColumns={columns}
-        onImportSchema={handleImportSchema}
-        tableName={tableName}
-      />
+      <Suspense fallback={null}>
+        <PresetSelector
+          isOpen={isPresetsOpen}
+          onClose={() => setIsPresetsOpen(false)}
+          onSelectPreset={handlePresetSelect}
+          currentColumns={columns}
+          onImportSchema={handleImportSchema}
+          tableName={tableName}
+        />
+      </Suspense>
 
       {/* 100% Offline Excel / CSV Pattern Architecture Extractor Modal */}
-      {isOfflineExtractorOpen && (
-        <OfflineExtractorModal
-          isOpen={isOfflineExtractorOpen}
-          onClose={() => {
-            setIsOfflineExtractorOpen(false);
-            setExtractorInitialFile(null);
-            setExtractorAutoExtract(false);
-          }}
-          onApplySchema={handleApplyExtractedSchema}
-          currentColumnsCount={columns.length}
-          initialFile={extractorInitialFile}
-          onClearInitialFile={() => setExtractorInitialFile(null)}
-          autoExtract={extractorAutoExtract}
-        />
-      )}
+      <Suspense fallback={null}>
+        {isOfflineExtractorOpen && (
+          <OfflineExtractorModal
+            isOpen={isOfflineExtractorOpen}
+            onClose={() => {
+              setIsOfflineExtractorOpen(false);
+              setExtractorInitialFile(null);
+              setExtractorAutoExtract(false);
+            }}
+            onApplySchema={handleApplyExtractedSchema}
+            currentColumnsCount={columns.length}
+            initialFile={extractorInitialFile}
+            onClearInitialFile={() => setExtractorInitialFile(null)}
+            autoExtract={extractorAutoExtract}
+          />
+        )}
+      </Suspense>
 
       {/* Context Menu Overlay */}
-      {contextMenu && (
-        <div 
-          className="fixed z-50 min-w-[200px] bg-primary border border-border-subtle rounded-xl shadow-xl overflow-hidden text-sm"
-          style={{ 
-            top: contextMenu.y, 
-            left: contextMenu.x,
-            // Ensure it doesn't bleed off screen easily:
-            transform: `translate(${contextMenu.x > window.innerWidth - 250 ? '-100%' : '0'}, ${contextMenu.y > window.innerHeight - 300 ? '-100%' : '0'})` 
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex flex-col py-1">
-            {contextMenu.type === 'column' ? (
-              <>
+      <AnimatePresence>
+        {contextMenu && (
+          <motion.div 
+            key="context-menu-popover"
+            initial={{ opacity: 0, scale: 0.93, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.93, y: -4 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+            className="fixed z-50 min-w-[200px] bg-primary border border-border-subtle rounded-xl shadow-2xl overflow-hidden text-sm"
+            style={{ 
+              top: contextMenu.y, 
+              left: contextMenu.x,
+              // Ensure it doesn't bleed off screen easily:
+              transform: `translate(${contextMenu.x > window.innerWidth - 250 ? '-100%' : '0'}, ${contextMenu.y > window.innerHeight - 300 ? '-100%' : '0'})` 
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col py-1">
+              {contextMenu.type === 'column' ? (
+                <>
+                  <button
+                    onClick={() => handleContextMenuAction('top', contextMenu.colId)}
+                    className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
+                  >
+                    <ArrowUpToLine size={14} className="text-content-muted" /> Move to Top
+                  </button>
+                  <button
+                    onClick={() => handleContextMenuAction('bottom', contextMenu.colId)}
+                    className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
+                  >
+                    <ArrowDownToLine size={14} className="text-content-muted" /> Move to Bottom
+                  </button>
+                  <div className="h-px bg-border-subtle my-1"></div>
+                  <button
+                    onClick={() => handleContextMenuAction('cut', contextMenu.colId)}
+                    className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
+                  >
+                    <Scissors size={14} className="text-content-muted" /> Cut
+                  </button>
+                  <button
+                    onClick={() => handleContextMenuAction('copy', contextMenu.colId)}
+                    className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
+                  >
+                    <Files size={14} className="text-content-muted" /> Copy
+                  </button>
+                  <button
+                    onClick={() => handleContextMenuAction('paste-before', contextMenu.colId)}
+                    disabled={!clipboard}
+                    className={`flex items-center gap-3 px-3 py-2 transition ${!clipboard ? 'text-content-muted opacity-50 cursor-not-allowed' : 'text-content hover:bg-secondary'}`}
+                  >
+                    <ClipboardPaste size={14} className="text-content-muted" /> Paste Before
+                  </button>
+                  <button
+                    onClick={() => handleContextMenuAction('paste-after', contextMenu.colId)}
+                    disabled={!clipboard}
+                    className={`flex items-center gap-3 px-3 py-2 transition ${!clipboard ? 'text-content-muted opacity-50 cursor-not-allowed' : 'text-content hover:bg-secondary'}`}
+                  >
+                    <ClipboardPaste size={14} className="text-content-muted" /> Paste After
+                  </button>
+                  <div className="h-px bg-border-subtle my-1"></div>
+                  <button
+                    onClick={() => handleContextMenuAction('duplicate', contextMenu.colId)}
+                    className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
+                  >
+                    <CopyPlus size={14} className="text-content-muted" /> Duplicate
+                  </button>
+                  <button
+                    onClick={() => handleContextMenuAction('remove', contextMenu.colId)}
+                    className="flex items-center gap-3 px-3 py-2 text-rose-500 hover:bg-rose-500/10 transition"
+                  >
+                    <Trash2 size={14} /> Remove
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={() => handleContextMenuAction('top', contextMenu.colId)}
-                  className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
-                >
-                  <ArrowUpToLine size={14} className="text-content-muted" /> Move to Top
-                </button>
-                <button
-                  onClick={() => handleContextMenuAction('bottom', contextMenu.colId)}
-                  className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
-                >
-                  <ArrowDownToLine size={14} className="text-content-muted" /> Move to Bottom
-                </button>
-                <div className="h-px bg-border-subtle my-1"></div>
-                <button
-                  onClick={() => handleContextMenuAction('cut', contextMenu.colId)}
-                  className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
-                >
-                  <Scissors size={14} className="text-content-muted" /> Cut
-                </button>
-                <button
-                  onClick={() => handleContextMenuAction('copy', contextMenu.colId)}
-                  className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
-                >
-                  <Files size={14} className="text-content-muted" /> Copy
-                </button>
-                <button
-                  onClick={() => handleContextMenuAction('paste-before', contextMenu.colId)}
+                  onClick={() => handleContextMenuAction('paste-append')}
                   disabled={!clipboard}
                   className={`flex items-center gap-3 px-3 py-2 transition ${!clipboard ? 'text-content-muted opacity-50 cursor-not-allowed' : 'text-content hover:bg-secondary'}`}
                 >
-                  <ClipboardPaste size={14} className="text-content-muted" /> Paste Before
+                  <ClipboardPaste size={14} className="text-content-muted" /> Paste (Append)
                 </button>
-                <button
-                  onClick={() => handleContextMenuAction('paste-after', contextMenu.colId)}
-                  disabled={!clipboard}
-                  className={`flex items-center gap-3 px-3 py-2 transition ${!clipboard ? 'text-content-muted opacity-50 cursor-not-allowed' : 'text-content hover:bg-secondary'}`}
-                >
-                  <ClipboardPaste size={14} className="text-content-muted" /> Paste After
-                </button>
-                <div className="h-px bg-border-subtle my-1"></div>
-                <button
-                  onClick={() => handleContextMenuAction('duplicate', contextMenu.colId)}
-                  className="flex items-center gap-3 px-3 py-2 text-content hover:bg-secondary transition"
-                >
-                  <CopyPlus size={14} className="text-content-muted" /> Duplicate
-                </button>
-                <button
-                  onClick={() => handleContextMenuAction('remove', contextMenu.colId)}
-                  className="flex items-center gap-3 px-3 py-2 text-rose-500 hover:bg-rose-500/10 transition"
-                >
-                  <Trash2 size={14} /> Remove
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => handleContextMenuAction('paste-append')}
-                disabled={!clipboard}
-                className={`flex items-center gap-3 px-3 py-2 transition ${!clipboard ? 'text-content-muted opacity-50 cursor-not-allowed' : 'text-content hover:bg-secondary'}`}
-              >
-                <ClipboardPaste size={14} className="text-content-muted" /> Paste (Append)
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

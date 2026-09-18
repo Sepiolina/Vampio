@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { ColumnSpec, ThemeId } from '../types';
 import { Table, Code, Copy, Check, Search, RefreshCw, List, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, X, Filter, FilterX, Plus } from 'lucide-react';
-import { DataHeatmap } from './DataHeatmap';
 import { DataSearch } from './DataSearch';
+
+const DataHeatmap = lazy(() => import('./DataHeatmap').then(m => ({ default: m.DataHeatmap })));
 
 interface Props {
   columns: ColumnSpec[];
@@ -215,12 +216,14 @@ export const PreviewTable: React.FC<Props> = ({
       
       {/* Visual Analytics & Distribution Panel */}
       {data.length > 0 && columns.length > 0 && (
-        <DataHeatmap 
-          data={filteredData} 
-          columns={columns} 
-          theme={theme} 
-          isStreaming={isStreaming} 
-        />
+        <Suspense fallback={<div className="h-48 flex items-center justify-center text-content-muted text-xs bg-secondary/50 border-b border-border-subtle">Loading Visualizations...</div>}>
+          <DataHeatmap 
+            data={filteredData} 
+            columns={columns} 
+            theme={theme} 
+            isStreaming={isStreaming} 
+          />
+        </Suspense>
       )}
 
       {/* Main Content Area */}

@@ -1,15 +1,14 @@
 # Offline Schema Extractor
 
-The **Offline Schema Extractor** enables users to upload real-world Excel spreadsheets (`.xlsx`, `.xls`) or delimited text files (`.csv`, `.tsv`) and reverse-engineer their underlying data architecture, field types, and generation rules in milliseconds.
+The **Schema Extractor** enables users to upload Excel spreadsheets (`.xlsx`, `.xls`) or delimited text files (`.csv`, `.tsv`) and automatically infer their underlying data schema, field types, and generation rules.
 
 ---
 
-## 🔒 Privacy & Sovereignty Guarantee
+## 🔒 Local Processing
 
-All parsing and statistical profiling algorithms are executed **100% client-side** inside the browser using SheetJS (`xlsx`) and web workers:
+All parsing and statistical profiling algorithms are executed **locally on your device** (via native desktop runtime or in-browser) using SheetJS (`xlsx`) and background workers:
 - **No data leaves your device.**
-- **No external AI APIs or cloud services are invoked.**
-- Safe for HIPAA, GDPR, PCI-DSS, and proprietary internal corporate data.
+- **No external APIs or cloud services are invoked.**
 
 ---
 

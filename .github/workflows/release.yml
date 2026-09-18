@@ -81,11 +81,10 @@ jobs:
             - **macOS**: Universal Apple Silicon + Intel `.dmg` / `.app` bundle
             - **Linux**: `.AppImage` standalone portable / `.deb` package
 
-            ### Features:
-            - 100% offline, privacy-first synthetic data generation engine
-            - Architecture schema extraction (CSV, JSON, SQL, Excel)
-            - Multi-view visual analytics & real-time distribution charts
-            - High-speed File System streaming output
+            ### What's New
+            - **Native Desktop Migration**: Migrated to Tauri v2 for native OS integration and desktop performance.
+            - **Lazy Loaded Visualizations**: Code splitting and lazy loading of D3 analytics and SheetJS to reduce initial bundle size and improve startup speeds.
+            - **Enhanced Streaming Output**: Uses native Rust File System APIs when running on desktop for continuous disk writing.
           releaseDraft: ${{ inputs.draft || false }}
           prerelease: false
           args: ${{ matrix.args }}

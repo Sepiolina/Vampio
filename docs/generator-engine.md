@@ -1,6 +1,6 @@
-# Generator Engine & Performance Architecture
+# Generator Engine & Architecture
 
-The VAMPIO generation core is engineered for low latency, memory efficiency, and real-time responsiveness.
+The generation core handles data creation, validation, and streaming.
 
 ---
 
@@ -40,9 +40,10 @@ The VAMPIO generation core is engineered for low latency, memory efficiency, and
 - Guarantees uniqueness for fields marked `isUnique` using fast in-memory hash sets with fallback collision retry budgets.
 
 ### 2. Stream File Writer (`/src/utils/fileSystem.ts`)
-- Employs chunked streaming to prevent browser heap exhaustion when generating datasets of 100,000+ rows.
-- Uses the modern **File System Access API** (`showDirectoryPicker` / `FileSystemWritableFileStream`) to stream data directly into the user's selected operating system folder without holding the entire dataset in RAM.
-- Falls back to buffered `Blob` chunks and download triggers when the File System Access API is unsupported or permissions are denied.
+- Employs chunked streaming to prevent memory heap exhaustion when generating datasets of 100,000+ rows.
+- **Desktop (Tauri)**: Uses the native Rust `@tauri-apps/plugin-fs` to stream bytes securely and efficiently with zero browser-memory overhead.
+- **Web**: Uses the modern **Web File System Access API** (`showDirectoryPicker` / `FileSystemWritableFileStream`) to stream data directly into the user's selected operating system folder.
+- Falls back to buffered `Blob` chunks and download triggers when streaming capabilities are unsupported.
 
 ### 3. Reactive Preview Throttling
 - When editing column specifications, regex patterns, or weights, preview generation runs asynchronously on a micro-batch (e.g. 10–50 rows) to keep the UI smooth at 60 FPS.

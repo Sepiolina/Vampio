@@ -17,7 +17,12 @@ export default defineConfig(() => {
       strictPort: true,
       host: process.env.TAURI_DEV_HOST || '0.0.0.0',
       hmr: process.env.DISABLE_HMR !== 'true',
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      watch:
+        process.env.DISABLE_HMR === 'true'
+          ? null
+          : {
+              ignored: ['**/src-tauri/**'],
+            },
     },
   };
 });

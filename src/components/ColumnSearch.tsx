@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Search, X } from 'lucide-react';
 import { ColumnType } from '../types';
 import { TokenInput } from './TokenInput';
@@ -80,40 +81,48 @@ export const ColumnSearch: React.FC<Props> = ({ value, onChange, columnNames }) 
         onFocus={() => setIsOpen(true)}
       />
 
-      {isOpen && (
-        <div className="absolute top-full right-0 mt-1 w-64 bg-primary border border-border-subtle rounded-xl shadow-xl z-50 overflow-hidden max-h-64 flex flex-col">
-          <div className="px-3 py-2 border-b border-border-subtle bg-secondary/50 text-[10px] font-bold text-content-muted uppercase tracking-wider">
-            Filters & Suggestions
-          </div>
-          <div className="overflow-y-auto p-1">
-            {['Type', 'Property', 'Column', 'Logic'].map(category => {
-              const categoryOptions = filteredOptions.filter(o => o.category === category);
-              if (categoryOptions.length === 0) return null;
-              
-              return (
-                <div key={category} className="mb-2 last:mb-0">
-                  <div className="px-2 py-1 text-[10px] text-content-muted font-semibold">{category}</div>
-                  {categoryOptions.map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={() => handleSelect(opt.value)}
-                      className="w-full text-left px-2 py-1.5 text-xs text-content hover:bg-secondary rounded flex items-center justify-between group"
-                    >
-                      <span>{opt.label}</span>
-                      <span className="text-[10px] text-content-muted opacity-0 group-hover:opacity-100 font-mono">{opt.value}</span>
-                    </button>
-                  ))}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="absolute top-full right-0 mt-1 w-64 bg-primary border border-border-subtle rounded-xl shadow-xl z-50 overflow-hidden max-h-64 flex flex-col"
+          >
+            <div className="px-3 py-2 border-b border-border-subtle bg-secondary/50 text-[10px] font-bold text-content-muted uppercase tracking-wider">
+              Filters & Suggestions
+            </div>
+            <div className="overflow-y-auto p-1">
+              {['Type', 'Property', 'Column', 'Logic'].map(category => {
+                const categoryOptions = filteredOptions.filter(o => o.category === category);
+                if (categoryOptions.length === 0) return null;
+                
+                return (
+                  <div key={category} className="mb-2 last:mb-0">
+                    <div className="px-2 py-1 text-[10px] text-content-muted font-semibold">{category}</div>
+                    {categoryOptions.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => handleSelect(opt.value)}
+                        className="w-full text-left px-2 py-1.5 text-xs text-content hover:bg-secondary rounded flex items-center justify-between group transition-colors"
+                      >
+                        <span>{opt.label}</span>
+                        <span className="text-[10px] text-content-muted opacity-0 group-hover:opacity-100 font-mono">{opt.value}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+              {filteredOptions.length === 0 && (
+                <div className="p-3 text-xs text-content-muted text-center italic">
+                  No filters found matching text
                 </div>
-              );
-            })}
-            {filteredOptions.length === 0 && (
-              <div className="p-3 text-xs text-content-muted text-center italic">
-                No filters found matching text
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

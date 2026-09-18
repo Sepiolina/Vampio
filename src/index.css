@@ -136,26 +136,40 @@ html.theme-neon, body.theme-neon, .theme-neon {
   html, body {
     background-color: var(--bg-primary);
     color: var(--text-main);
-    transition: background-color 0.15s ease, color 0.15s ease;
   }
 
-  /* Default hide scrollbar when not hovered on scrollable elements */
-  *,
+  /* Smooth, eye-safe theme change transition across surfaces, cards, borders, and text */
+  html, body, header, aside, main, table, th, td, tr, 
+  .bg-primary, .bg-secondary, .bg-tertiary,
+  .text-content, .text-content-muted,
+  .border-border-subtle, .border-primary, .border-secondary {
+    transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Consistent, non-shifting scrollbar styling without hover layout jumping */
   .overflow-x-auto,
   .overflow-y-auto,
   .overflow-auto {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    -ms-overflow-style: auto;
   }
 
-  *:hover,
+  .overflow-y-auto,
+  .overflow-auto {
+    scrollbar-gutter: stable;
+  }
+
   .overflow-x-auto:hover,
   .overflow-y-auto:hover,
   .overflow-auto:hover {
-    scrollbar-width: thin;
     scrollbar-color: var(--border-subtle) transparent;
   }
 
+  /* Webkit custom scrollbars - permanent dimensions to avoid layout shifts on hover */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -170,11 +184,15 @@ html.theme-neon, body.theme-neon, .theme-neon {
     border-radius: 9999px;
   }
 
-  *:hover::-webkit-scrollbar-thumb {
+  .overflow-x-auto:hover::-webkit-scrollbar-thumb,
+  .overflow-y-auto:hover::-webkit-scrollbar-thumb,
+  .overflow-auto:hover::-webkit-scrollbar-thumb {
     background: var(--border-subtle);
   }
 
-  *:hover::-webkit-scrollbar-thumb:hover {
+  .overflow-x-auto::-webkit-scrollbar-thumb:hover,
+  .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+  .overflow-auto::-webkit-scrollbar-thumb:hover {
     background: var(--bg-tertiary);
   }
 }

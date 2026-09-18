@@ -1,10 +1,27 @@
 import { ColumnSpec, ExportFormat } from '../types';
+import { isTauri } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
+import { writeTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 
 export function isFileSystemAccessSupported(): boolean {
+  if (isTauri()) return true;
   return typeof window !== 'undefined' && typeof (window as any).showDirectoryPicker === 'function';
 }
 
-export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
+export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandle | any | null> {
+  if (isTauri()) {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+    });
+    if (selected === null) {
+      return null;
+    }
+    const path = Array.isArray(selected) ? selected[0] : selected;
+    const name = path.split(/[\\/]/).pop() || path;
+    return { kind: 'tauri-dir', path, name };
+  }
+
   if (!isFileSystemAccessSupported()) {
     throw new Error('File System Access API is not supported in this browser.');
   }
@@ -28,10 +45,16 @@ export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandl
 }
 
 export async function writeBatchToDirectory(
-  dirHandle: FileSystemDirectoryHandle,
+  dirHandle: FileSystemDirectoryHandle | any,
   filename: string,
   content: string
 ): Promise<{ bytesWritten: number; filename: string }> {
+  if (dirHandle.kind === 'tauri-dir') {
+    const filePath = `${dirHandle.path}/${filename}`;
+    await writeTextFile(filePath, content);
+    return { bytesWritten: new Blob([content]).size, filename };
+  }
+
   // @ts-ignore
   const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
   // @ts-ignore
@@ -50,16 +73,25 @@ export interface StreamFileWriter {
 }
 
 export async function createStreamFileWriter(
-  dirHandle: FileSystemDirectoryHandle,
+  dirHandle: FileSystemDirectoryHandle | any,
   filename: string,
   columns: ColumnSpec[],
   format: ExportFormat,
   tableName: string = 'synthetic_records'
 ): Promise<StreamFileWriter> {
-  // @ts-ignore
-  const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
-  // @ts-ignore
-  const writable = await fileHandle.createWritable({ keepExistingData: false });
+  let writable: FileSystemWritableFileStream | null = null;
+  const isTauriDir = dirHandle.kind === 'tauri-dir';
+  const filePath = isTauriDir ? `${dirHandle.path}/${filename}` : filename;
+
+  if (!isTauriDir) {
+    // @ts-ignore
+    const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+    // @ts-ignore
+    writable = await fileHandle.createWritable({ keepExistingData: false });
+  } else {
+    // Overwrite initially
+    await writeTextFile(filePath, "");
+  }
 
   const colNames = columns.map((c) => c.name);
   const cleanTable = tableName.replace(/[^a-zA-Z0-9_]/g, '_') || 'synthetic_records';
@@ -71,7 +103,11 @@ export async function createStreamFileWriter(
     if (buffer.length > 0) {
       const dataToWrite = buffer;
       buffer = '';
-      await writable.write(dataToWrite);
+      if (writable) {
+        await writable.write(dataToWrite);
+      } else {
+        await writeTextFile(filePath, dataToWrite, { append: true });
+      }
       bytesWritten += new Blob([dataToWrite]).size;
     }
   };
@@ -141,7 +177,9 @@ export async function createStreamFileWriter(
         buffer += '\n]';
       }
       await flushBuffer();
-      await writable.close();
+      if (writable) {
+        await writable.close();
+      }
     },
     getBytesWritten: () => bytesWritten + new Blob([buffer]).size,
   };

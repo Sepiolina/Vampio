@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ColumnSpec, ColumnType } from '../types';
 import {
   parseExcelOrCsvFile,
@@ -404,12 +405,29 @@ export const OfflineExtractorModal: React.FC<Props> = ({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-      <div className="relative w-full max-w-4xl bg-secondary border border-border-subtle rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
-        {/* Header with Privacy & Offline Banner */}
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          {/* Animated Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs -z-10"
+          />
+
+          {/* Animated Modal Dialog */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 16 }}
+            transition={{ type: "spring", duration: 0.3, bounce: 0.12 }}
+            className="relative w-full max-w-4xl bg-secondary border border-border-subtle rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
+          >
+            {/* Header with Privacy & Offline Banner */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-subtle bg-secondary/80 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-accent/15 text-accent border border-accent/30 shadow-xs">
@@ -1404,7 +1422,9 @@ export const OfflineExtractorModal: React.FC<Props> = ({
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
-  );
+  )}
+</AnimatePresence>
+);
 };

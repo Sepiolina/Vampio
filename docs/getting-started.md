@@ -9,26 +9,22 @@ This guide walks you through launching VAMPIO, configuring synthetic data schema
 ### Prerequisites
 - Node.js (v18+)
 - npm or bun
+- **Rust Toolchain** (For native desktop compilation)
 
 ### Setup Commands
 ```bash
-# Clone or open the repository
+# Install dependencies
 npm install
 
-# Run the development server
+# Run the web development server (browser-based)
 npm run dev
 
-# Run TypeScript lint check
-npm run lint
+# Run the native desktop development shell (Tauri)
+npm run tauri:dev
 
-# Run unit and integration tests
-npm run test
-
-# Production build
-npm run build
+# Build the desktop installers for release (Windows/macOS/Linux)
+npm run tauri:build
 ```
-
-The application will bind to `http://localhost:3000` (or `0.0.0.0:3000` in containerized environments).
 
 ---
 
@@ -54,7 +50,7 @@ Click the **Presets** button in the header navigation to load pre-configured dom
 ### 2. Drag-and-Drop Excel / CSV Schema Extraction
 To generate synthetic data matching an existing real-world spreadsheet:
 1. Drag any `.xlsx`, `.xls`, or `.csv` file directly onto the **Field Architecture** panel or empty dropzone.
-2. VAMPIO immediately parses the spreadsheet in browser memory using SheetJS.
+2. VAMPIO immediately parses the spreadsheet in memory using SheetJS.
 3. Review detected fields, inferred data types, categorical enums, regex patterns, and null ratios.
 4. Click **Apply Extracted Schema** (choose either *Replace Schema* or *Append to Current*).
 
@@ -76,5 +72,5 @@ Open the **Generation Deck** in the bottom bar or right sidebar:
   - **JSON**: Formatted JSON array of record objects.
   - **SQL**: Database DDL (`CREATE TABLE`) followed by batch `INSERT INTO` statements.
 - **Destination**:
-  - Direct browser download (`.csv`, `.json`, `.sql`).
-  - **Save to Local Folder**: Uses the browser's native File System Access API to stream chunks directly to disk.
+  - Direct download (`.csv`, `.json`, `.sql`).
+  - **Save to Local Folder**: Uses Tauri's native File System APIs (on desktop) or the Web File System Access API (on browser) to stream chunks directly to disk with zero cloud uploads.
