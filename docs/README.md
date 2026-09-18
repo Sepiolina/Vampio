@@ -1,4 +1,5 @@
 # VAMPIO Documentation
+[![CI - Lint & Test](https://github.com/Sepiolina/Vampio/actions/workflows/CI.yml/badge.svg)](https://github.com/Sepiolina/Vampio/actions/workflows/CI.yml) [![CD - Build & Release Executables](https://github.com/Sepiolina/Vampio/actions/workflows/CD.yml/badge.svg)](https://github.com/Sepiolina/Vampio/actions/workflows/CD.yml)
 
 Welcome to the **VAMPIO (Synthetic Data Generator & Offline Schema Architecture Extractor)** documentation.
 
