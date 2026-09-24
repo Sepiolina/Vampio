@@ -16,7 +16,7 @@ describe('formatDataset', () => {
   ];
 
   it('formats as CSV correctly with header and quoting', () => {
-    const csv = formatDataset(columns, data, 'csv');
+    const csv = formatDataset(columns, data, 'csv') as string;
     const lines = csv.trim().split('\n');
 
     expect(lines[0]).toBe('id,name,score');
@@ -26,7 +26,7 @@ describe('formatDataset', () => {
   });
 
   it('formats as TSV correctly with tabs', () => {
-    const tsv = formatDataset(columns, data, 'tsv');
+    const tsv = formatDataset(columns, data, 'tsv') as string;
     const lines = tsv.trim().split('\n');
 
     expect(lines[0]).toBe('id\tname\tscore');
@@ -35,7 +35,7 @@ describe('formatDataset', () => {
   });
 
   it('formats as JSON array', () => {
-    const jsonStr = formatDataset(columns, data, 'json');
+    const jsonStr = formatDataset(columns, data, 'json') as string;
     const parsed = JSON.parse(jsonStr);
 
     expect(Array.isArray(parsed)).toBe(true);
@@ -46,7 +46,7 @@ describe('formatDataset', () => {
   });
 
   it('formats as JSONL (newline-delimited JSON)', () => {
-    const jsonl = formatDataset(columns, data, 'jsonl');
+    const jsonl = formatDataset(columns, data, 'jsonl') as string;
     const lines = jsonl.trim().split('\n');
 
     expect(lines).toHaveLength(3);
@@ -54,6 +54,19 @@ describe('formatDataset', () => {
     const row2 = JSON.parse(lines[1]);
     expect(row1.name).toBe('Alice Smith');
     expect(row2.name).toBe('Bob Jones, Jr.');
+  });
+
+  it('formats as XML dataset', () => {
+    const xml = formatDataset(columns, data, 'xml') as string;
+    expect(xml).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(xml).toContain('<record>');
+    expect(xml).toContain('<name>Alice Smith</name>');
+  });
+
+  it('formats as Excel workbook binary (Uint8Array)', () => {
+    const xlsx = formatDataset(columns, data, 'xlsx');
+    expect(xlsx instanceof Uint8Array).toBe(true);
+    expect((xlsx as Uint8Array).byteLength).toBeGreaterThan(0);
   });
 
   it('formats as SQL INSERT statements', () => {

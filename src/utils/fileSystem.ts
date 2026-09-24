@@ -1,7 +1,7 @@
 import { ColumnSpec, ExportFormat } from '../types';
 import { isTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { writeTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
+import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
 
 export function isFileSystemAccessSupported(): boolean {
   if (isTauri()) return true;
@@ -47,12 +47,23 @@ export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandl
 export async function writeBatchToDirectory(
   dirHandle: FileSystemDirectoryHandle | any,
   filename: string,
-  content: string
+  content: string | Uint8Array | ArrayBuffer
 ): Promise<{ bytesWritten: number; filename: string }> {
+  const bytes = content instanceof Uint8Array
+    ? content.byteLength
+    : content instanceof ArrayBuffer
+      ? content.byteLength
+      : new Blob([content]).size;
+
   if (dirHandle.kind === 'tauri-dir') {
     const filePath = `${dirHandle.path}/${filename}`;
-    await writeTextFile(filePath, content);
-    return { bytesWritten: new Blob([content]).size, filename };
+    if (typeof content === 'string') {
+      await writeTextFile(filePath, content);
+    } else {
+      const u8 = content instanceof Uint8Array ? content : new Uint8Array(content);
+      await writeFile(filePath, u8);
+    }
+    return { bytesWritten: bytes, filename };
   }
 
   // @ts-ignore
@@ -61,8 +72,29 @@ export async function writeBatchToDirectory(
   const writable = await fileHandle.createWritable({ keepExistingData: false });
   await writable.write(content);
   await writable.close();
-  const bytes = new Blob([content]).size;
   return { bytesWritten: bytes, filename };
+}
+
+/**
+ * Write multiple individual files directly to a selected directory
+ */
+export async function writeMultipleFilesToDirectory(
+  dirHandle: FileSystemDirectoryHandle | any,
+  files: Array<{ filename: string; content: string | Uint8Array }>,
+  onProgress?: (writtenCount: number, totalCount: number) => void
+): Promise<{ totalBytes: number; fileCount: number }> {
+  let totalBytes = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    const res = await writeBatchToDirectory(dirHandle, item.filename, item.content);
+    totalBytes += res.bytesWritten;
+    if (onProgress) {
+      onProgress(i + 1, files.length);
+    }
+  }
+
+  return { totalBytes, fileCount: files.length };
 }
 
 export interface StreamFileWriter {
@@ -119,6 +151,8 @@ export async function createStreamFileWriter(
     buffer += colNames.join('\t') + '\n';
   } else if (format === 'json') {
     buffer += '[\n';
+  } else if (format === 'xml') {
+    buffer += `<?xml version="1.0" encoding="UTF-8"?>\n<dataset table="${cleanTable}">\n`;
   }
 
   return {
@@ -134,6 +168,17 @@ export async function createStreamFileWriter(
         }).join('\t') + '\n';
       } else if (format === 'jsonl') {
         rowStr = JSON.stringify(row) + '\n';
+      } else if (format === 'txt') {
+        const parts = colNames.map((n) => `${n}=${row[n] ?? ''}`);
+        rowStr = parts.join(' | ') + '\n';
+      } else if (format === 'xml') {
+        rowStr = '  <record>\n';
+        for (const col of colNames) {
+          const val = row[col];
+          const valStr = val === null || val === undefined ? '' : String(val);
+          rowStr += `    <${col}>${valStr}</${col}>\n`;
+        }
+        rowStr += '  </record>\n';
       } else if (format === 'sql') {
         const values = colNames.map((c) => {
           const val = row[c];
@@ -175,6 +220,8 @@ export async function createStreamFileWriter(
       }
       if (format === 'json') {
         buffer += '\n]';
+      } else if (format === 'xml') {
+        buffer += '</dataset>\n';
       }
       await flushBuffer();
       if (writable) {
@@ -182,6 +229,78 @@ export async function createStreamFileWriter(
       }
     },
     getBytesWritten: () => bytesWritten + new Blob([buffer]).size,
+  };
+}
+
+export interface MultiFileStreamWriter {
+  writeRow: (row: Record<string, unknown>, rowIndex?: number) => Promise<void>;
+  flush: () => Promise<void>;
+  close: () => Promise<void>;
+  getBytesWritten: () => number;
+  getFilesCount: () => number;
+}
+
+/**
+ * Stream writer for Multi-File output (e.g. 1 file per row or N rows per file)
+ */
+export async function createMultiFileStreamWriter(
+  dirHandle: FileSystemDirectoryHandle | any,
+  filenameTemplate: string,
+  columns: ColumnSpec[],
+  format: ExportFormat,
+  rowsPerFile: number = 1,
+  tableName: string = 'synthetic_records'
+): Promise<MultiFileStreamWriter> {
+  let fileIndex = 0;
+  let currentFileRows: Record<string, unknown>[] = [];
+  let totalBytesWritten = 0;
+
+  const flushCurrentFile = async () => {
+    if (currentFileRows.length === 0) return;
+    fileIndex += 1;
+    const numStr = String(fileIndex).padStart(6, '0');
+    const outFilename = filenameTemplate
+      .replace('{index}', numStr)
+      .replace('{filename}', tableName);
+
+    // Format rows
+    let content: string | Uint8Array;
+    if (currentFileRows.length === 1 && format === 'json') {
+      content = JSON.stringify(currentFileRows[0], null, 2);
+    } else if (currentFileRows.length === 1 && format === 'txt') {
+      const colNames = columns.map((c) => c.name);
+      content = colNames.map((c) => `${c}: ${currentFileRows[0][c] ?? ''}`).join('\n');
+    } else {
+      const colNames = columns.map((c) => c.name);
+      if (format === 'csv') {
+        const header = colNames.map(escapeCsv).join(',');
+        const lines = currentFileRows.map((r) => colNames.map((n) => escapeCsv(r[n])).join(','));
+        content = [header, ...lines].join('\n');
+      } else {
+        content = currentFileRows.map((r) => JSON.stringify(r)).join('\n');
+      }
+    }
+
+    const res = await writeBatchToDirectory(dirHandle, outFilename, content);
+    totalBytesWritten += res.bytesWritten;
+    currentFileRows = [];
+  };
+
+  return {
+    writeRow: async (row: Record<string, unknown>) => {
+      currentFileRows.push(row);
+      if (currentFileRows.length >= rowsPerFile) {
+        await flushCurrentFile();
+      }
+    },
+    flush: async () => {
+      await flushCurrentFile();
+    },
+    close: async () => {
+      await flushCurrentFile();
+    },
+    getBytesWritten: () => totalBytesWritten,
+    getFilesCount: () => fileIndex,
   };
 }
 

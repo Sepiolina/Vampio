@@ -1,4 +1,4 @@
-export type ColumnType =
+export type StandardColumnType =
   | 'String'
   | 'Int'
   | 'Float'
@@ -10,7 +10,10 @@ export type ColumnType =
   | 'Sequence'
   | 'Blob/Hex'
   | 'Calculation'
-  | 'Entity';
+  | 'Entity'
+  | 'REST_API';
+
+export type ColumnType = StandardColumnType | `custom:${string}` | (string & {});
 
 export type EntitySubtype =
   | 'first_name'
@@ -46,6 +49,7 @@ export interface ColumnSpec {
   dependencyCases?: DependencyCase[];
   fallbackAction?: 'normal' | 'skip' | 'set_value';
   fallbackValue?: string;
+  customTypeId?: string;
   notes?: string;
 }
 
@@ -61,9 +65,43 @@ export type ThemeId =
   | 'theme-kiwi'
   | 'theme-neon';
 
-export type ExportFormat = 'csv' | 'json' | 'jsonl' | 'sql' | 'tsv';
+export type ExportFormat = 'csv' | 'json' | 'jsonl' | 'sql' | 'tsv' | 'xlsx' | 'xls' | 'xml' | 'txt';
 
 export type OutputDestination = 'download' | 'folder';
+
+export type OutputStrategy = 'single' | 'multi_file' | 'append_existing';
+
+export interface MultiFileConfig {
+  enabled: boolean;
+  rowsPerFile: number; // e.g. 1 for 1 file per row, or 10, 100
+  filenamePattern: string; // e.g. "{filename}_{index}.{ext}"
+  packageAsZip: boolean;
+}
+
+export interface AppendConfig {
+  autoContinueSequence: boolean;
+  manualStartOffset?: number;
+  skipDuplicateHeaders: boolean;
+  excelSheetMode: 'active_sheet' | 'new_sheet';
+  newSheetName: string;
+  targetSheetName?: string;
+  saveMode: 'overwrite' | 'suffix';
+  suffix: string;
+}
+
+export interface ImportedFileContext {
+  filename: string;
+  format: ExportFormat | string;
+  totalRows: number;
+  startingRowNumber: number; // e.g. totalRows + 1
+  headers: string[];
+  rawWorkbook?: any; // XLSX workbook object for direct sheet appending
+  rawFile?: File;
+  rawRows?: any[][];
+  rawContent?: string;
+  targetSheetName?: string;
+  sheetNames?: string[];
+}
 
 export interface GeneratorStats {
   rowsGenerated: number;
@@ -71,6 +109,7 @@ export interface GeneratorStats {
   elapsedSeconds: number;
   fileSizeBytes: number;
   isGenerating: boolean;
+  filesGenerated?: number;
 }
 
 export interface PresetSchema {

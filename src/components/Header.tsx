@@ -8,15 +8,17 @@ import {
   Columns, 
   Table, 
   Split, 
-  Sliders,
   Radio,
   RefreshCw,
   FileSpreadsheet,
   Sun,
   Moon
 } from 'lucide-react';
-import { ThemeId } from '../types';
+import { ThemeId, ColumnSpec, ExportFormat } from '../types';
 import { VampireSquidLogo } from './VampireSquidLogo';
+import { HeaderMenus } from './HeaderMenus';
+import { AnimatedTabs } from './AnimatedTabs';
+import { useI18n, LanguageSelectDropdown } from '../i18n';
 
 export type WorkspaceTab = 'schema' | 'preview' | 'split';
 
@@ -51,14 +53,28 @@ interface Props {
   totalColumns: number;
   previewRowCount: number;
   tableName: string;
+  setTableName: (name: string) => void;
+  columns: ColumnSpec[];
+  setColumns: (cols: ColumnSpec[]) => void;
+  format: ExportFormat;
+  setFormat: (fmt: ExportFormat) => void;
+  count: number;
+  setCount: (c: number) => void;
+  intervalMs: number;
+  setIntervalMs: (ms: number) => void;
+  selectedFolderName: string | null;
+  onSelectFolder: () => void;
+  onClearFolder: () => void;
+  onImportSchema: (cols: ColumnSpec[], tableName?: string) => void;
   onOpenPresets: () => void;
   onOpenOfflineExtractor: () => void;
-  isSidebarOpen: boolean;
-  onToggleSidebar: () => void;
+  onOpenFolderMonitor: () => void;
+  onOpenRestApiModal?: () => void;
   isStreaming: boolean;
   isGeneratingBatch: boolean;
   theme: ThemeId;
   setTheme: (t: ThemeId) => void;
+  setStatusMessage: (msg: string) => void;
 }
 
 export const Header: React.FC<Props> = ({
@@ -67,15 +83,30 @@ export const Header: React.FC<Props> = ({
   totalColumns,
   previewRowCount,
   tableName,
+  setTableName,
+  columns,
+  setColumns,
+  format,
+  setFormat,
+  count,
+  setCount,
+  intervalMs,
+  setIntervalMs,
+  selectedFolderName,
+  onSelectFolder,
+  onClearFolder,
+  onImportSchema,
   onOpenPresets,
   onOpenOfflineExtractor,
-  isSidebarOpen,
-  onToggleSidebar,
+  onOpenFolderMonitor,
+  onOpenRestApiModal,
   isStreaming,
   isGeneratingBatch,
   theme,
   setTheme,
+  setStatusMessage
 }) => {
+  const { t } = useI18n();
   const [isThemeOpen, setIsThemeOpen] = useState(false);
   const themeDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -105,157 +136,113 @@ export const Header: React.FC<Props> = ({
   const currentThemeMeta = THEME_OPTIONS.find((t) => t.id === theme) || THEME_OPTIONS[0];
 
   return (
-    <header className="flex items-center justify-between px-2 sm:px-4 py-2 border-b border-border-subtle bg-secondary z-30 flex-wrap gap-2 md:gap-3 shadow-xs">
-      {/* Left: Brand Identity & Presets */}
-      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 order-1 md:order-none">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-accent/10 text-accent border border-accent/20 flex items-center justify-center p-1 shadow-xs transition hover:border-accent/40">
+    <header className="relative flex items-center justify-between px-3 sm:px-4 h-11 min-h-[44px] max-h-[44px] border-b border-border-subtle bg-secondary z-40 select-none gap-2 md:gap-3 shadow-2xs">
+      {/* Left: Brand Identity & Menus (Files, Settings, Other) */}
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        <div className="group flex items-center cursor-default py-0.5" title="VAMPIO">
+          <div className="h-6 w-6 rounded-md bg-accent/10 text-accent border border-accent/20 flex items-center justify-center p-0.5 transition-colors group-hover:border-accent/40">
             <VampireSquidLogo className="w-full h-full object-contain" />
           </div>
-          <span className="text-sm font-black tracking-tight text-content">
+          <span className="max-w-0 opacity-0 overflow-hidden group-hover:max-w-[70px] group-hover:opacity-100 group-hover:ml-1.5 transition-all duration-200 ease-out text-xs font-bold tracking-wider text-content uppercase font-mono whitespace-nowrap">
             VAMPIO
           </span>
         </div>
 
-        {/* Active Schema Table Badge */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-primary border border-border-subtle text-xs font-mono text-content-muted">
-          <span className="text-[10px] uppercase font-bold text-accent">Table:</span>
-          <span className="text-content font-semibold truncate max-w-[130px]">{tableName}</span>
-        </div>
+        <div className="h-3.5 w-px bg-border-subtle/80 mx-0.5 hidden sm:block" />
 
-        {/* Presets Button */}
-        <button
-          type="button"
-          onClick={onOpenPresets}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary hover:bg-tertiary border border-border-subtle text-xs font-semibold text-content transition-all shadow-xs"
-          title="Browse domain schema blueprints"
-        >
-          <Layers size={13} className="text-accent" />
-          <span>Presets</span>
-        </button>
-
-        {/* Offline Schema Extractor Button */}
-        <button
-          type="button"
-          onClick={onOpenOfflineExtractor}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary hover:bg-tertiary border border-border-subtle hover:border-accent/40 text-xs font-semibold text-content transition-all shadow-xs"
-          title="Import Excel / CSV offline to extract schema pattern architecture (No AI/APIs)"
-        >
-          <FileSpreadsheet size={13} className="text-emerald-400" />
-          <span className="hidden md:inline">Extract Schema</span>
-          <span className="md:hidden">Import</span>
-          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-            Offline
-          </span>
-        </button>
+        {/* Pro Menu Bar: Files | Settings | Other */}
+        <HeaderMenus
+          columns={columns}
+          setColumns={setColumns}
+          tableName={tableName}
+          setTableName={setTableName}
+          format={format}
+          setFormat={setFormat}
+          count={count}
+          setCount={setCount}
+          intervalMs={intervalMs}
+          setIntervalMs={setIntervalMs}
+          selectedFolderName={selectedFolderName}
+          onSelectFolder={onSelectFolder}
+          onClearFolder={onClearFolder}
+          onImportSchema={onImportSchema}
+          onOpenPresets={onOpenPresets}
+          onOpenOfflineExtractor={onOpenOfflineExtractor}
+          onOpenFolderMonitor={onOpenFolderMonitor}
+          onOpenRestApi={onOpenRestApiModal}
+          setStatusMessage={setStatusMessage}
+        />
       </div>
 
       {/* Center: Toggleable Workspace Tab Navigation */}
-      <div className="relative flex items-center bg-primary border border-border-subtle p-0.5 rounded-xl shadow-inner order-3 md:order-none w-full max-w-[340px] md:max-w-none md:w-auto justify-center mx-auto md:mx-0 shrink-0 mt-1 md:mt-0">
-        <button
-          type="button"
-          onClick={() => setActiveTab('schema')}
-          className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 md:py-1 text-xs font-semibold rounded-lg transition-colors z-10 flex-1 md:flex-initial whitespace-nowrap ${
-            activeTab === 'schema'
-              ? 'text-white'
-              : 'text-content-muted hover:text-content hover:bg-tertiary/20'
-          }`}
-        >
-          {activeTab === 'schema' && (
-            <motion.div
-              layoutId="activeWorkspaceTabPill"
-              className="absolute inset-0 bg-accent rounded-lg shadow-xs -z-10"
-              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-            />
-          )}
-          <Columns size={12} className="relative z-10 flex-shrink-0" />
-          <span className="relative z-10">Schema</span>
-          <span className={`relative z-10 text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors flex-shrink-0 ${
-            activeTab === 'schema' ? 'bg-white/20 text-white' : 'bg-secondary text-content-muted'
-          }`}>
-            {totalColumns}
-          </span>
-        </button>
+      <AnimatedTabs
+        tabs={[
+          {
+            id: 'schema',
+            label: t('header.schemaBuilder'),
+            icon: <Columns size={12} />,
+            badge: totalColumns,
+            title: `${t('header.schemaBuilder')} (${totalColumns} ${t('common.columns')})`,
+          },
+          {
+            id: 'preview',
+            label: t('header.livePreview'),
+            icon: <Table size={12} />,
+            badge: previewRowCount > 0 ? previewRowCount : undefined,
+            title: `${t('header.livePreview')} (${previewRowCount} ${t('common.rows')})`,
+          },
+          {
+            id: 'split',
+            label: t('header.splitWorkspace'),
+            icon: <Split size={12} />,
+            title: `${t('header.splitWorkspace')} (Side by side / Stacked)`,
+          },
+        ]}
+        activeTab={activeTab}
+        onChange={(tabId) => setActiveTab(tabId as WorkspaceTab)}
+        layoutId="workspace-main-tabs"
+        variant="pill"
+        size="xs"
+        className="mx-1 sm:mx-2"
+      />
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('preview')}
-          className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 md:py-1 text-xs font-semibold rounded-lg transition-colors z-10 flex-1 md:flex-initial whitespace-nowrap ${
-            activeTab === 'preview'
-              ? 'text-white'
-              : 'text-content-muted hover:text-content hover:bg-tertiary/20'
-          }`}
-        >
-          {activeTab === 'preview' && (
-            <motion.div
-              layoutId="activeWorkspaceTabPill"
-              className="absolute inset-0 bg-accent rounded-lg shadow-xs -z-10"
-              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-            />
-          )}
-          <Table size={12} className="relative z-10 flex-shrink-0" />
-          <span className="relative z-10">Preview</span>
-          {previewRowCount > 0 && (
-            <span className={`relative z-10 text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors flex-shrink-0 ${
-              activeTab === 'preview' ? 'bg-white/20 text-white' : 'bg-secondary text-content-muted'
-            }`}>
-              {previewRowCount}
-            </span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('split')}
-          className={`relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 md:py-1 text-xs font-semibold rounded-lg transition-colors z-10 flex-1 md:flex-initial whitespace-nowrap ${
-            activeTab === 'split'
-              ? 'text-white'
-              : 'text-content-muted hover:text-content hover:bg-tertiary/20'
-          }`}
-          title="Split View (Side by Side or Stacked)"
-        >
-          {activeTab === 'split' && (
-            <motion.div
-              layoutId="activeWorkspaceTabPill"
-              className="absolute inset-0 bg-accent rounded-lg shadow-xs -z-10"
-              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-            />
-          )}
-          <Split size={12} className="relative z-10 flex-shrink-0" />
-          <span className="relative z-10">
-            Split<span className="hidden sm:inline"> View</span>
-          </span>
-        </button>
-      </div>
-
-      {/* Right: Streaming Status, Theme Selector & Sidebar Toggle */}
-      <div className="flex items-center gap-2 flex-shrink-0 order-2 md:order-none ml-auto md:ml-0">
+      {/* Right: Status Indicators, Language & Theme */}
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
         {/* Active streaming or batch generation badge */}
         {isStreaming && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold animate-pulse">
-            <Radio size={12} />
-            <span className="hidden sm:inline">Streaming Live</span>
+          <div
+            title={t('header.streamingActive')}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[11px] font-mono font-medium animate-pulse cursor-help"
+          >
+            <Radio size={11} />
+            <span className="hidden sm:inline">Streaming</span>
           </div>
         )}
         {isGeneratingBatch && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono font-bold">
-            <RefreshCw size={12} className="animate-spin" />
+          <div
+            title={t('header.batchSynthesizing')}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[11px] font-mono font-medium cursor-help"
+          >
+            <RefreshCw size={11} className="animate-spin" />
             <span className="hidden sm:inline">Synthesizing</span>
           </div>
         )}
+
+        {/* Language Switcher */}
+        <LanguageSelectDropdown compact />
 
         {/* Theme Dropdown */}
         <div className="relative" ref={themeDropdownRef}>
           <motion.button
             type="button"
-            whileTap={{ scale: 0.96 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => setIsThemeOpen(!isThemeOpen)}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-medium transition-all shadow-xs ${
+            className={`h-7 flex items-center gap-1.5 px-2 rounded-md border text-xs font-medium transition-colors ${
               isThemeOpen
                 ? 'bg-tertiary border-accent text-content ring-1 ring-accent/30'
-                : 'bg-primary hover:bg-tertiary border-border-subtle text-content'
+                : 'bg-primary/70 hover:bg-tertiary border-border-subtle text-content'
             }`}
-            title={`Current Theme: ${currentThemeMeta.label} (${currentThemeMeta.isLight ? 'Light' : 'Dark'})`}
+            title={`Current Theme: ${currentThemeMeta.label} (${currentThemeMeta.isLight ? t('header.lightMode') : t('header.darkMode')})`}
             aria-label="Theme menu"
           >
             <AnimatePresence mode="wait">
@@ -264,7 +251,7 @@ export const Header: React.FC<Props> = ({
                 initial={{ rotate: -45, scale: 0.7, opacity: 0 }}
                 animate={{ rotate: 0, scale: 1, opacity: 1 }}
                 exit={{ rotate: 45, scale: 0.7, opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.15 }}
                 className="flex items-center justify-center flex-shrink-0"
               >
                 {currentThemeMeta.isLight ? (
@@ -274,15 +261,11 @@ export const Header: React.FC<Props> = ({
                 )}
               </motion.div>
             </AnimatePresence>
-            <motion.span
-              key={currentThemeMeta.accent}
-              initial={{ scale: 0.8 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 500, damping: 25 }}
-              className="w-2.5 h-2.5 rounded-full border border-black/20 shadow-xs flex-shrink-0"
+            <span
+              className="w-2 h-2 rounded-full border border-black/20 flex-shrink-0"
               style={{ backgroundColor: currentThemeMeta.accent }}
             />
-            <span className="hidden sm:inline font-semibold text-[11px] max-w-[85px] truncate">
+            <span className="hidden sm:inline text-[11px] max-w-[75px] truncate text-content-muted">
               {currentThemeMeta.label}
             </span>
             <ChevronDown size={11} className={`text-content-muted transition-transform duration-200 ${isThemeOpen ? 'rotate-180' : ''}`} />
@@ -296,26 +279,27 @@ export const Header: React.FC<Props> = ({
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: -6 }}
                 transition={{ duration: 0.16, ease: "easeOut" }}
-                className="absolute right-0 top-full mt-1.5 w-64 bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 flex flex-col p-2 backdrop-blur-md max-h-[80vh] overflow-y-auto"
+                className="absolute right-0 top-full mt-1.5 w-64 min-w-[256px] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 flex flex-col p-2 backdrop-blur-md max-h-[80vh] overflow-y-auto"
               >
                 {/* Light Themes Section */}
                 <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center gap-1.5 border-b border-border-subtle/50 mb-1">
                   <Sun size={11} className="text-amber-500" />
-                  <span>Light Themes (6)</span>
+                  <span>{t('header.lightThemes')}</span>
                 </div>
                 <div className="space-y-0.5 mb-2">
-                  {THEME_OPTIONS.filter((t) => t.isLight).map((t) => {
-                    const isActive = theme === t.id;
+                  {THEME_OPTIONS.filter((t) => t.isLight).map((themeItem) => {
+                    const isActive = theme === themeItem.id;
                     return (
                       <motion.button
-                        key={t.id}
+                        key={themeItem.id}
                         type="button"
                         whileHover={{ x: 2 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => {
-                          setTheme(t.id);
+                          setTheme(themeItem.id);
                           setIsThemeOpen(false);
                         }}
+                        title={`Switch to ${themeItem.label} theme`}
                         className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded-lg transition-all text-left ${
                           isActive
                             ? 'bg-accent text-white font-bold shadow-xs'
@@ -326,22 +310,22 @@ export const Header: React.FC<Props> = ({
                           <div className="flex items-center -space-x-1 flex-shrink-0">
                             <span
                               className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
-                              style={{ backgroundColor: t.bg }}
+                              style={{ backgroundColor: themeItem.bg }}
                             />
                             <span
                               className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
-                              style={{ backgroundColor: t.card }}
+                              style={{ backgroundColor: themeItem.card }}
                             />
                             <span
                               className="w-3 h-3 rounded-full border border-black/20 shadow-xs"
-                              style={{ backgroundColor: t.accent }}
+                              style={{ backgroundColor: themeItem.accent }}
                             />
                           </div>
                           <div className="min-w-0">
-                            <div className="font-semibold text-xs leading-tight truncate">{t.label}</div>
-                            {t.description && (
+                            <div className="font-semibold text-xs leading-tight truncate">{themeItem.label}</div>
+                            {themeItem.description && (
                               <div className={`text-[10px] leading-tight truncate ${isActive ? 'text-white/80' : 'text-content-muted'}`}>
-                                {t.description}
+                                {themeItem.description}
                               </div>
                             )}
                           </div>
@@ -363,21 +347,22 @@ export const Header: React.FC<Props> = ({
                 {/* Dark Themes Section */}
                 <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center gap-1.5 border-b border-border-subtle/50 mb-1 pt-1 border-t">
                   <Moon size={11} className="text-accent" />
-                  <span>Dark Themes (4)</span>
+                  <span>{t('header.darkThemes')}</span>
                 </div>
                 <div className="space-y-0.5">
-                  {THEME_OPTIONS.filter((t) => !t.isLight).map((t) => {
-                    const isActive = theme === t.id;
+                  {THEME_OPTIONS.filter((t) => !t.isLight).map((themeItem) => {
+                    const isActive = theme === themeItem.id;
                     return (
                       <motion.button
-                        key={t.id}
+                        key={themeItem.id}
                         type="button"
                         whileHover={{ x: 2 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => {
-                          setTheme(t.id);
+                          setTheme(themeItem.id);
                           setIsThemeOpen(false);
                         }}
+                        title={`Switch to ${themeItem.label} theme`}
                         className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded-lg transition-all text-left ${
                           isActive
                             ? 'bg-accent text-white font-bold shadow-xs'
@@ -388,22 +373,22 @@ export const Header: React.FC<Props> = ({
                           <div className="flex items-center -space-x-1 flex-shrink-0">
                             <span
                               className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
-                              style={{ backgroundColor: t.bg }}
+                              style={{ backgroundColor: themeItem.bg }}
                             />
                             <span
                               className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
-                              style={{ backgroundColor: t.card }}
+                              style={{ backgroundColor: themeItem.card }}
                             />
                             <span
                               className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
-                              style={{ backgroundColor: t.accent }}
+                              style={{ backgroundColor: themeItem.accent }}
                             />
                           </div>
                           <div className="min-w-0">
-                            <div className="font-semibold text-xs leading-tight truncate">{t.label}</div>
-                            {t.description && (
+                            <div className="font-semibold text-xs leading-tight truncate">{themeItem.label}</div>
+                            {themeItem.description && (
                               <div className={`text-[10px] leading-tight truncate ${isActive ? 'text-white/80' : 'text-content-muted'}`}>
-                                {t.description}
+                                {themeItem.description}
                               </div>
                             )}
                           </div>
@@ -425,21 +410,6 @@ export const Header: React.FC<Props> = ({
             )}
           </AnimatePresence>
         </div>
-
-        {/* Sidebar Toggle Button */}
-        <button
-          type="button"
-          onClick={onToggleSidebar}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all shadow-xs ${
-            isSidebarOpen
-              ? 'bg-accent text-white border-accent'
-              : 'bg-primary hover:bg-tertiary border-border-subtle text-content'
-          }`}
-          title={isSidebarOpen ? 'Hide Generation Deck' : 'Show Generation Deck'}
-        >
-          <Sliders size={13} />
-          <span className="hidden sm:inline">Deck</span>
-        </button>
       </div>
     </header>
   );

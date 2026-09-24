@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ColumnSpec, ColumnType } from '../types';
+import { ColumnSpec, ColumnType, ExportFormat, ImportedFileContext } from '../types';
+import { AnimatedTabs } from './AnimatedTabs';
 import {
   parseExcelOrCsvFile,
   parsePastedDelimitedText,
@@ -39,7 +40,12 @@ import {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onApplySchema: (cols: ColumnSpec[], tableName: string, append: boolean) => void;
+  onApplySchema: (
+    cols: ColumnSpec[],
+    tableName: string,
+    append: boolean,
+    importContext?: ImportedFileContext
+  ) => void;
   currentColumnsCount: number;
   initialFile?: File | null;
   onClearInitialFile?: () => void;
@@ -401,7 +407,24 @@ export const OfflineExtractorModal: React.FC<Props> = ({
       notes: c.notes,
     }));
 
-    onApplySchema(specs, targetTableName, applyMode === 'append');
+    const totalRows = currentSheet?.totalRows || 0;
+    const importContext: ImportedFileContext | undefined = workbook
+      ? {
+          filename: workbook.filename,
+          format: (workbook.fileFormat as ExportFormat) || 'csv',
+          totalRows,
+          startingRowNumber: totalRows + 1,
+          headers: currentSheet?.headers || [],
+          rawWorkbook: workbook.rawWorkbook,
+          rawFile: workbook.rawFile,
+          rawRows: currentSheet?.rows || [],
+          rawContent: workbook.rawContent,
+          targetSheetName: activeSheetName,
+          sheetNames: workbook.sheetNames,
+        }
+      : undefined;
+
+    onApplySchema(specs, targetTableName, applyMode === 'append', importContext);
     onClose();
   };
 
@@ -425,7 +448,7 @@ export const OfflineExtractorModal: React.FC<Props> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 16 }}
             transition={{ type: "spring", duration: 0.3, bounce: 0.12 }}
-            className="relative w-full max-w-4xl bg-secondary border border-border-subtle rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
+            className="relative w-full max-w-4xl bg-secondary border border-border-subtle rounded-2xl shadow-2xl flex flex-col h-[90vh] max-h-[90vh] overflow-hidden"
           >
             {/* Header with Privacy & Offline Banner */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-subtle bg-secondary/80 flex-shrink-0">
@@ -460,46 +483,23 @@ export const OfflineExtractorModal: React.FC<Props> = ({
         </div>
 
         {/* Step Indicator Tabs */}
-        <div className="flex items-center px-5 py-2 border-b border-border-subtle/60 bg-primary/40 text-xs font-semibold text-content-muted gap-4">
-          <button
-            type="button"
-            onClick={() => setStep(1)}
-            className={`flex items-center gap-1.5 pb-0.5 border-b-2 transition ${
-              step === 1
-                ? 'border-accent text-accent font-bold'
-                : 'border-transparent hover:text-content'
-            }`}
-          >
-            <span className="w-4 h-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px]">
-              1
-            </span>
-            <span>Import &amp; Focus Filter</span>
-          </button>
-
-          <span className="text-content-muted/40">•</span>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (extractedColumns.length > 0) setStep(2);
-            }}
-            disabled={extractedColumns.length === 0}
-            className={`flex items-center gap-1.5 pb-0.5 border-b-2 transition ${
-              step === 2
-                ? 'border-accent text-accent font-bold'
-                : extractedColumns.length > 0
-                ? 'border-transparent hover:text-content'
-                : 'border-transparent opacity-40 cursor-not-allowed'
-            }`}
-          >
-            <span className="w-4 h-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px]">
-              2
-            </span>
-            <span>
-              Review Extracted Architecture{' '}
-              {extractedColumns.length > 0 && `(${extractedColumns.length})`}
-            </span>
-          </button>
+        <div className="px-5 py-2 border-b border-border-subtle/60 bg-primary/40 flex items-center">
+          <AnimatedTabs
+            tabs={[
+              { id: '1', label: '1. Import & Focus Filter' },
+              {
+                id: '2',
+                label: '2. Review Extracted Architecture',
+                badge: extractedColumns.length > 0 ? extractedColumns.length : undefined,
+                disabled: extractedColumns.length === 0,
+              },
+            ]}
+            activeTab={String(step)}
+            onChange={(tabId) => setStep(Number(tabId) as 1 | 2)}
+            layoutId="offline-extractor-steps"
+            variant="underline"
+            size="sm"
+          />
         </div>
 
         {/* Error Notification if any */}
@@ -541,7 +541,7 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".xlsx,.xls,.csv"
+                        accept=".xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.xml,.txt"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
@@ -552,10 +552,10 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                         <Upload size={28} />
                       </div>
                       <h3 className="text-sm font-bold text-content">
-                        {isLoadingFile ? 'Parsing File Locally...' : 'Drop Excel (.xlsx, .xls) or CSV file here'}
+                        {isLoadingFile ? 'Parsing File Locally...' : 'Drop Excel (.xlsx, .xls), CSV, TSV, JSON, XML, or TXT file here'}
                       </h3>
                       <p className="text-xs text-content-muted mt-1 max-w-md">
-                        Supports large spreadsheets. All parsing and schema extraction runs 100% in your browser memory without uploading any data to servers.
+                        Supports large spreadsheets, JSON lines &amp; logs. All parsing and schema extraction runs 100% in browser memory with zero network calls.
                       </p>
 
                       <div className="mt-4 flex items-center gap-2">
@@ -698,51 +698,21 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                     </div>
 
                     {/* Quick Row Presets */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setRowFocusInput('first 100')}
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
-                          rowFocusInput === 'first 100'
-                            ? 'bg-accent/20 border-accent/40 text-accent'
-                            : 'bg-secondary border-border-subtle text-content-muted hover:text-content'
-                        }`}
-                      >
-                        Top 100
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRowFocusInput('first 500')}
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
-                          rowFocusInput === 'first 500' || rowFocusInput === '1-500'
-                            ? 'bg-accent/20 border-accent/40 text-accent'
-                            : 'bg-secondary border-border-subtle text-content-muted hover:text-content'
-                        }`}
-                      >
-                        Top 500
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRowFocusInput('first 1000')}
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
-                          rowFocusInput === 'first 1000'
-                            ? 'bg-accent/20 border-accent/40 text-accent'
-                            : 'bg-secondary border-border-subtle text-content-muted hover:text-content'
-                        }`}
-                      >
-                        Top 1,000
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRowFocusInput('all')}
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
-                          rowFocusInput === 'all'
-                            ? 'bg-accent/20 border-accent/40 text-accent'
-                            : 'bg-secondary border-border-subtle text-content-muted hover:text-content'
-                        }`}
-                      >
-                        All ({currentSheet.totalRows.toLocaleString()})
-                      </button>
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-content-muted">Quick Scope</span>
+                      <AnimatedTabs
+                        tabs={[
+                          { id: 'first 100', label: 'Top 100' },
+                          { id: 'first 500', label: 'Top 500' },
+                          { id: 'first 1000', label: 'Top 1k' },
+                          { id: 'all', label: `All (${currentSheet.totalRows.toLocaleString()})` },
+                        ]}
+                        activeTab={rowFocusInput === '1-500' ? 'first 500' : rowFocusInput}
+                        onChange={(val) => setRowFocusInput(val)}
+                        layoutId="extractor-row-focus-tabs"
+                        variant="chip"
+                        size="xs"
+                      />
                     </div>
 
                     {/* Active Row Scope Indicator */}
@@ -901,9 +871,9 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                     {/* Realistic Option */}
                     <div
                       onClick={() => setExtractionMode('realistic')}
-                      className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-all select-none ${
                         extractionMode === 'realistic'
-                          ? 'bg-secondary border-accent shadow-sm'
+                          ? 'border-accent ring-2 ring-accent/30 shadow-xs bg-secondary'
                           : 'bg-secondary/40 border-border-subtle hover:border-accent/40'
                       }`}
                     >
@@ -912,13 +882,11 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                           <Unlock size={14} className="text-sky-400" />
                           Realistic Profile
                         </span>
-                        <input
-                          type="radio"
-                          name="extractionMode"
-                          checked={extractionMode === 'realistic'}
-                          onChange={() => setExtractionMode('realistic')}
-                          className="accent-accent cursor-pointer"
-                        />
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                          extractionMode === 'realistic' ? 'border-accent bg-accent text-white font-bold' : 'border-border-subtle bg-primary/40'
+                        }`}>
+                          {extractionMode === 'realistic' && <Check size={10} />}
+                        </div>
                       </div>
                       <p className="text-[11px] text-content-muted mt-1.5 leading-relaxed">
                         Retains real observed categorical distributions (e.g. <code>Active:60, Pending:30</code>), exact numeric min/max boundaries, and real date formats. Ideal when data is non-sensitive or for development mirroring.
@@ -928,9 +896,9 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                     {/* Mock / Anonymized Option */}
                     <div
                       onClick={() => setExtractionMode('mock')}
-                      className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-all select-none ${
                         extractionMode === 'mock'
-                          ? 'bg-secondary border-accent shadow-sm'
+                          ? 'border-accent ring-2 ring-accent/30 shadow-xs bg-secondary'
                           : 'bg-secondary/40 border-border-subtle hover:border-accent/40'
                       }`}
                     >
@@ -939,13 +907,11 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                           <Lock size={14} className="text-emerald-400" />
                           Mock Profile (PII &amp; Sensitive Data Safe)
                         </span>
-                        <input
-                          type="radio"
-                          name="extractionMode"
-                          checked={extractionMode === 'mock'}
-                          onChange={() => setExtractionMode('mock')}
-                          className="accent-accent cursor-pointer"
-                        />
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                          extractionMode === 'mock' ? 'border-accent bg-accent text-white font-bold' : 'border-border-subtle bg-primary/40'
+                        }`}>
+                          {extractionMode === 'mock' && <Check size={10} />}
+                        </div>
                       </div>
                       <p className="text-[11px] text-content-muted mt-1.5 leading-relaxed">
                         Sanitizes personal identifiers. Converts real customer names, emails, and phone numbers into synthetic random generators. Masks secrets into UUIDs and rounds financial numbers.
@@ -973,9 +939,9 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                     {/* Smart Strategy */}
                     <div
                       onClick={() => setPatternPreference('smart')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                      className={`p-3 rounded-xl border cursor-pointer transition-all select-none ${
                         patternPreference === 'smart'
-                          ? 'bg-secondary border-accent shadow-sm'
+                          ? 'border-accent ring-2 ring-accent/30 shadow-xs bg-secondary'
                           : 'bg-secondary/40 border-border-subtle hover:border-accent/40'
                       }`}
                     >
@@ -984,13 +950,11 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                           <Sparkles size={13} className="text-amber-400" />
                           Smart Criteria
                         </span>
-                        <input
-                          type="radio"
-                          name="patternPreference"
-                          checked={patternPreference === 'smart'}
-                          onChange={() => setPatternPreference('smart')}
-                          className="accent-accent cursor-pointer"
-                        />
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                          patternPreference === 'smart' ? 'border-accent bg-accent text-white font-bold' : 'border-border-subtle bg-primary/40'
+                        }`}>
+                          {patternPreference === 'smart' && <Check size={10} />}
+                        </div>
                       </div>
                       <p className="text-[10px] text-content-muted mt-1 leading-relaxed">
                         Distinguishes alphanumeric tokens/codes/SKUs into <strong>RegEx</strong>, and natural word categories into <strong>Set/Enum</strong>.
@@ -1000,9 +964,9 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                     {/* Prefer RegEx */}
                     <div
                       onClick={() => setPatternPreference('prefer_regex')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                      className={`p-3 rounded-xl border cursor-pointer transition-all select-none ${
                         patternPreference === 'prefer_regex'
-                          ? 'bg-secondary border-accent shadow-sm'
+                          ? 'border-accent ring-2 ring-accent/30 shadow-xs bg-secondary'
                           : 'bg-secondary/40 border-border-subtle hover:border-accent/40'
                       }`}
                     >
@@ -1011,13 +975,11 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                           <Code2 size={13} className="text-emerald-400" />
                           Prefer RegEx
                         </span>
-                        <input
-                          type="radio"
-                          name="patternPreference"
-                          checked={patternPreference === 'prefer_regex'}
-                          onChange={() => setPatternPreference('prefer_regex')}
-                          className="accent-accent cursor-pointer"
-                        />
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                          patternPreference === 'prefer_regex' ? 'border-accent bg-accent text-white font-bold' : 'border-border-subtle bg-primary/40'
+                        }`}>
+                          {patternPreference === 'prefer_regex' && <Check size={10} />}
+                        </div>
                       </div>
                       <p className="text-[10px] text-content-muted mt-1 leading-relaxed">
                         Synthesizes structural dynamic regex masks whenever codes, prefixes, or alphanumeric formats exist.
@@ -1027,9 +989,9 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                     {/* Prefer Set/Enum */}
                     <div
                       onClick={() => setPatternPreference('prefer_enum')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                      className={`p-3 rounded-xl border cursor-pointer transition-all select-none ${
                         patternPreference === 'prefer_enum'
-                          ? 'bg-secondary border-accent shadow-sm'
+                          ? 'border-accent ring-2 ring-accent/30 shadow-xs bg-secondary'
                           : 'bg-secondary/40 border-border-subtle hover:border-accent/40'
                       }`}
                     >
@@ -1038,13 +1000,11 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                           <ListOrdered size={13} className="text-sky-400" />
                           Prefer Set/Enum
                         </span>
-                        <input
-                          type="radio"
-                          name="patternPreference"
-                          checked={patternPreference === 'prefer_enum'}
-                          onChange={() => setPatternPreference('prefer_enum')}
-                          className="accent-accent cursor-pointer"
-                        />
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                          patternPreference === 'prefer_enum' ? 'border-accent bg-accent text-white font-bold' : 'border-border-subtle bg-primary/40'
+                        }`}>
+                          {patternPreference === 'prefer_enum' && <Check size={10} />}
+                        </div>
                       </div>
                       <p className="text-[10px] text-content-muted mt-1 leading-relaxed">
                         Treats low-cardinality test cases as discrete categorical sets with weighted frequency distributions.
@@ -1121,6 +1081,29 @@ export const OfflineExtractorModal: React.FC<Props> = ({
           {/* STEP 2: REVIEW & EDIT EXTRACTED ARCHITECTURE */}
           {step === 2 && (
             <div className="space-y-4">
+              {/* File Continuation Details Banner */}
+              {currentSheet && (
+                <div className="p-3 rounded-xl bg-accent/10 border border-accent/30 flex items-center justify-between text-xs flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Database size={15} className="text-accent" />
+                    <div>
+                      <span className="font-bold text-content">{workbook?.filename}</span>
+                      <span className="text-content-muted ml-1.5">
+                        ({currentSheet.totalRows.toLocaleString()} existing rows • Format: {workbook?.fileFormat?.toUpperCase() || 'CSV'})
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-accent/20 text-accent font-mono font-bold text-[11px]">
+                      Next Row: #{currentSheet.totalRows + 1}
+                    </span>
+                    <span className="text-[11px] text-content-muted hidden sm:inline">
+                      Auto-increment sequences begin at next continuous index
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Summary Bar */}
               <div className="p-3.5 rounded-xl bg-primary border border-border-subtle flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2.5 flex-wrap">

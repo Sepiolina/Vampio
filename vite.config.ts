@@ -9,6 +9,8 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'fengari': 'fengari-web',
+        'os': path.resolve(__dirname, 'src/polyfills/os.ts'),
       },
     },
     clearScreen: false,

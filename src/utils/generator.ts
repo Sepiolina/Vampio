@@ -1,40 +1,43 @@
 import { ColumnSpec, EntitySubtype } from '../types';
+import { getCustomColumnTypes, getExamplePresetTypes, generateCustomTypeValue, getRegisteredCustomEntities } from './customTypesManager';
+import { getSynchronousRestApiValue, parseRestApiConfig } from './restApiManager';
+import { generateRegexString } from './regexSynthesizer';
 
 // Realistic datasets for Entity generator
-const FIRST_NAMES = [
+export const FIRST_NAMES = [
   'Emma', 'Liam', 'Olivia', 'Noah', 'Ava', 'Ethan', 'Sophia', 'Mason',
   'Isabella', 'William', 'Mia', 'James', 'Charlotte', 'Benjamin', 'Amelia',
   'Lucas', 'Harper', 'Henry', 'Evelyn', 'Alexander', 'Elena', 'Mateo',
   'Aria', 'Sebastian', 'Chloe', 'Jack', 'Layla', 'Daniel', 'Zoe', 'Leo'
 ];
 
-const LAST_NAMES = [
+export const LAST_NAMES = [
   'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller',
   'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez',
   'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin',
   'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez'
 ];
 
-const COMPANIES = [
+export const COMPANIES = [
   'Apex Dynamics', 'Nexus Solutions', 'Vanguard Systems', 'Horizon Global',
   'Stratum Analytics', 'Cipher Labs', 'Aether Corp', 'Prism Cloud',
   'Cobalt Robotics', 'OmniPulse Tech', 'Solstice Media', 'Zenith Logistics'
 ];
 
-const JOB_TITLES = [
+export const JOB_TITLES = [
   'Senior Software Engineer', 'Product Manager', 'Data Scientist',
   'UX/UI Designer', 'DevOps Architect', 'QA Automation Engineer',
   'VP of Engineering', 'Security Analyst', 'Solutions Architect',
   'Machine Learning Specialist', 'Database Administrator', 'Technical Writer'
 ];
 
-const COUNTRIES = [
+export const COUNTRIES = [
   'United States', 'Germany', 'United Kingdom', 'Japan', 'Canada',
   'France', 'Australia', 'Netherlands', 'Singapore', 'Switzerland',
   'Sweden', 'Brazil', 'South Korea', 'India', 'Ireland'
 ];
 
-const CITIES: Record<string, string[]> = {
+export const CITIES: Record<string, string[]> = {
   'United States': ['San Francisco', 'New York', 'Seattle', 'Austin', 'Boston', 'Chicago'],
   'Germany': ['Berlin', 'Munich', 'Frankfurt', 'Hamburg'],
   'United Kingdom': ['London', 'Manchester', 'Edinburgh', 'Bristol'],
@@ -44,7 +47,7 @@ const CITIES: Record<string, string[]> = {
   'Default': ['Metropolis', 'Riverdale', 'Central City', 'Starling City', 'Gotham']
 };
 
-const USER_AGENTS = [
+export const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
   'Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0',
@@ -52,7 +55,7 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.186 Mobile Safari/537.36'
 ];
 
-const EMAIL_DOMAINS = ['gmail.com', 'outlook.com', 'corp-net.io', 'techgroup.com', 'icloud.com', 'proton.me'];
+export const EMAIL_DOMAINS = ['gmail.com', 'outlook.com', 'corp-net.io', 'techgroup.com', 'icloud.com', 'proton.me'];
 
 export class GeneratorEngine {
   private sequenceState: Map<string, number> = new Map();
@@ -231,6 +234,18 @@ export class GeneratorEngine {
   ): unknown {
     const rule = (col.rule || '').trim();
 
+    // Check custom column type registration
+    if (col.type?.startsWith('custom:') || col.type?.startsWith('example:') || col.customTypeId) {
+      const targetId = col.customTypeId || col.type;
+      const customTypes = getCustomColumnTypes();
+      const examplePresets = getExamplePresetTypes();
+      const customType = customTypes.find(t => t.id === targetId || t.name === col.type)
+        || examplePresets.find(t => t.id === targetId || t.name === col.type);
+      if (customType) {
+        return generateCustomTypeValue(customType, rule, { rowIndex, row: rowContext });
+      }
+    }
+
     switch (col.type) {
       case 'Sequence': {
         const key = col.id || col.name;
@@ -316,6 +331,11 @@ export class GeneratorEngine {
 
       case 'Entity': {
         return this.generateEntity(rule);
+      }
+
+      case 'REST_API': {
+        const config = parseRestApiConfig(rule);
+        return getSynchronousRestApiValue(config, { rowIndex, row: rowContext });
       }
 
       default:
@@ -409,117 +429,7 @@ export class GeneratorEngine {
   }
 
   private generateRegexLike(pattern: string): string {
-    if (!pattern) return '';
-    let result = '';
-    let i = 0;
-
-    const parseRepetition = (repStr: string): number => {
-      if (repStr.includes(',')) {
-        const [minStr, maxStr] = repStr.split(',').map((s) => parseInt(s.trim(), 10));
-        const min = isNaN(minStr) ? 1 : minStr;
-        const max = isNaN(maxStr) ? min : maxStr;
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-      }
-      return parseInt(repStr, 10) || 1;
-    };
-
-    // Fast synthesizer for typical syntax:
-    // \d, [A-Z], [a-z], [0-9], (opt1|opt2), {n}, {min,max}, literal chars
-    while (i < pattern.length) {
-      const char = pattern[i];
-
-      // Alternation group: (OPTION_A|OPTION_B|OPTION_C)
-      if (char === '(') {
-        const closeIdx = pattern.indexOf(')', i);
-        if (closeIdx !== -1) {
-          const groupStr = pattern.slice(i + 1, closeIdx);
-          const options = groupStr.split('|').map((s) => s.trim()).filter(Boolean);
-          if (options.length > 0) {
-            result += options[Math.floor(Math.random() * options.length)];
-          }
-          i = closeIdx + 1;
-          continue;
-        }
-      }
-
-      if (char === '\\' && i + 1 < pattern.length) {
-        const esc = pattern[i + 1];
-        let rep = 1;
-        let nextIdx = i + 2;
-
-        if (nextIdx < pattern.length && pattern[nextIdx] === '{') {
-          const closeIdx = pattern.indexOf('}', nextIdx);
-          if (closeIdx !== -1) {
-            rep = parseRepetition(pattern.slice(nextIdx + 1, closeIdx));
-            nextIdx = closeIdx + 1;
-          }
-        }
-
-        if (esc === 'd') {
-          for (let r = 0; r < rep; r++) {
-            result += Math.floor(Math.random() * 10).toString();
-          }
-        } else if (esc === 'w') {
-          const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_';
-          for (let r = 0; r < rep; r++) {
-            result += chars[Math.floor(Math.random() * chars.length)];
-          }
-        } else {
-          result += esc;
-        }
-        i = nextIdx;
-        continue;
-      }
-
-      if (char === '[') {
-        const closeIdx = pattern.indexOf(']', i);
-        if (closeIdx !== -1) {
-          const setStr = pattern.slice(i + 1, closeIdx);
-          let rep = 1;
-          let nextIdx = closeIdx + 1;
-
-          if (nextIdx < pattern.length && pattern[nextIdx] === '{') {
-            const braceClose = pattern.indexOf('}', nextIdx);
-            if (braceClose !== -1) {
-              rep = parseRepetition(pattern.slice(nextIdx + 1, braceClose));
-              nextIdx = braceClose + 1;
-            }
-          }
-
-          let pool = '';
-          if (setStr.includes('A-Z')) pool += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-          if (setStr.includes('a-z')) pool += 'abcdefghijklmnopqrstuvwxyz';
-          if (setStr.includes('0-9')) pool += '0123456789';
-          if (setStr.includes('a-f')) pool += 'abcdef';
-          if (setStr.includes('A-F')) pool += 'ABCDEF';
-          if (!pool) pool = setStr;
-
-          for (let r = 0; r < rep; r++) {
-            result += pool[Math.floor(Math.random() * pool.length)];
-          }
-          i = nextIdx;
-          continue;
-        }
-      }
-
-      // Check repetition for regular char
-      let rep = 1;
-      let nextIdx = i + 1;
-      if (nextIdx < pattern.length && pattern[nextIdx] === '{') {
-        const braceClose = pattern.indexOf('}', nextIdx);
-        if (braceClose !== -1) {
-          rep = parseRepetition(pattern.slice(nextIdx + 1, braceClose));
-          nextIdx = braceClose + 1;
-        }
-      }
-
-      for (let r = 0; r < rep; r++) {
-        result += char;
-      }
-      i = nextIdx;
-    }
-
-    return result;
+    return generateRegexString(pattern);
   }
 
   private evaluateCalculation(
@@ -558,7 +468,34 @@ export class GeneratorEngine {
   }
 
   private generateEntity(subtype: string): string {
-    const type = (subtype || 'full_name').toLowerCase().trim();
+    let cleanSubtype = (subtype || 'full_name').trim();
+
+    // 1. JSON rule format check
+    if (cleanSubtype.startsWith('{') && cleanSubtype.includes('Entity')) {
+      try {
+        const parsed = JSON.parse(cleanSubtype);
+        if (parsed.type === 'Entity' && parsed.config) {
+          if (parsed.config.customItems && parsed.config.customItems.length > 0) {
+            const arr = parsed.config.customItems;
+            return arr[Math.floor(Math.random() * arr.length)];
+          }
+          if (parsed.config.subtype) {
+            cleanSubtype = parsed.config.subtype;
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Custom Entity registry check
+    const registered = getRegisteredCustomEntities();
+    const matched = registered.find(
+      e => e.id === cleanSubtype || e.name.toLowerCase() === cleanSubtype.toLowerCase()
+    );
+    if (matched && matched.items.length > 0) {
+      return matched.items[Math.floor(Math.random() * matched.items.length)];
+    }
+
+    const type = cleanSubtype.toLowerCase();
     const fn = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
     const ln = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
 

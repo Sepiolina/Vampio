@@ -9,7 +9,7 @@ on:
       release_tag:
         description: 'Release Tag (e.g. v1.0.0)'
         required: false
-        default: 'manual-release'
+        default: ''
       draft:
         description: 'Create as Draft Release'
         type: boolean
@@ -20,8 +20,49 @@ permissions:
   contents: write
 
 jobs:
+  prepare-release:
+    name: Prepare Release & Commit Changelog
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.notes.outputs.tag }}
+      version: ${{ steps.notes.outputs.version }}
+      prev_tag: ${{ steps.notes.outputs.prev_tag }}
+      release_body: ${{ steps.notes.outputs.release_body }}
+
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Fetch all Git tags
+        run: |
+          git fetch --tags --force || true
+
+      - name: Extract Tag, Version & Commit Details
+        id: notes
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/scripts/generate-release-notes.cjs
+
+      - name: Upload Release Notes Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release_notes.md
+          retention-days: 7
+
   build-tauri:
     name: Build (${{ matrix.platform }})
+    needs: prepare-release
     permissions:
       contents: write
     strategy:
@@ -47,6 +88,12 @@ jobs:
           node-version: 20.x
           cache: 'npm'
 
+      - name: Automatically sync version from tag
+        env:
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          node .github/scripts/sync-version.cjs
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -71,20 +118,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name || inputs.release_tag }}
-          releaseName: 'VAMPIO v__VERSION__'
-          releaseBody: |
-            ## VAMPIO Native Desktop Release v__VERSION__
-
-            ### Download Links & Platform Packages:
-            - **Windows**: `.exe` standalone installer / `.msi` package
-            - **macOS**: Universal Apple Silicon + Intel `.dmg` / `.app` bundle
-            - **Linux**: `.AppImage` standalone portable / `.deb` package
-
-            ### What's New
-            - **Native Desktop Migration**: Migrated to Tauri v2 for native OS integration and desktop performance.
-            - **Lazy Loaded Visualizations**: Code splitting and lazy loading of D3 analytics and SheetJS to reduce initial bundle size and improve startup speeds.
-            - **Enhanced Streaming Output**: Uses native Rust File System APIs when running on desktop for continuous disk writing.
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          releaseName: 'VAMPIO v${{ needs.prepare-release.outputs.version }}'
+          releaseBody: ${{ needs.prepare-release.outputs.release_body }}
           releaseDraft: ${{ inputs.draft || false }}
           prerelease: false
           args: ${{ matrix.args }}

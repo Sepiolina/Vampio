@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ColumnSpec, ColumnType, DependencyCase } from '../types';
 import { RuleEditor } from './RuleEditor';
+import { getCustomColumnTypes, getExamplePresetTypes } from '../utils/customTypesManager';
+import { serializeRestApiConfig } from '../utils/restApiManager';
+import { useI18n } from '../i18n';
 import { 
   Trash2, 
   Copy, 
-  ChevronUp, 
   ChevronDown, 
   GripVertical,
   AlertCircle, 
@@ -20,22 +23,24 @@ import {
   Plus,
   GitBranch,
   X,
-  HelpCircle
+  HelpCircle,
+  Layers
 } from 'lucide-react';
 
-const COL_TYPES: { type: ColumnType; label: string; icon: React.ComponentType<{ size: number; className?: string }> }[] = [
-  { type: 'Sequence', label: 'Sequence (ID)', icon: Hash },
-  { type: 'Entity', label: 'Real-world Entity', icon: Globe },
-  { type: 'Set/Enum', label: 'Set / Enum', icon: Sparkles },
-  { type: 'Int', label: 'Integer Range', icon: Hash },
-  { type: 'Float', label: 'Float / Currency', icon: Calculator },
-  { type: 'DateTime', label: 'Date & Time', icon: Clock },
-  { type: 'UUID', label: 'UUID v4', icon: ShieldCheck },
-  { type: 'Calculation', label: 'Formula Calc', icon: Calculator },
-  { type: 'Boolean', label: 'Boolean Flag', icon: Binary },
-  { type: 'RegEx', label: 'RegEx Pattern', icon: Type },
-  { type: 'String', label: 'Random String', icon: Type },
-  { type: 'Blob/Hex', label: 'Hex / Hash', icon: Binary },
+const COL_TYPES: { type: ColumnType; icon: React.ComponentType<{ size: number; className?: string }> }[] = [
+  { type: 'Sequence', icon: Hash },
+  { type: 'Entity', icon: Globe },
+  { type: 'REST_API', icon: Globe },
+  { type: 'Set/Enum', icon: Sparkles },
+  { type: 'Int', icon: Hash },
+  { type: 'Float', icon: Calculator },
+  { type: 'DateTime', icon: Clock },
+  { type: 'UUID', icon: ShieldCheck },
+  { type: 'Calculation', icon: Calculator },
+  { type: 'Boolean', icon: Binary },
+  { type: 'RegEx', icon: Type },
+  { type: 'String', icon: Type },
+  { type: 'Blob/Hex', icon: Binary },
 ];
 
 interface Props {
@@ -61,15 +66,48 @@ export const ColumnCard: React.FC<Props> = ({
   dragHandleProps,
   onContextMenu
 }) => {
+  const { t } = useI18n();
   const [showAdvanced, setShowAdvanced] = useState(Boolean(col.condition || (col.skip_pct && col.skip_pct > 0)));
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const otherColumns = columns.filter((c) => c.id !== col.id).map((c) => c.name);
+
+  const getColTypeLabel = (type: ColumnType): string => {
+    switch (type) {
+      case 'Sequence': return t('schema.typeSequence');
+      case 'Entity': return t('schema.typeEntity');
+      case 'REST_API': return 'REST API (Live Fetch)';
+      case 'Set/Enum': return t('schema.typeSetEnum');
+      case 'Int': return t('schema.typeInt');
+      case 'Float': return t('schema.typeFloat');
+      case 'DateTime': return t('schema.typeDateTime');
+      case 'UUID': return t('schema.typeUUID');
+      case 'Calculation': return t('schema.typeCalculation');
+      case 'Boolean': return t('schema.typeBoolean');
+      case 'RegEx': return t('schema.typeRegEx');
+      case 'String': return t('schema.typeString');
+      case 'Blob/Hex': return t('schema.typeBlobHex');
+      default: return type;
+    }
+  };
 
   // Check duplicate name
   const isDuplicateName = columns.some(
     (c) => c.id !== col.id && c.name.trim() === col.name.trim() && col.name.trim() !== ''
   );
 
+  const customTypes = getCustomColumnTypes();
+  const examplePresets = getExamplePresetTypes();
+  const matchedCustomType = customTypes.find(
+    (t) => t.id === col.type || t.id === col.customTypeId
+  ) || examplePresets.find(
+    (t) => t.id === col.type || t.id === col.customTypeId
+  );
+
   const getDefaultRuleForType = (newType: ColumnType): string => {
+    if (newType.startsWith('custom:') || newType.startsWith('example:')) {
+      const custom = customTypes.find((t) => t.id === newType) || examplePresets.find((t) => t.id === newType);
+      if (custom) return custom.defaultRule;
+    }
     switch (newType) {
       case 'Sequence': return '1';
       case 'Int': return '1, 100';
@@ -78,6 +116,15 @@ export const ColumnCard: React.FC<Props> = ({
       case 'Set/Enum': return 'Option A, Option B, Option C';
       case 'Calculation': return '';
       case 'Entity': return 'full_name';
+      case 'REST_API':
+        return serializeRestApiConfig({
+          url: 'https://dummyjson.com/users?limit=50',
+          method: 'GET',
+          jsonPath: 'users[].email',
+          retrievalMode: 'pool',
+          sampleStrategy: 'sequential',
+          fallbackValue: 'api_unavailable'
+        });
       case 'DateTime': return 'YYYY-MM-DD HH:mm:ss';
       case 'RegEx': return '[A-Z]{3}-\\d{4}';
       case 'Blob/Hex': return '6';
@@ -87,8 +134,8 @@ export const ColumnCard: React.FC<Props> = ({
     }
   };
 
-  const currentTypeMeta = COL_TYPES.find((t) => t.type === col.type) || COL_TYPES[0];
-  const TypeIcon = currentTypeMeta.icon;
+  const currentTypeMeta = COL_TYPES.find((t) => t.type === col.type);
+  const TypeIcon = matchedCustomType ? Sparkles : (currentTypeMeta ? currentTypeMeta.icon : Sparkles);
 
   const handleAddCase = (
     operator: DependencyCase['operator'] = 'equals',
@@ -143,7 +190,7 @@ export const ColumnCard: React.FC<Props> = ({
             <div
               {...dragHandleProps}
               className="p-1 text-content-muted hover:text-accent cursor-grab active:cursor-grabbing transition"
-              title="Drag to reorder"
+              title={t('schema.dragToReorder')}
             >
               <GripVertical size={14} />
             </div>
@@ -161,7 +208,7 @@ export const ColumnCard: React.FC<Props> = ({
               }`}
             />
             {isDuplicateName && (
-              <span title="Duplicate field name exists in schema" className="absolute right-1.5 top-1.5 text-rose-400">
+              <span title={t('schema.duplicateNameWarning')} className="absolute right-1.5 top-1.5 text-rose-400">
                 <AlertCircle size={12} />
               </span>
             )}
@@ -173,19 +220,38 @@ export const ColumnCard: React.FC<Props> = ({
               value={col.type}
               onChange={(e) => {
                 const newType = e.target.value as ColumnType;
+                const isCustom = newType.startsWith('custom:') || newType.startsWith('example:');
+                const customMatch = isCustom ? (customTypes.find((t) => t.id === newType) || examplePresets.find((t) => t.id === newType)) : undefined;
                 onUpdate({
                   ...col,
                   type: newType,
-                  rule: getDefaultRuleForType(newType)
+                  customTypeId: isCustom ? newType : undefined,
+                  rule: isCustom && customMatch ? customMatch.defaultRule : getDefaultRuleForType(newType)
                 });
               }}
-              className="pl-2 pr-6 py-1 text-xs bg-primary border border-border-subtle rounded-md text-accent font-semibold focus:outline-none focus:border-accent cursor-pointer transition appearance-none max-w-[130px]"
+              className="pl-2 pr-6 py-1 text-xs bg-primary border border-border-subtle rounded-md text-accent font-semibold focus:outline-none focus:border-accent cursor-pointer transition appearance-none max-w-[135px]"
             >
-              {COL_TYPES.map((t) => (
-                <option key={t.type} value={t.type}>
-                  {t.label}
-                </option>
-              ))}
+              <optgroup label={t('schema.standardTypes')}>
+                {COL_TYPES.map((t) => (
+                  <option key={t.type} value={t.type}>
+                    {getColTypeLabel(t.type)}
+                  </option>
+                ))}
+              </optgroup>
+              {(customTypes.length > 0 || (matchedCustomType && !customTypes.some(c => c.id === matchedCustomType.id))) && (
+                <optgroup label={t('schema.customTypesAdvance')}>
+                  {customTypes.map((ct) => (
+                    <option key={ct.id} value={ct.id}>
+                      ⚡ {ct.name}
+                    </option>
+                  ))}
+                  {matchedCustomType && !customTypes.some(c => c.id === matchedCustomType.id) && (
+                    <option key={matchedCustomType.id} value={matchedCustomType.id}>
+                      ⚡ {matchedCustomType.name}
+                    </option>
+                  )}
+                </optgroup>
+              )}
             </select>
             <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-content-muted pointer-events-none" />
           </div>
@@ -196,9 +262,9 @@ export const ColumnCard: React.FC<Props> = ({
           {/* Null % pill */}
           <div 
             className="flex items-center gap-0.5 bg-primary px-1.5 py-0.5 rounded border border-border-subtle text-[11px]"
-            title="Percentage of generated rows where this column will be null"
+            title={t('schema.nullTooltip')}
           >
-            <span className="text-[10px] text-content-muted font-medium">Null:</span>
+            <span className="text-[10px] text-content-muted font-medium">{t('schema.nullLabel')}</span>
             <input
               type="number"
               min="0"
@@ -220,7 +286,7 @@ export const ColumnCard: React.FC<Props> = ({
                 ? 'bg-accent/15 text-accent font-semibold border-accent/40 shadow-xs'
                 : 'text-content-muted hover:text-content hover:bg-tertiary border-border-subtle'
             }`}
-            title="Configure parent column dependency & conditional cases"
+            title={t('schema.dependTooltip')}
           >
             <Link2 size={12} className={col.condition ? 'text-accent' : 'text-content-muted'} />
             {col.condition ? (
@@ -231,7 +297,7 @@ export const ColumnCard: React.FC<Props> = ({
                   : ''}
               </span>
             ) : (
-              <span className="text-[10px]">Depend</span>
+              <span className="text-[10px]">{t('schema.depend')}</span>
             )}
           </button>
 
@@ -239,7 +305,7 @@ export const ColumnCard: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => onDuplicate(col)}
-            title="Duplicate Field"
+            title={t('schema.duplicateField')}
             className="p-1 text-content-muted hover:text-accent hover:bg-tertiary rounded transition"
           >
             <Copy size={12} />
@@ -247,23 +313,54 @@ export const ColumnCard: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => onRemove(col.id)}
-            title="Remove Field"
+            title={t('schema.removeField')}
             className="p-1 text-content-muted hover:text-rose-400 hover:bg-tertiary rounded transition"
           >
             <Trash2 size={12} />
           </button>
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            title={isCollapsed ? t('schema.expandRules') : t('schema.collapseRules')}
+            className="p-1 text-content-muted hover:text-accent hover:bg-tertiary rounded transition"
+          >
+            <ChevronDown 
+              size={13} 
+              className={`transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`} 
+            />
+          </button>
         </div>
       </div>
 
-      {/* Conditional Dependency Deck if toggled */}
-      {showAdvanced && (
-        <div className="mt-2.5 p-3 rounded-xl bg-primary border border-border-subtle space-y-3 text-xs shadow-inner">
+      {/* Collapsible Card Body (Conditional Deck & Rule Editor) */}
+      <AnimatePresence initial={false}>
+        {!isCollapsed && (
+          <motion.div
+            key="card-body"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            {/* Conditional Dependency Deck if toggled */}
+            <AnimatePresence initial={false}>
+              {showAdvanced && (
+          <motion.div
+            key="dep-deck"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2.5 p-3 rounded-xl bg-primary border border-border-subtle space-y-3 text-xs shadow-inner">
           {/* Header row: Parent selector & Quick Presets */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle/50 pb-2">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-accent flex items-center gap-1.5">
                 <Link2 size={13} />
-                Depends on Parent:
+                {t('schema.dependsOnParent')}
               </span>
               <select
                 value={col.condition || ''}
@@ -280,7 +377,7 @@ export const ColumnCard: React.FC<Props> = ({
                 }}
                 className="bg-secondary px-2.5 py-1 rounded-md border border-border-subtle text-xs text-content font-mono font-bold focus:outline-none focus:border-accent cursor-pointer"
               >
-                <option value="">None (Independent Field)</option>
+                <option value="">{t('schema.noneIndependent')}</option>
                 {otherColumns.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -298,7 +395,7 @@ export const ColumnCard: React.FC<Props> = ({
                   className="px-2 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle text-[10px] font-semibold text-content hover:text-rose-400 transition"
                   title="Skip (set NULL) if parent equals specific value"
                 >
-                  + Skip if = [value]
+                  {t('schema.quickSkipIf')}
                 </button>
                 <button
                   type="button"
@@ -306,7 +403,7 @@ export const ColumnCard: React.FC<Props> = ({
                   className="px-2 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle text-[10px] font-semibold text-content hover:text-accent transition"
                   title="Override type & rule if parent equals specific value"
                 >
-                  + Case: Type Override
+                  {t('schema.quickTypeOverride')}
                 </button>
                 <button
                   type="button"
@@ -314,7 +411,7 @@ export const ColumnCard: React.FC<Props> = ({
                   className="px-2 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle text-[10px] font-semibold text-content hover:text-amber-400 transition"
                   title="Skip (set NULL) if parent is null"
                 >
-                  + Skip if NULL
+                  {t('schema.quickSkipIfNull')}
                 </button>
                 <button
                   type="button"
@@ -322,7 +419,7 @@ export const ColumnCard: React.FC<Props> = ({
                   className="px-2 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle text-[10px] font-semibold text-content hover:text-emerald-400 transition"
                   title="Set fixed value (e.g. N/A or 0) if parent equals specific value"
                 >
-                  + Set Value
+                  {t('schema.quickSetValue')}
                 </button>
               </div>
             )}
@@ -334,7 +431,7 @@ export const ColumnCard: React.FC<Props> = ({
               {(!col.dependencyCases || col.dependencyCases.length === 0) ? (
                 <div className="p-2.5 rounded-lg bg-secondary/50 border border-dashed border-border-subtle flex flex-wrap items-center justify-between gap-2 text-xs">
                   <span className="text-[11px] text-content-muted">
-                    Default rule: <strong>Skip (NULL)</strong> if <code>{col.condition}</code> is null.
+                    {t('schema.defaultRuleSkipNull', { col: col.condition })}
                   </span>
                   <button
                     type="button"
@@ -342,22 +439,30 @@ export const ColumnCard: React.FC<Props> = ({
                     className="flex items-center gap-1 px-2.5 py-1 rounded bg-accent hover:bg-accent-hover text-white text-[11px] font-semibold shadow-xs transition"
                   >
                     <Plus size={11} />
-                    <span>Add Case Rule</span>
+                    <span>{t('schema.addCaseRule')}</span>
                   </button>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {col.dependencyCases.map((depCase, cIdx) => (
-                    <div
-                      key={depCase.id}
-                      className="p-2 rounded-lg bg-secondary border border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:border-accent/40 transition"
-                    >
+                  <AnimatePresence initial={false}>
+                    {col.dependencyCases.map((depCase, cIdx) => (
+                      <motion.div
+                        key={depCase.id}
+                        initial={{ opacity: 0, height: 0, y: -6 }}
+                        animate={{ opacity: 1, height: 'auto', y: 0 }}
+                        exit={{ opacity: 0, height: 0, y: -6 }}
+                        transition={{ duration: 0.18, ease: 'easeOut' }}
+                        className="overflow-hidden"
+                      >
+                        <div
+                          className="p-2 rounded-lg bg-secondary border border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:border-accent/40 transition"
+                        >
                       {/* Condition Expression */}
                       <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
                         <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent text-[10px] font-mono font-bold">
-                          CASE {cIdx + 1}
+                          {t('schema.caseLabel')} {cIdx + 1}
                         </span>
-                        <span className="text-[11px] font-bold text-content-muted">IF</span>
+                        <span className="text-[11px] font-bold text-content-muted">{t('schema.ifLabel')}</span>
                         <span className="text-[11px] font-mono text-content font-bold truncate max-w-[120px]">
                           {col.condition}
                         </span>
@@ -372,13 +477,13 @@ export const ColumnCard: React.FC<Props> = ({
                           }
                           className="bg-primary px-2 py-0.5 rounded border border-border-subtle text-[11px] font-semibold text-accent focus:outline-none cursor-pointer max-w-[130px]"
                         >
-                          <option value="equals">= (equals)</option>
-                          <option value="not_equals">≠ (not equals)</option>
-                          <option value="is_null">is NULL / empty</option>
-                          <option value="is_not_null">is NOT NULL</option>
-                          <option value="contains">contains</option>
-                          <option value="greater_than">&gt; (greater than)</option>
-                          <option value="less_than">&lt; (less than)</option>
+                          <option value="equals">{t('schema.opEquals')}</option>
+                          <option value="not_equals">{t('schema.opNotEquals')}</option>
+                          <option value="is_null">{t('schema.opIsNull')}</option>
+                          <option value="is_not_null">{t('schema.opIsNotNull')}</option>
+                          <option value="contains">{t('schema.opContains')}</option>
+                          <option value="greater_than">{t('schema.opGreaterThan')}</option>
+                          <option value="less_than">{t('schema.opLessThan')}</option>
                         </select>
 
                         {/* Target Value Input (when not is_null or is_not_null) */}
@@ -392,7 +497,7 @@ export const ColumnCard: React.FC<Props> = ({
                           />
                         )}
 
-                        <span className="text-[11px] font-bold text-content-muted mx-0.5">THEN</span>
+                        <span className="text-[11px] font-bold text-content-muted mx-0.5">{t('schema.thenLabel')}</span>
 
                         {/* Action Selector */}
                         <select
@@ -404,9 +509,9 @@ export const ColumnCard: React.FC<Props> = ({
                           }
                           className="bg-primary px-2 py-0.5 rounded border border-border-subtle text-[11px] font-semibold text-content focus:outline-none cursor-pointer"
                         >
-                          <option value="skip">Skip (NULL)</option>
-                          <option value="type_override">Override Type &amp; Rule</option>
-                          <option value="set_value">Set Fixed Value</option>
+                          <option value="skip">{t('schema.actionSkip')}</option>
+                          <option value="type_override">{t('schema.actionTypeOverride')}</option>
+                          <option value="set_value">{t('schema.actionSetValue')}</option>
                         </select>
 
                         {/* Action Details: Set Fixed Value */}
@@ -437,7 +542,7 @@ export const ColumnCard: React.FC<Props> = ({
                             >
                               {COL_TYPES.map((t) => (
                                 <option key={t.type} value={t.type}>
-                                  {t.label}
+                                  {getColTypeLabel(t.type)}
                                 </option>
                               ))}
                             </select>
@@ -459,12 +564,14 @@ export const ColumnCard: React.FC<Props> = ({
                         type="button"
                         onClick={() => handleRemoveCase(depCase.id)}
                         className="p-1 text-content-muted hover:text-rose-400 hover:bg-tertiary rounded self-end sm:self-center transition"
-                        title="Delete this conditional case"
+                        title={t('schema.deleteCase')}
                       >
                         <Trash2 size={12} />
                       </button>
                     </div>
-                  ))}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
 
                   {/* Add Case & Fallback Row */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border-subtle/50">
@@ -474,12 +581,12 @@ export const ColumnCard: React.FC<Props> = ({
                       className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
                     >
                       <Plus size={12} />
-                      <span>Add another case</span>
+                      <span>{t('schema.addAnotherCase')}</span>
                     </button>
 
                     {/* Fallback Else */}
                     <div className="flex items-center gap-1.5 text-[11px] flex-wrap">
-                      <span className="text-content-muted font-bold">ELSE:</span>
+                      <span className="text-content-muted font-bold">{t('schema.elseLabel')}</span>
                       <select
                         value={col.fallbackAction || 'normal'}
                         onChange={(e) =>
@@ -490,9 +597,9 @@ export const ColumnCard: React.FC<Props> = ({
                         }
                         className="bg-secondary px-2 py-0.5 rounded border border-border-subtle text-[11px] text-content font-medium focus:outline-none cursor-pointer"
                       >
-                        <option value="normal">Generate default field rule</option>
-                        <option value="skip">Skip (NULL)</option>
-                        <option value="set_value">Set fixed fallback value</option>
+                        <option value="normal">{t('schema.fallbackNormal')}</option>
+                        <option value="skip">{t('schema.fallbackSkip')}</option>
+                        <option value="set_value">{t('schema.fallbackSetValue')}</option>
                       </select>
                       {col.fallbackAction === 'set_value' && (
                         <input
@@ -510,11 +617,13 @@ export const ColumnCard: React.FC<Props> = ({
             </div>
           ) : (
             <p className="text-[11px] text-content-muted italic">
-              Select a parent column from the dropdown above to create conditions (e.g. skip if parent is null, or change generation type when parent equals a specific value).
+              {t('schema.dependHelpText')}
             </p>
           )}
-        </div>
-      )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Rule Editor Row */}
       <div className="mt-2 pt-2 border-t border-border-subtle/40 pl-1 sm:pl-5 pr-1">
@@ -524,6 +633,9 @@ export const ColumnCard: React.FC<Props> = ({
           availableColumns={otherColumns}
         />
       </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

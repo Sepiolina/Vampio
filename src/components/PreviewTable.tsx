@@ -1,9 +1,8 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ColumnSpec, ThemeId } from '../types';
 import { Table, Code, Copy, Check, Search, RefreshCw, List, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, X, Filter, FilterX, Plus } from 'lucide-react';
 import { DataSearch } from './DataSearch';
-
-const DataHeatmap = lazy(() => import('./DataHeatmap').then(m => ({ default: m.DataHeatmap })));
+import { DataHeatmap } from './DataHeatmap';
 
 interface Props {
   columns: ColumnSpec[];
@@ -127,103 +126,165 @@ export const PreviewTable: React.FC<Props> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-primary overflow-hidden">
-      {/* Table Header Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-secondary border-b border-border-subtle flex-wrap gap-2">
-        <div className="flex items-center gap-2.5">
-          <span className="text-xs font-bold uppercase tracking-wider text-content flex items-center gap-2">
-            Reactive Preview
+    <div className="flex flex-col h-full bg-primary overflow-hidden min-w-0">
+      {/* Table Header Bar - Row 1 (aligned with Schema Architecture Controls Bar, 40px) */}
+      <div className="relative z-30 flex items-center justify-between px-3 sm:px-4 h-10 min-h-[40px] max-h-[40px] border-b border-border-subtle bg-secondary flex-shrink-0 gap-2 select-none w-full min-w-0">
+        {/* Left: Title & Records Count */}
+        <div className="flex items-center gap-2 min-w-0 flex-shrink">
+          <div className="flex items-center gap-1.5 text-content min-w-0">
+            <Table size={13} className="text-accent flex-shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider whitespace-nowrap truncate">
+              <span className="hidden sm:inline">Reactive </span>Preview
+            </span>
             {isStreaming && (
-              <span className="flex h-2 w-2 relative" title="Live Stream Active">
+              <span className="flex h-2 w-2 relative flex-shrink-0" title="Live Stream Active">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
             )}
-          </span>
-          <span className="text-[11px] font-mono text-content-muted bg-primary px-2 py-0.5 rounded border border-border-subtle">
-            {filteredData.length} records
+          </div>
+          <span className="text-[10px] bg-tertiary text-content-muted px-1.5 py-0.5 rounded-md font-mono border border-border-subtle/50 whitespace-nowrap flex-shrink-0">
+            {filteredData.length} {filteredData.length === 1 ? 'record' : 'records'}
           </span>
         </div>
 
-        {/* Controls: Search, View Mode, Count, Refresh */}
-        <div className="flex items-center gap-2">
-          {/* Search Box */}
-          <DataSearch 
-            value={searchQuery}
-            onChange={setSearchQuery}
-            columns={columns}
-          />
-
-          {/* Sample count selector */}
-          <select
-            value={previewCount}
-            onChange={(e) => onChangePreviewCount(Number(e.target.value))}
-            className="px-2 py-1 text-xs bg-primary border border-border-subtle rounded-md text-content-muted font-mono focus:outline-none"
-            title="Sample Rows Count"
-          >
-            <option value="5">5 rows</option>
-            <option value="10">10 rows</option>
-            <option value="25">25 rows</option>
-            <option value="50">50 rows</option>
-          </select>
-
-          {/* View Mode Toggle */}
-          <div className="flex bg-primary p-0.5 rounded-lg border border-border-subtle">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-1 rounded ${viewMode === 'table' ? 'bg-accent text-content' : 'text-content-muted hover:text-content'}`}
-              title="Table View"
-            >
-              <Table size={13} />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-1 rounded ${viewMode === 'list' ? 'bg-accent text-content' : 'text-content-muted hover:text-content'}`}
-              title="List View"
-            >
-              <List size={13} />
-            </button>
-            <button
-              onClick={() => setViewMode('json')}
-              className={`p-1 rounded ${viewMode === 'json' ? 'bg-accent text-content' : 'text-content-muted hover:text-content'}`}
-              title="JSON View"
-            >
-              <Code size={13} />
-            </button>
+        {/* Right: Search Box + Refresh & Copy Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink min-w-0 justify-end">
+          <div className="min-w-0 flex-1 flex-shrink max-w-[130px] sm:max-w-[170px] lg:max-w-[210px]">
+            <DataSearch 
+              value={searchQuery}
+              onChange={setSearchQuery}
+              columns={columns}
+              data={data}
+              compact
+            />
           </div>
 
-          {/* Refresh sample button */}
           <button
             type="button"
             onClick={onRefreshPreview}
             title="Regenerate Preview"
-            className="p-1.5 text-content-muted hover:text-content hover:bg-tertiary rounded-md border border-border-subtle transition"
+            className="h-7 w-7 rounded-md bg-primary hover:bg-tertiary border border-border-subtle text-content-muted hover:text-content flex items-center justify-center transition shadow-2xs active:scale-95 cursor-pointer flex-shrink-0 z-10"
           >
-            <RefreshCw size={12} className={isStreaming ? 'animate-spin' : ''} />
+            <RefreshCw size={12} className={isStreaming ? 'animate-spin text-accent' : ''} />
           </button>
 
-          {/* Copy all button */}
           <button
             type="button"
             onClick={handleCopyAll}
-            title="Copy Preview JSON"
-            className="p-1.5 text-content-muted hover:text-content hover:bg-tertiary rounded-md border border-border-subtle transition"
+            title={copiedAll ? 'Copied to clipboard!' : 'Copy preview JSON'}
+            className="h-7 w-7 rounded-md bg-primary hover:bg-tertiary border border-border-subtle text-content-muted hover:text-content flex items-center justify-center transition shadow-2xs active:scale-95 cursor-pointer flex-shrink-0 z-10"
           >
             {copiedAll ? <Check size={12} className="text-accent" /> : <Copy size={12} />}
           </button>
         </div>
       </div>
+
+      {/* Table Sub-header Bar - Row 2 (aligned with Quick Insert Strip, 32px) */}
+      <div className="px-3 sm:px-4 h-8 min-h-[32px] max-h-[32px] bg-secondary/50 border-b border-border-subtle flex items-center justify-between gap-2 overflow-x-auto text-[11px] flex-shrink-0 scrollbar-none [&::-webkit-scrollbar]:hidden select-none w-full">
+        {/* Left: View Mode Toggle & Sample Row Count */}
+        <div className="flex items-center gap-2 flex-nowrap overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden flex-shrink-0">
+          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-content-muted/80 mr-0.5 flex-shrink-0">
+            <span>View:</span>
+          </div>
+
+          <div className="flex bg-primary p-0.5 rounded-md border border-border-subtle h-6 items-center flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition-colors ${
+                viewMode === 'table' ? 'bg-accent text-white shadow-2xs' : 'text-content-muted hover:text-content'
+              }`}
+              title="Table View"
+            >
+              <Table size={11} />
+              <span className="hidden sm:inline">Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition-colors ${
+                viewMode === 'list' ? 'bg-accent text-white shadow-2xs' : 'text-content-muted hover:text-content'
+              }`}
+              title="List View"
+            >
+              <List size={11} />
+              <span className="hidden sm:inline">List</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('json')}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition-colors ${
+                viewMode === 'json' ? 'bg-accent text-white shadow-2xs' : 'text-content-muted hover:text-content'
+              }`}
+              title="JSON View"
+            >
+              <Code size={11} />
+              <span className="hidden sm:inline">JSON</span>
+            </button>
+          </div>
+
+          {/* Sample Rows Count Selector */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <select
+              value={previewCount}
+              onChange={(e) => onChangePreviewCount(Number(e.target.value))}
+              className="h-6 px-1.5 text-[10px] font-mono bg-primary border border-border-subtle rounded-md text-content-muted hover:text-content focus:outline-none focus:border-accent transition cursor-pointer"
+              title="Sample Rows Count"
+            >
+              <option value="5">5 rows</option>
+              <option value="10">10 rows</option>
+              <option value="25">25 rows</option>
+              <option value="50">50 rows</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Right: Clear Filter (if active) & Expand/Collapse (if list mode) */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="h-6 px-1.5 rounded text-[10px] bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20 transition flex items-center gap-1 cursor-pointer flex-shrink-0"
+              title="Clear active filter"
+            >
+              <X size={10} />
+              <span className="hidden sm:inline">Clear</span>
+            </button>
+          )}
+
+          {viewMode === 'list' && (
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                type="button"
+                onClick={expandAll}
+                className="h-6 px-1.5 rounded text-[10px] bg-primary border border-border-subtle text-content-muted hover:text-content transition cursor-pointer"
+                title="Expand all list cards"
+              >
+                Expand
+              </button>
+              <button
+                type="button"
+                onClick={collapseAll}
+                className="h-6 px-1.5 rounded text-[10px] bg-primary border border-border-subtle text-content-muted hover:text-content transition cursor-pointer"
+                title="Collapse all list cards"
+              >
+                Collapse
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
       
       {/* Visual Analytics & Distribution Panel */}
       {data.length > 0 && columns.length > 0 && (
-        <Suspense fallback={<div className="h-48 flex items-center justify-center text-content-muted text-xs bg-secondary/50 border-b border-border-subtle">Loading Visualizations...</div>}>
-          <DataHeatmap 
-            data={filteredData} 
-            columns={columns} 
-            theme={theme} 
-            isStreaming={isStreaming} 
-          />
-        </Suspense>
+        <DataHeatmap 
+          data={filteredData} 
+          columns={columns} 
+          theme={theme} 
+          isStreaming={isStreaming} 
+        />
       )}
 
       {/* Main Content Area */}

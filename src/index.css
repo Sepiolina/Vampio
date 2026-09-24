@@ -195,4 +195,158 @@ html.theme-neon, body.theme-neon, .theme-neon {
   .overflow-auto::-webkit-scrollbar-thumb:hover {
     background: var(--bg-tertiary);
   }
+
+  /* Code Syntax Highlighting Styles for Script & Lua Studio */
+  .code-syntax-highlight .token.comment,
+  .code-syntax-highlight .token.prolog,
+  .code-syntax-highlight .token.doctype,
+  .code-syntax-highlight .token.cdata {
+    color: #94a3b8;
+    font-style: italic;
+  }
+
+  .code-syntax-highlight .token.punctuation {
+    color: #94a3b8;
+  }
+
+  .code-syntax-highlight .token.property,
+  .code-syntax-highlight .token.tag,
+  .code-syntax-highlight .token.constant,
+  .code-syntax-highlight .token.symbol,
+  .code-syntax-highlight .token.deleted {
+    color: #38bdf8;
+  }
+
+  .code-syntax-highlight .token.boolean,
+  .code-syntax-highlight .token.number {
+    color: #fb923c;
+    font-weight: 600;
+  }
+
+  .code-syntax-highlight .token.selector,
+  .code-syntax-highlight .token.attr-name,
+  .code-syntax-highlight .token.string,
+  .code-syntax-highlight .token.char,
+  .code-syntax-highlight .token.inserted {
+    color: #34d399;
+  }
+
+  .code-syntax-highlight .token.builtin {
+    color: #06b6d4;
+    font-weight: 600;
+  }
+
+  .code-syntax-highlight .token.operator,
+  .code-syntax-highlight .token.entity,
+  .code-syntax-highlight .token.url {
+    color: #f472b6;
+  }
+
+  .code-syntax-highlight .token.atrule,
+  .code-syntax-highlight .token.attr-value,
+  .code-syntax-highlight .token.keyword {
+    color: #c084fc;
+    font-weight: 600;
+  }
+
+  .code-syntax-highlight .token.function,
+  .code-syntax-highlight .token.class-name {
+    color: #60a5fa;
+    font-weight: 600;
+  }
+
+  .code-syntax-highlight .token.regex,
+  .code-syntax-highlight .token.important,
+  .code-syntax-highlight .token.variable,
+  .code-syntax-highlight .token.identifier {
+    color: #e2e8f0;
+  }
+
+  /* High contrast colors for light themes */
+  .theme-nordic .code-syntax-highlight .token.comment,
+  .theme-cream .code-syntax-highlight .token.comment,
+  .theme-sage .code-syntax-highlight .token.comment,
+  .theme-lavender .code-syntax-highlight .token.comment,
+  .theme-sandstone .code-syntax-highlight .token.comment,
+  .theme-rose .code-syntax-highlight .token.comment {
+    color: #64748b;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.punctuation,
+  .theme-cream .code-syntax-highlight .token.punctuation,
+  .theme-sage .code-syntax-highlight .token.punctuation,
+  .theme-lavender .code-syntax-highlight .token.punctuation,
+  .theme-sandstone .code-syntax-highlight .token.punctuation,
+  .theme-rose .code-syntax-highlight .token.punctuation {
+    color: #475569;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.string,
+  .theme-cream .code-syntax-highlight .token.string,
+  .theme-sage .code-syntax-highlight .token.string,
+  .theme-lavender .code-syntax-highlight .token.string,
+  .theme-sandstone .code-syntax-highlight .token.string,
+  .theme-rose .code-syntax-highlight .token.string {
+    color: #059669;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.keyword,
+  .theme-cream .code-syntax-highlight .token.keyword,
+  .theme-sage .code-syntax-highlight .token.keyword,
+  .theme-lavender .code-syntax-highlight .token.keyword,
+  .theme-sandstone .code-syntax-highlight .token.keyword,
+  .theme-rose .code-syntax-highlight .token.keyword {
+    color: #7c3aed;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.function,
+  .theme-cream .code-syntax-highlight .token.function,
+  .theme-sage .code-syntax-highlight .token.function,
+  .theme-lavender .code-syntax-highlight .token.function,
+  .theme-sandstone .code-syntax-highlight .token.function,
+  .theme-rose .code-syntax-highlight .token.function {
+    color: #2563eb;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.number,
+  .theme-cream .code-syntax-highlight .token.number,
+  .theme-sage .code-syntax-highlight .token.number,
+  .theme-lavender .code-syntax-highlight .token.number,
+  .theme-sandstone .code-syntax-highlight .token.number,
+  .theme-rose .code-syntax-highlight .token.number,
+  .theme-nordic .code-syntax-highlight .token.boolean,
+  .theme-cream .code-syntax-highlight .token.boolean,
+  .theme-sage .code-syntax-highlight .token.boolean,
+  .theme-lavender .code-syntax-highlight .token.boolean,
+  .theme-sandstone .code-syntax-highlight .token.boolean,
+  .theme-rose .code-syntax-highlight .token.boolean {
+    color: #d97706;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.builtin,
+  .theme-cream .code-syntax-highlight .token.builtin,
+  .theme-sage .code-syntax-highlight .token.builtin,
+  .theme-lavender .code-syntax-highlight .token.builtin,
+  .theme-sandstone .code-syntax-highlight .token.builtin,
+  .theme-rose .code-syntax-highlight .token.builtin {
+    color: #0891b2;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.operator,
+  .theme-cream .code-syntax-highlight .token.operator,
+  .theme-sage .code-syntax-highlight .token.operator,
+  .theme-lavender .code-syntax-highlight .token.operator,
+  .theme-sandstone .code-syntax-highlight .token.operator,
+  .theme-rose .code-syntax-highlight .token.operator {
+    color: #db2777;
+  }
+
+  .theme-nordic .code-syntax-highlight .token.identifier,
+  .theme-cream .code-syntax-highlight .token.identifier,
+  .theme-sage .code-syntax-highlight .token.identifier,
+  .theme-lavender .code-syntax-highlight .token.identifier,
+  .theme-sandstone .code-syntax-highlight .token.identifier,
+  .theme-rose .code-syntax-highlight .token.identifier {
+    color: #1e293b;
+  }
 }

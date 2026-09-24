@@ -45,13 +45,150 @@ export interface ParsedWorkbook {
   filename: string;
   sheetNames: string[];
   sheets: Record<string, SheetData>;
+  rawWorkbook?: any;
+  fileFormat: string;
+  rawFile?: File;
+  rawContent?: string;
+  rawJson?: any[];
 }
 
 /**
- * 100% Client-Side Offline Excel / CSV File Parser.
- * Uses SheetJS in-memory with zero network requests.
+ * 100% Client-Side Offline Universal Data File Parser.
+ * Supports: XLSX, XLS (Excel), CSV, TSV, JSON, JSONL (NDJSON), XML, and TXT.
+ * Uses SheetJS and browser native parsers in-memory with zero network requests.
  */
 export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
+  const filename = file.name;
+  const lowerName = filename.toLowerCase();
+
+  // 1. JSON Array of Objects or Object
+  if (lowerName.endsWith('.json')) {
+    const text = await file.text();
+    try {
+      const parsed = JSON.parse(text);
+      const items: any[] = Array.isArray(parsed) ? parsed : [parsed];
+      const headerSet = new Set<string>();
+      for (const item of items) {
+        if (typeof item === 'object' && item !== null) {
+          Object.keys(item).forEach((k) => headerSet.add(k));
+        }
+      }
+      const headers = Array.from(headerSet);
+      if (headers.length === 0) headers.push('value');
+
+      const dataRows = items.map((item) => {
+        if (typeof item === 'object' && item !== null) {
+          return headers.map((h) => item[h] ?? null);
+        }
+        return [item];
+      });
+
+      const sheetName = 'Records';
+      return {
+        filename,
+        sheetNames: [sheetName],
+        sheets: {
+          [sheetName]: {
+            sheetName,
+            headers,
+            rows: dataRows,
+            totalRows: dataRows.length,
+            totalCols: headers.length,
+          },
+        },
+        fileFormat: 'json',
+        rawFile: file,
+        rawContent: text,
+        rawJson: items,
+      };
+    } catch (e: any) {
+      throw new Error(`Invalid JSON file format: ${e.message}`);
+    }
+  }
+
+  // 2. JSON Lines (NDJSON)
+  if (lowerName.endsWith('.jsonl') || lowerName.endsWith('.ndjson')) {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const items: any[] = [];
+    const headerSet = new Set<string>();
+
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        items.push(obj);
+        if (typeof obj === 'object' && obj !== null) {
+          Object.keys(obj).forEach((k) => headerSet.add(k));
+        }
+      } catch {
+        // ignore malformed line
+      }
+    }
+
+    const headers = Array.from(headerSet);
+    const dataRows = items.map((item) => headers.map((h) => item[h] ?? null));
+    const sheetName = 'Stream';
+
+    return {
+      filename,
+      sheetNames: [sheetName],
+      sheets: {
+        [sheetName]: {
+          sheetName,
+          headers,
+          rows: dataRows,
+          totalRows: dataRows.length,
+          totalCols: headers.length,
+        },
+      },
+      fileFormat: 'jsonl',
+      rawFile: file,
+      rawContent: text,
+      rawJson: items,
+    };
+  }
+
+  // 3. XML Data File
+  if (lowerName.endsWith('.xml')) {
+    const text = await file.text();
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(text, 'application/xml');
+    const records = Array.from(xmlDoc.querySelectorAll('record, row, item, entry'));
+    const headerSet = new Set<string>();
+    const items: any[] = [];
+
+    for (const rec of records) {
+      const rowObj: Record<string, any> = {};
+      for (const child of Array.from(rec.children)) {
+        headerSet.add(child.tagName);
+        rowObj[child.tagName] = child.textContent;
+      }
+      items.push(rowObj);
+    }
+
+    const headers = Array.from(headerSet);
+    const dataRows = items.map((item) => headers.map((h) => item[h] ?? null));
+    const sheetName = 'Dataset';
+
+    return {
+      filename,
+      sheetNames: [sheetName],
+      sheets: {
+        [sheetName]: {
+          sheetName,
+          headers,
+          rows: dataRows,
+          totalRows: dataRows.length,
+          totalCols: headers.length,
+        },
+      },
+      fileFormat: 'xml',
+      rawFile: file,
+      rawContent: text,
+    };
+  }
+
+  // 4. Spreadsheets: XLSX, XLS, CSV, TSV, TXT
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
 
@@ -62,7 +199,6 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
     const worksheet = workbook.Sheets[name];
     if (!worksheet) continue;
 
-    // Convert sheet to array of arrays
     const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
       header: 1,
       defval: null,
@@ -80,20 +216,17 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
       continue;
     }
 
-    // Determine header row (row 0 by default, or find first non-empty array)
     const headerRow = rawRows[0] || [];
     const headers = headerRow.map((cell: any, idx: number) => {
       const str = cell !== null && cell !== undefined ? String(cell).trim() : '';
       return str || `col_${idx + 1}`;
     });
 
-    // Format data rows
     const dataRows = rawRows.slice(1).map((row) => {
       return headers.map((_, colIdx) => {
         const val = row[colIdx];
         if (val === undefined || val === null || val === '') return null;
         if (val instanceof Date) {
-          // Format ISO date string
           return val.toISOString().slice(0, 19).replace('T', ' ');
         }
         return val;
@@ -109,10 +242,19 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
     };
   }
 
+  let fileFormat = 'csv';
+  if (lowerName.endsWith('.xlsx')) fileFormat = 'xlsx';
+  else if (lowerName.endsWith('.xls')) fileFormat = 'xls';
+  else if (lowerName.endsWith('.tsv')) fileFormat = 'tsv';
+  else if (lowerName.endsWith('.txt')) fileFormat = 'txt';
+
   return {
     filename: file.name,
     sheetNames,
     sheets,
+    rawWorkbook: workbook,
+    fileFormat,
+    rawFile: file,
   };
 }
 
@@ -145,6 +287,8 @@ export function parsePastedDelimitedText(text: string, filename: string = 'paste
 
   return {
     filename,
+    fileFormat: 'csv',
+    rawContent: text,
     sheetNames: [sheetName],
     sheets: {
       [sheetName]: {

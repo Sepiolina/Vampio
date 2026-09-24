@@ -808,14 +808,14 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
   }, [columns, displayData]);
 
   return (
-    <div id="vampio-viz-panel" className="bg-primary border-b border-border-subtle flex flex-col flex-shrink-0">
+    <div id="vampio-viz-panel" className="bg-primary border-b border-border-subtle flex flex-col flex-shrink-0 min-w-0">
       {/* Visual Analytics Bar Header */}
-      <div className="flex items-center justify-between gap-3 px-3.5 h-11 min-h-[44px] max-h-[44px] bg-primary hover:bg-tertiary/40 transition-colors border-b border-transparent select-none">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-3.5 py-1.5 min-h-[42px] bg-primary hover:bg-tertiary/40 transition-colors border-b border-transparent select-none flex-wrap overflow-x-auto">
         <button 
           type="button"
           id="toggle-viz-panel-btn"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 text-xs font-bold text-content hover:text-accent transition-colors flex-shrink-0 whitespace-nowrap"
+          className="flex items-center gap-1.5 sm:gap-2 text-xs font-bold text-content hover:text-accent transition-colors flex-shrink-0 whitespace-nowrap"
         >
           <Activity size={14} className="text-accent flex-shrink-0" />
           <span>Visual Analytics</span>
@@ -843,7 +843,7 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.2 }}
-            className="flex bg-secondary p-0.5 rounded-lg border border-border-subtle flex-shrink-0 h-8 items-center relative"
+            className="flex bg-secondary p-0.5 rounded-lg border border-border-subtle flex-shrink-0 h-7 sm:h-8 items-center relative overflow-x-auto max-w-full"
           >
             {[
               { id: 'heatmap' as VizMode, label: 'Heatmap', icon: Grid3X3, title: 'Density Matrix Heatmap' },
@@ -902,7 +902,7 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.15 }}
-                className="h-9 min-h-[36px] max-h-[36px] px-3.5 flex items-center justify-between border-b border-border-subtle/50 bg-secondary/90 text-[11px] flex-shrink-0 select-none"
+                className="min-h-[36px] py-1 px-3.5 flex items-center justify-between border-b border-border-subtle/50 bg-secondary/90 text-[11px] flex-shrink-0 select-none flex-wrap gap-2 overflow-x-auto"
               >
                 <div className="flex items-center gap-3">
                   {/* Column Selector for Bar / Line / Donut */}
@@ -979,27 +979,27 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
                    transition={{ duration: 0.2 }}
                    className="w-full h-full max-h-[260px] overflow-y-auto pr-1"
                  >
-                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 py-1">
+                   <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2 py-1">
                  {columnHealthMetrics.map(metric => (
                    <div 
                      key={metric.name}
-                     className="bg-primary border border-border-subtle rounded-lg p-3 shadow-xs flex flex-col justify-between"
+                     className="bg-primary border border-border-subtle rounded-lg p-2.5 sm:p-3 shadow-xs flex flex-col justify-between min-w-0"
                    >
-                     <div>
-                       <div className="flex items-center justify-between gap-1 mb-1.5">
-                         <span className="text-xs font-bold text-content truncate font-mono" title={metric.name}>
+                     <div className="min-w-0">
+                       <div className="flex items-center justify-between gap-1.5 mb-1.5 min-w-0">
+                         <span className="text-xs font-bold text-content truncate font-mono min-w-0" title={metric.name}>
                            {metric.name}
                          </span>
-                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-secondary text-content-muted font-mono flex-shrink-0 border border-border-subtle/50">
+                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-secondary text-content-muted font-mono shrink-0 border border-border-subtle/50 whitespace-nowrap">
                            {metric.type}
                          </span>
                        </div>
                        
                        {/* Fill Rate Progress Bar */}
                        <div className="mt-1">
-                         <div className="flex justify-between text-[10px] text-content-muted font-mono mb-1">
-                           <span>Populated</span>
-                           <span className={metric.fillRate < 80 ? 'text-amber-500 font-bold' : 'text-emerald-500 font-bold'}>
+                         <div className="flex items-center justify-between gap-1 text-[10px] text-content-muted font-mono mb-1">
+                           <span className="truncate">Populated</span>
+                           <span className={`shrink-0 font-bold whitespace-nowrap ${metric.fillRate < 80 ? 'text-amber-500' : 'text-emerald-500'}`}>
                              {metric.fillRate}%
                            </span>
                          </div>
@@ -1014,21 +1014,23 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
                        </div>
 
                        {/* Extra stats */}
-                       <div className="mt-2 text-[10px] font-mono text-content-muted flex items-center justify-between">
-                         <span>Distinct</span>
-                         <span className="text-content font-semibold">{metric.distinctCount}</span>
+                       <div className="mt-2 text-[10px] font-mono text-content-muted flex items-center justify-between gap-1">
+                         <span className="truncate">Distinct</span>
+                         <span className="text-content font-semibold shrink-0 whitespace-nowrap">{metric.distinctCount}</span>
                        </div>
                        {metric.avg !== null && (
-                         <div className="mt-0.5 text-[10px] font-mono text-content-muted flex items-center justify-between">
-                           <span>Avg</span>
-                           <span className="text-content font-semibold">{metric.avg}</span>
+                         <div className="mt-0.5 text-[10px] font-mono text-content-muted flex items-center justify-between gap-1">
+                           <span className="truncate">Avg</span>
+                           <span className="text-content font-semibold shrink-0 truncate max-w-[55%] text-right font-mono" title={String(metric.avg)}>
+                             {metric.avg}
+                           </span>
                          </div>
                        )}
                      </div>
 
-                     <div className="mt-2.5 pt-2 border-t border-border-subtle/60 text-[10px] font-mono flex items-center justify-between">
-                       <span className="text-content-muted">Missing</span>
-                       <span className={metric.nullCount > 0 ? 'text-amber-500 font-bold' : 'text-emerald-500 font-medium'}>
+                     <div className="mt-2.5 pt-2 border-t border-border-subtle/60 text-[10px] font-mono flex items-center justify-between gap-1">
+                       <span className="text-content-muted truncate">Missing</span>
+                       <span className={`shrink-0 whitespace-nowrap font-medium ${metric.nullCount > 0 ? 'text-amber-500 font-bold' : 'text-emerald-500'}`}>
                          {metric.nullCount > 0 ? `${metric.nullCount} null` : '0 null'}
                        </span>
                      </div>

@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PresetSchema, ColumnSpec } from '../types';
 import { PRESET_SCHEMAS } from '../data/presets';
-import { X, Layers, ArrowRight, Download, Upload, CheckCircle2 } from 'lucide-react';
+import { X, Layers, ArrowRight, Download, Upload, CheckCircle2, Search } from 'lucide-react';
+import { AnimatedTabs } from './AnimatedTabs';
 
 interface Props {
   isOpen: boolean;
@@ -22,6 +23,25 @@ export const PresetSelector: React.FC<Props> = ({
   tableName
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    PRESET_SCHEMAS.forEach(p => set.add(p.category));
+    return ['All', ...Array.from(set)];
+  }, []);
+
+  const filteredPresets = useMemo(() => {
+    return PRESET_SCHEMAS.filter(p => {
+      const matchCat = selectedCategory === 'All' || p.category === selectedCategory;
+      const matchSearch = searchQuery.trim() === '' ||
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.columns.some(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchCat && matchSearch;
+    });
+  }, [selectedCategory, searchQuery]);
 
   const handleExportCurrent = () => {
     const payload = {
@@ -81,7 +101,7 @@ export const PresetSelector: React.FC<Props> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 16 }}
             transition={{ type: "spring", duration: 0.3, bounce: 0.12 }}
-            className="bg-primary border border-border-subtle rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+            className="bg-primary border border-border-subtle rounded-2xl w-full max-w-4xl h-[90vh] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle bg-secondary">
@@ -137,9 +157,32 @@ export const PresetSelector: React.FC<Props> = ({
               </div>
             </div>
 
+            {/* Search and Category Filter */}
+            <div className="p-4 border-b border-border-subtle flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-primary/20 flex-shrink-0">
+              <div className="relative flex-1 max-w-sm">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
+                <input
+                  type="text"
+                  placeholder="Search presets (e.g. E-Commerce, SaaS, Finance)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent"
+                />
+              </div>
+
+              <AnimatedTabs
+                tabs={categories.map((c) => ({ id: c, label: c }))}
+                activeTab={selectedCategory}
+                onChange={(cat) => setSelectedCategory(cat)}
+                layoutId="preset-categories-filter"
+                variant="chip"
+                size="xs"
+              />
+            </div>
+
             {/* Preset Cards List */}
             <div className="flex-1 overflow-y-auto p-6 space-y-3">
-              {PRESET_SCHEMAS.map((preset) => (
+              {filteredPresets.map((preset) => (
                 <div
                   key={preset.id}
                   className="group p-4 bg-secondary hover:bg-secondary border border-border-subtle hover:border-accent rounded-xl transition-all shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4"
