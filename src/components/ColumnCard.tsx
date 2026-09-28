@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ColumnSpec, ColumnType, DependencyCase } from '../types';
 import { RuleEditor } from './RuleEditor';
+import { ColumnTypeSelect } from './ColumnTypeSelect';
 import { getCustomColumnTypes, getExamplePresetTypes } from '../utils/customTypesManager';
 import { serializeRestApiConfig } from '../utils/restApiManager';
 import { RestApiLatencyBadge } from './RestApiLatencyBadge';
@@ -216,51 +217,21 @@ export const ColumnCard: React.FC<Props> = ({
             )}
           </div>
 
-          {/* Type Selector Dropdown */}
-          <div className="relative flex-shrink-0">
-            <select
+          {/* Searchable Categorized Type Selector Dropdown */}
+          <div className="flex-shrink-0">
+            <ColumnTypeSelect
               value={col.type}
-              onChange={(e) => {
-                const newType = e.target.value as ColumnType;
+              customTypeId={col.customTypeId}
+              onChange={(newType, defaultRule) => {
                 const isCustom = newType.startsWith('custom:') || newType.startsWith('example:');
-                const customMatch = isCustom ? (customTypes.find((t) => t.id === newType) || examplePresets.find((t) => t.id === newType)) : undefined;
                 onUpdate({
                   ...col,
                   type: newType,
                   customTypeId: isCustom ? newType : undefined,
-                  rule: isCustom && customMatch ? customMatch.defaultRule : getDefaultRuleForType(newType)
+                  rule: defaultRule !== undefined ? defaultRule : getDefaultRuleForType(newType)
                 });
               }}
-              className="pl-2 pr-6 py-1 text-xs bg-primary border border-border-subtle rounded-md text-accent font-semibold focus:outline-none focus:border-accent cursor-pointer transition appearance-none max-w-[135px]"
-            >
-              <optgroup label={t('schema.standardTypes')}>
-                {COL_TYPES.map((t) => (
-                  <option key={t.type} value={t.type}>
-                    {getColTypeLabel(t.type)}
-                  </option>
-                ))}
-              </optgroup>
-              {(activeCustomTypes.length > 0 || (matchedCustomType && !activeCustomTypes.some(c => c.id === matchedCustomType.id))) && (
-                <optgroup label={t('schema.customTypesAdvance')}>
-                  {activeCustomTypes.map((ct) => (
-                    <option key={ct.id} value={ct.id}>
-                      ⚡ {ct.name}
-                    </option>
-                  ))}
-                  {matchedCustomType && matchedCustomType.isActive === false && (
-                    <option key={matchedCustomType.id} value={matchedCustomType.id}>
-                      ⚡ {matchedCustomType.name} (Off)
-                    </option>
-                  )}
-                  {matchedCustomType && matchedCustomType.isActive !== false && !activeCustomTypes.some(c => c.id === matchedCustomType.id) && (
-                    <option key={matchedCustomType.id} value={matchedCustomType.id}>
-                      ⚡ {matchedCustomType.name}
-                    </option>
-                  )}
-                </optgroup>
-              )}
-            </select>
-            <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-content-muted pointer-events-none" />
+            />
           </div>
 
           {/* REST API Visual Indicator (Latency Badge & Sparkline) */}
@@ -546,22 +517,16 @@ export const ColumnCard: React.FC<Props> = ({
                         {/* Action Details: Override Type & Rule */}
                         {depCase.action === 'type_override' && (
                           <div className="flex items-center gap-1 flex-wrap">
-                            <select
+                            <ColumnTypeSelect
                               value={depCase.actionType || col.type}
-                              onChange={(e) =>
+                              compact={true}
+                              onChange={(newType, defaultRule) =>
                                 handleUpdateCase(depCase.id, {
-                                  actionType: e.target.value as ColumnType,
-                                  actionValue: getDefaultRuleForType(e.target.value as ColumnType)
+                                  actionType: newType,
+                                  actionValue: defaultRule !== undefined ? defaultRule : getDefaultRuleForType(newType)
                                 })
                               }
-                              className="bg-primary px-1.5 py-0.5 rounded border border-border-subtle text-[10px] font-semibold text-accent focus:outline-none cursor-pointer"
-                            >
-                              {COL_TYPES.map((t) => (
-                                <option key={t.type} value={t.type}>
-                                  {getColTypeLabel(t.type)}
-                                </option>
-                              ))}
-                            </select>
+                            />
                             <input
                               type="text"
                               placeholder="Override rule, e.g. CA, NY, TX"

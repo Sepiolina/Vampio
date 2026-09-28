@@ -148,6 +148,15 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
     }
   }, [isSettingsModalOpen, setIsSettingsModalOpen]);
 
+  // Listen for custom types manager request
+  useEffect(() => {
+    const handleOpenCustomTypes = () => {
+      setIsCustomTypeModalOpen(true);
+    };
+    window.addEventListener('vampio-open-custom-types', handleOpenCustomTypes);
+    return () => window.removeEventListener('vampio-open-custom-types', handleOpenCustomTypes);
+  }, []);
+
   // Refresh lists whenever menu opens
   const refreshStorageData = () => {
     setSavedSessions(getSavedSessions());
