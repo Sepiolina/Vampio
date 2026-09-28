@@ -78,6 +78,8 @@ import {
   Globe
 } from 'lucide-react';
 
+const INITIAL_DEMO: ColumnSpec[] = PRESET_SCHEMAS[0].columns;
+
 export default function App() {
   const { t } = useI18n();
   const [columns, setColumns] = useState<ColumnSpec[]>([]);
@@ -1673,15 +1675,14 @@ export default function App() {
         setStatusMessage={setStatusMessage}
       />
 
-      {/* Multi-Project Workspace Tab Bar (IDE / Browser Tabs) */}
-      <WorkspaceTabBar
-        onOpenImportBundle={() => setIsBundleImportModalOpen(true)}
-        onOpenFolderMonitor={() => setIsFolderMonitorOpen(true)}
-        onClearColumns={() => {
-          setColumns([]);
-          setStatusMessage('Cleared all columns. Workspace is now 100% blank.');
-        }}
-      />
+      {/* Multi-Project Workspace Tab Bar (IDE / Browser Tabs - collapses completely when in sidebar mode) */}
+      {displayMode === 'top-bar' && (
+        <WorkspaceTabBar
+          onOpenImportBundle={() => setIsBundleImportModalOpen(true)}
+          onOpenPresets={() => setIsPresetsOpen(true)}
+          onOpenFolderMonitor={() => setIsFolderMonitorOpen(true)}
+        />
+      )}
 
       {/* Production Profile Banner */}
       {profileBannerInfo && (

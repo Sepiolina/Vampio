@@ -40,6 +40,7 @@ import { CustomTypeModal, CustomTypeModalTab } from './CustomTypeModal';
 import { useI18n, LanguageSelectDropdown } from '../i18n';
 import { useUserRole } from '../context/UserRoleContext';
 import { useWorkspace } from '../context/WorkspaceContext';
+import { exportWorkspacesAsJson } from '../utils/workspaceStorage';
 import { getCustomColumnTypes, CustomColumnType, exportCustomColumnTypesJSON } from '../utils/customTypesManager';
 import {
   getLatestSession,
@@ -106,12 +107,18 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
   const { 
     workspaces, 
     activeWorkspaceId, 
+    savePolicy,
+    setSavePolicy,
+    displayMode,
+    setDisplayMode,
+    isSettingsModalOpen,
     switchWorkspace, 
     createWorkspace, 
     setIsQuickSwitcherOpen, 
     setIsSettingsModalOpen 
   } = useWorkspace();
   const [activeMenu, setActiveMenu] = useState<'files' | 'settings' | 'advance' | null>(null);
+  const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'workspace'>('general');
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isFormulasOpen, setIsFormulasOpen] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
@@ -130,6 +137,16 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
 
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const workspaceFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Synchronize with external settings open events (e.g. from tab bar gear)
+  useEffect(() => {
+    if (isSettingsModalOpen) {
+      setActiveMenu('settings');
+      setSettingsSubTab('workspace');
+      setIsSettingsModalOpen(false);
+    }
+  }, [isSettingsModalOpen, setIsSettingsModalOpen]);
 
   // Refresh lists whenever menu opens
   const refreshStorageData = () => {
@@ -674,115 +691,339 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                 </span>
               </div>
 
-              {/* Language Selection */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Globe size={11} className="text-accent" />
-                    {t('header.language')}
-                  </span>
-                  <span className="font-mono text-accent">
-                    {availableLocales.find((l) => l.code === locale)?.nativeName}
-                  </span>
-                </label>
-                <div className="grid grid-cols-3 gap-1">
-                  {availableLocales.map((loc) => {
-                    const isSel = loc.code === locale;
-                    return (
+              {/* Subtabs Header: General vs Workspace & Projects */}
+              <div className="flex items-center gap-1 border-b border-border-subtle/70 pb-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setSettingsSubTab('general')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    settingsSubTab === 'general'
+                      ? 'bg-accent/15 text-accent border border-accent/40 font-semibold'
+                      : 'text-content-muted hover:text-content hover:bg-primary/60 border border-transparent'
+                  }`}
+                >
+                  <Sliders size={12} />
+                  <span>General</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsSubTab('workspace')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    settingsSubTab === 'workspace'
+                      ? 'bg-accent/15 text-accent border border-accent/40 font-semibold'
+                      : 'text-content-muted hover:text-content hover:bg-primary/60 border border-transparent'
+                  }`}
+                >
+                  <Layers size={12} />
+                  <span>Workspaces & Projects</span>
+                </button>
+              </div>
+
+              {settingsSubTab === 'general' ? (
+                <>
+                  {/* Language Selection */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Globe size={11} className="text-accent" />
+                        {t('header.language')}
+                      </span>
+                      <span className="font-mono text-accent">
+                        {availableLocales.find((l) => l.code === locale)?.nativeName}
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-1">
+                      {availableLocales.map((loc) => {
+                        const isSel = loc.code === locale;
+                        return (
+                          <button
+                            key={loc.code}
+                            type="button"
+                            onClick={() => setLocale(loc.code)}
+                            title={`Switch language to ${loc.nativeName} (${loc.name})`}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition cursor-pointer text-left ${
+                              isSel
+                                ? 'bg-accent text-white border-accent shadow-xs font-semibold'
+                                : 'bg-primary hover:bg-tertiary border-border-subtle text-content'
+                            }`}
+                          >
+                            <span className="text-xs leading-none">{loc.flag}</span>
+                            <span className="truncate">{loc.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Default Export Format */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted">
+                      {t('header.defaultExportFormat')}
+                    </label>
+                    <FormatSelectDropdown value={format} onChange={setFormat} />
+                  </div>
+
+                  {/* Batch Size Selection */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center justify-between">
+                      <span>{t('header.batchOutputRows')}</span>
+                      <span className="font-mono text-accent">{count.toLocaleString()}</span>
+                    </label>
+                    <AnimatedTabs
+                      tabs={[
+                        { id: '500', label: '500', title: '500 rows' },
+                        { id: '1000', label: '1k', title: '1,000 rows' },
+                        { id: '5000', label: '5k', title: '5,000 rows' },
+                        { id: '25000', label: '25k', title: '25,000 rows' },
+                      ]}
+                      activeTab={String(count)}
+                      onChange={(c) => setCount(Number(c))}
+                      layoutId="settings-batch-count"
+                      variant="pill"
+                      size="xs"
+                      fullWidth
+                    />
+                  </div>
+
+                  {/* Stream Throttle Speed */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center justify-between">
+                      <span>{t('header.streamingThrottle')}</span>
+                      <span className="font-mono text-content-muted">{intervalMs}ms</span>
+                    </label>
+                    <AnimatedTabs
+                      tabs={[
+                        { id: '50', label: 'Fast (50ms)', title: '50ms interval (High speed)' },
+                        { id: '150', label: 'Norm (150ms)', title: '150ms interval (Balanced)' },
+                        { id: '400', label: 'Eco (400ms)', title: '400ms interval (Resource saver)' },
+                      ]}
+                      activeTab={String(intervalMs)}
+                      onChange={(ms) => setIntervalMs(Number(ms))}
+                      layoutId="settings-stream-throttle"
+                      variant="pill"
+                      size="xs"
+                      fullWidth
+                    />
+                  </div>
+
+                  {/* Reset Defaults */}
+                  <div className="pt-2 border-t border-border-subtle/60 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormat('csv');
+                        setCount(1000);
+                        setIntervalMs(150);
+                        setStatusMessage('Preferences reset to default values.');
+                      }}
+                      title={t('header.resetDefaults')}
+                      className="text-[10px] text-content-muted hover:text-content hover:underline cursor-pointer"
+                    >
+                      {t('header.resetDefaults')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMenu(null)}
+                      title={t('header.done')}
+                      className="px-2.5 py-1 bg-primary hover:bg-tertiary border border-border-subtle rounded text-[11px] font-medium text-content transition cursor-pointer"
+                    >
+                      {t('header.done')}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Workspace & Projects Tab */
+                <div className="space-y-3">
+                  {/* Save Policy */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Save size={11} className="text-accent" />
+                        <span>Save Policy</span>
+                      </span>
+                      <span className="text-[9px] font-mono text-emerald-400 capitalize">
+                        {savePolicy}
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-1">
                       <button
-                        key={loc.code}
                         type="button"
-                        onClick={() => setLocale(loc.code)}
-                        title={`Switch language to ${loc.nativeName} (${loc.name})`}
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition cursor-pointer text-left ${
-                          isSel
-                            ? 'bg-accent text-white border-accent shadow-xs font-semibold'
-                            : 'bg-primary hover:bg-tertiary border-border-subtle text-content'
+                        onClick={() => setSavePolicy('auto')}
+                        className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition cursor-pointer ${
+                          savePolicy === 'auto'
+                            ? 'bg-accent/15 text-accent border-accent font-semibold shadow-xs'
+                            : 'bg-primary/50 hover:bg-tertiary border-border-subtle text-content-muted hover:text-content'
+                        }`}
+                        title="Auto-saves modifications in real time to IndexedDB"
+                      >
+                        <span className="text-[11px] font-medium">Auto-Save</span>
+                        <span className="text-[9px] text-emerald-400 font-mono">Recommended</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSavePolicy('prompt')}
+                        className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition cursor-pointer ${
+                          savePolicy === 'prompt'
+                            ? 'bg-accent/15 text-accent border-accent font-semibold shadow-xs'
+                            : 'bg-primary/50 hover:bg-tertiary border-border-subtle text-content-muted hover:text-content'
+                        }`}
+                        title="Prompts to confirm before leaving dirty workspace"
+                      >
+                        <span className="text-[11px] font-medium">Prompt</span>
+                        <span className="text-[9px] text-content-muted font-mono">Confirm first</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSavePolicy('manual')}
+                        className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition cursor-pointer ${
+                          savePolicy === 'manual'
+                            ? 'bg-accent/15 text-accent border-accent font-semibold shadow-xs'
+                            : 'bg-primary/50 hover:bg-tertiary border-border-subtle text-content-muted hover:text-content'
+                        }`}
+                        title="Manual save only with unsaved dirty dots"
+                      >
+                        <span className="text-[11px] font-medium flex items-center gap-1">
+                          <span>Manual</span>
+                          <span className="text-amber-400 text-xs">●</span>
+                        </span>
+                        <span className="text-[9px] text-content-muted font-mono">Ctrl+S only</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Navigation Style */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted">
+                      Navigation Style
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setDisplayMode('top-bar')}
+                        className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border text-[11px] font-medium transition cursor-pointer ${
+                          displayMode === 'top-bar'
+                            ? 'bg-accent text-white border-accent shadow-xs'
+                            : 'bg-primary/50 hover:bg-tertiary border-border-subtle text-content-muted hover:text-content'
                         }`}
                       >
-                        <span className="text-xs leading-none">{loc.flag}</span>
-                        <span className="truncate">{loc.name}</span>
+                        <span>Top Tab Bar</span>
                       </button>
-                    );
-                  })}
+                      <button
+                        type="button"
+                        onClick={() => setDisplayMode('sidebar')}
+                        className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border text-[11px] font-medium transition cursor-pointer ${
+                          displayMode === 'sidebar'
+                            ? 'bg-accent text-white border-accent shadow-xs'
+                            : 'bg-primary/50 hover:bg-tertiary border-border-subtle text-content-muted hover:text-content'
+                        }`}
+                      >
+                        <span>Sidebar Drawer</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Switcher & Project Actions */}
+                  <div className="space-y-1.5 pt-1 border-t border-border-subtle/50">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsQuickSwitcherOpen(true);
+                        setActiveMenu(null);
+                      }}
+                      className="w-full flex items-center justify-between p-2 rounded-lg bg-primary/40 hover:bg-tertiary border border-border-subtle text-content transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Layers size={13} className="text-accent" />
+                        <span>Quick Project Switcher</span>
+                      </span>
+                      <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-secondary rounded border border-border-subtle">
+                        ⌘K
+                      </kbd>
+                    </button>
+                  </div>
+
+                  {/* Backup / Export All Projects */}
+                  <div className="space-y-1.5 pt-1 border-t border-border-subtle/50">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted">
+                      Backup & Restore Projects
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const jsonStr = exportWorkspacesAsJson(workspaces);
+                          const blob = new Blob([jsonStr], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `vampio_all_workspaces_${new Date().toISOString().slice(0, 10)}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          setStatusMessage(`Exported backup of ${workspaces.length} workspace projects.`);
+                        }}
+                        className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-primary/40 hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
+                      >
+                        <Download size={11} className="text-accent" />
+                        <span>Export All</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => workspaceFileInputRef.current?.click()}
+                        className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-primary/40 hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
+                      >
+                        <Upload size={11} className="text-accent" />
+                        <span>Restore Backup</span>
+                      </button>
+                      <input
+                        ref={workspaceFileInputRef}
+                        type="file"
+                        accept=".json"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = async (event) => {
+                            try {
+                              const text = event.target?.result as string;
+                              const parsed = JSON.parse(text);
+                              if (parsed.workspaces && Array.isArray(parsed.workspaces)) {
+                                for (const ws of parsed.workspaces) {
+                                  await createWorkspace({
+                                    name: ws.name || 'Imported Workspace',
+                                    tableName: ws.tableName,
+                                    columns: ws.columns || [],
+                                    format: ws.format || 'csv',
+                                  });
+                                }
+                                setStatusMessage(`Restored ${parsed.workspaces.length} projects successfully.`);
+                                setActiveMenu(null);
+                              } else {
+                                alert('Invalid workspaces backup file.');
+                              }
+                            } catch (err: any) {
+                              alert(`Failed to import workspaces: ${err.message}`);
+                            }
+                          };
+                          reader.readAsText(file);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Done / Close Button */}
+                  <div className="pt-2 border-t border-border-subtle/60 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setActiveMenu(null)}
+                      title={t('header.done')}
+                      className="px-3 py-1 bg-accent hover:bg-accent-hover text-white rounded text-[11px] font-medium transition cursor-pointer"
+                    >
+                      {t('header.done')}
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {/* Default Export Format */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted">
-                  {t('header.defaultExportFormat')}
-                </label>
-                <FormatSelectDropdown value={format} onChange={setFormat} />
-              </div>
-
-              {/* Batch Size Selection */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center justify-between">
-                  <span>{t('header.batchOutputRows')}</span>
-                  <span className="font-mono text-accent">{count.toLocaleString()}</span>
-                </label>
-                <AnimatedTabs
-                  tabs={[
-                    { id: '500', label: '500', title: '500 rows' },
-                    { id: '1000', label: '1k', title: '1,000 rows' },
-                    { id: '5000', label: '5k', title: '5,000 rows' },
-                    { id: '25000', label: '25k', title: '25,000 rows' },
-                  ]}
-                  activeTab={String(count)}
-                  onChange={(c) => setCount(Number(c))}
-                  layoutId="settings-batch-count"
-                  variant="pill"
-                  size="xs"
-                  fullWidth
-                />
-              </div>
-
-              {/* Stream Throttle Speed */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center justify-between">
-                  <span>{t('header.streamingThrottle')}</span>
-                  <span className="font-mono text-content-muted">{intervalMs}ms</span>
-                </label>
-                <AnimatedTabs
-                  tabs={[
-                    { id: '50', label: 'Fast (50ms)', title: '50ms interval (High speed)' },
-                    { id: '150', label: 'Norm (150ms)', title: '150ms interval (Balanced)' },
-                    { id: '400', label: 'Eco (400ms)', title: '400ms interval (Resource saver)' },
-                  ]}
-                  activeTab={String(intervalMs)}
-                  onChange={(ms) => setIntervalMs(Number(ms))}
-                  layoutId="settings-stream-throttle"
-                  variant="pill"
-                  size="xs"
-                  fullWidth
-                />
-              </div>
-
-              {/* Reset Defaults */}
-              <div className="pt-2 border-t border-border-subtle/60 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormat('csv');
-                    setCount(1000);
-                    setIntervalMs(150);
-                    setStatusMessage('Preferences reset to default values.');
-                  }}
-                  title={t('header.resetDefaults')}
-                  className="text-[10px] text-content-muted hover:text-content hover:underline cursor-pointer"
-                >
-                  {t('header.resetDefaults')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveMenu(null)}
-                  title={t('header.done')}
-                  className="px-2.5 py-1 bg-primary hover:bg-tertiary border border-border-subtle rounded text-[11px] font-medium text-content transition cursor-pointer"
-                >
-                  {t('header.done')}
-                </button>
-              </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

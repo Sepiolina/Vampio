@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, Save, Trash2 } from 'lucide-react';
+import { AlertCircle, Save, Trash2, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 
 export const UnsavedChangesPromptModal: React.FC = () => {
@@ -18,15 +18,15 @@ export const UnsavedChangesPromptModal: React.FC = () => {
   const targetWs = workspaces.find((w) => w.id === pendingTargetWorkspaceId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 select-none">
-      <div className="w-full max-w-md bg-card border-2 border-border rounded-xl shadow-2xl overflow-hidden animate-in fade-in duration-100 text-content">
-        <div className="p-6">
-          <div className="flex items-start gap-3.5">
-            <div className="p-2.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
-              <AlertCircle size={22} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none">
+      <div className="w-full max-w-md bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-content">
+        <div className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-full bg-amber-500/15 text-amber-400 shrink-0">
+              <AlertCircle size={20} />
             </div>
-            <div className="space-y-1.5">
-              <h3 className="text-sm font-bold text-content">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-content">
                 Save changes to &quot;{activeWorkspace?.name}&quot;?
               </h3>
               <p className="text-xs text-content-muted leading-relaxed">
@@ -35,28 +35,28 @@ export const UnsavedChangesPromptModal: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t border-border flex items-center justify-end gap-2.5">
+          <div className="mt-6 flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={cancelSwitch}
-              className="px-3.5 py-2 rounded-md border-2 border-border hover:bg-secondary text-xs text-content font-bold transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-md border border-border-subtle hover:bg-secondary text-xs text-content font-medium transition-colors"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={confirmSwitchWithoutSave}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 border-2 border-rose-500/30 text-xs font-bold transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 border border-rose-500/30 text-xs font-medium transition-colors"
             >
-              <Trash2 size={13} />
+              <Trash2 size={12} />
               <span>Discard Changes</span>
             </button>
             <button
               type="button"
               onClick={confirmSwitchWithSave}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-accent text-white hover:bg-accent-hover text-xs font-bold transition-colors shadow-xs cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-accent text-white hover:bg-accent/90 text-xs font-medium transition-colors shadow-xs"
             >
-              <Save size={13} />
+              <Save size={12} />
               <span>Save & Switch</span>
             </button>
           </div>

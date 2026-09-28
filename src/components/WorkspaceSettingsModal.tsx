@@ -4,12 +4,16 @@ import {
   Settings2, 
   Save, 
   Layout, 
+  Sliders, 
   Check, 
   Download, 
   Upload, 
-  Command
+  Command, 
+  AlertCircle,
+  FolderSync
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
+import { WorkspaceSavePolicy, WorkspaceDisplayMode } from '../types';
 import { exportWorkspacesAsJson } from '../utils/workspaceStorage';
 
 export const WorkspaceSettingsModal: React.FC = () => {
@@ -69,64 +73,64 @@ export const WorkspaceSettingsModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 select-none">
-      <div className="w-full max-w-lg bg-card border-2 border-border rounded-xl shadow-2xl overflow-hidden animate-in fade-in duration-100 text-content">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none">
+      <div className="w-full max-w-lg bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-content">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b-2 border-border bg-secondary">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle bg-primary/40">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-md bg-accent text-white">
+            <div className="p-1.5 rounded-lg bg-accent/15 text-accent border border-accent/25">
               <Settings2 size={16} />
             </div>
             <div>
               <h2 className="text-sm font-bold text-content">Workspace & Project Settings</h2>
-              <p className="text-xs text-content-muted">Configure multi-project switcher layout & persistence</p>
+              <p className="text-[11px] text-content-muted">Configure multi-project switcher layout & persistence</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setIsSettingsModalOpen(false)}
-            className="p-1.5 rounded-md text-content hover:bg-card border border-transparent hover:border-border transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-primary/60 transition-colors"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto bg-card">
+        <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto bg-secondary">
           {/* Section 1: Save & Persistence Policy */}
           <div className="space-y-2.5">
-            <label className="text-xs font-bold text-content flex items-center gap-1.5 uppercase tracking-wider">
-              <Save size={14} className="text-accent" />
+            <label className="text-xs font-semibold text-content flex items-center gap-1.5">
+              <Save size={13} className="text-accent" />
               <span>Workspace Save Policy</span>
             </label>
-            <p className="text-xs text-content-muted leading-relaxed">
+            <p className="text-[11px] text-content-muted leading-relaxed">
               How Vampio manages unsaved schema edits when swapping between projects:
             </p>
 
-            <div className="grid grid-cols-1 gap-2.5">
+            <div className="grid grid-cols-1 gap-2">
               {/* Option A: Auto-save */}
               <button
                 type="button"
                 onClick={() => setSavePolicy('auto')}
-                className={`flex items-start gap-3 p-3.5 rounded-lg border-2 text-left transition-all cursor-pointer ${
+                className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
                   savePolicy === 'auto'
-                    ? 'bg-secondary border-accent text-content shadow-xs'
-                    : 'bg-secondary/40 hover:bg-secondary border-border text-content-muted hover:text-content'
+                    ? 'bg-accent/15 border-accent text-content shadow-xs ring-1 ring-accent/30'
+                    : 'bg-primary/50 hover:bg-primary/80 border-border-subtle text-content-muted hover:text-content'
                 }`}
               >
-                <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  savePolicy === 'auto' ? 'border-accent bg-accent text-white' : 'border-border'
+                <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                  savePolicy === 'auto' ? 'border-accent bg-accent text-white' : 'border-border-subtle'
                 }`}>
-                  {savePolicy === 'auto' && <Check size={11} strokeWidth={3} />}
+                  {savePolicy === 'auto' && <Check size={10} strokeWidth={3} />}
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-content flex items-center gap-2">
+                  <div className="text-xs font-semibold text-content flex items-center gap-1.5">
                     <span>Auto-Save to IndexedDB on Switch</span>
-                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                       Recommended
                     </span>
                   </div>
-                  <p className="text-xs text-content-muted mt-0.5">
+                  <p className="text-[11px] text-content-muted mt-1 leading-normal">
                     Seamlessly persists changes in real-time. Zero delays, zero risk of data loss.
                   </p>
                 </div>
@@ -136,22 +140,22 @@ export const WorkspaceSettingsModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSavePolicy('prompt')}
-                className={`flex items-start gap-3 p-3.5 rounded-lg border-2 text-left transition-all cursor-pointer ${
+                className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
                   savePolicy === 'prompt'
-                    ? 'bg-secondary border-accent text-content shadow-xs'
-                    : 'bg-secondary/40 hover:bg-secondary border-border text-content-muted hover:text-content'
+                    ? 'bg-accent/15 border-accent text-content shadow-xs ring-1 ring-accent/30'
+                    : 'bg-primary/50 hover:bg-primary/80 border-border-subtle text-content-muted hover:text-content'
                 }`}
               >
-                <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  savePolicy === 'prompt' ? 'border-accent bg-accent text-white' : 'border-border'
+                <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                  savePolicy === 'prompt' ? 'border-accent bg-accent text-white' : 'border-border-subtle'
                 }`}>
-                  {savePolicy === 'prompt' && <Check size={11} strokeWidth={3} />}
+                  {savePolicy === 'prompt' && <Check size={10} strokeWidth={3} />}
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-content">
+                  <div className="text-xs font-semibold text-content">
                     Prompt to Confirm Before Switching
                   </div>
-                  <p className="text-xs text-content-muted mt-0.5">
+                  <p className="text-[11px] text-content-muted mt-1 leading-normal">
                     Opens a modal dialog asking whether to save, discard, or cancel when leaving an edited project.
                   </p>
                 </div>
@@ -161,24 +165,24 @@ export const WorkspaceSettingsModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSavePolicy('manual')}
-                className={`flex items-start gap-3 p-3.5 rounded-lg border-2 text-left transition-all cursor-pointer ${
+                className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
                   savePolicy === 'manual'
-                    ? 'bg-secondary border-accent text-content shadow-xs'
-                    : 'bg-secondary/40 hover:bg-secondary border-border text-content-muted hover:text-content'
+                    ? 'bg-accent/15 border-accent text-content shadow-xs ring-1 ring-accent/30'
+                    : 'bg-primary/50 hover:bg-primary/80 border-border-subtle text-content-muted hover:text-content'
                 }`}
               >
-                <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  savePolicy === 'manual' ? 'border-accent bg-accent text-white' : 'border-border'
+                <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                  savePolicy === 'manual' ? 'border-accent bg-accent text-white' : 'border-border-subtle'
                 }`}>
-                  {savePolicy === 'manual' && <Check size={11} strokeWidth={3} />}
+                  {savePolicy === 'manual' && <Check size={10} strokeWidth={3} />}
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-content flex items-center gap-1.5">
+                  <div className="text-xs font-semibold text-content flex items-center gap-1.5">
                     <span>Manual Save with Dirty Dot Indicators</span>
-                    <span className="text-xs font-mono text-amber-400 font-bold">●</span>
+                    <span className="text-[9px] font-mono text-amber-400">●</span>
                   </div>
-                  <p className="text-xs text-content-muted mt-0.5">
-                    Displays an unsaved dot indicator. Projects only persist when you press Save or <kbd className="text-xs font-mono bg-card px-1.5 py-0.5 rounded border border-border">Ctrl+S</kbd>.
+                  <p className="text-[11px] text-content-muted mt-1 leading-normal">
+                    Displays an unsaved dot indicator. Projects only persist when you press Save or <kbd className="text-[10px] font-mono bg-secondary px-1.5 py-0.5 rounded border border-border-subtle text-content">Ctrl+S</kbd>.
                   </p>
                 </div>
               </button>
@@ -187,87 +191,87 @@ export const WorkspaceSettingsModal: React.FC = () => {
 
           {/* Section 2: Display Layout Mode */}
           <div className="space-y-2.5">
-            <label className="text-xs font-bold text-content flex items-center gap-1.5 uppercase tracking-wider">
-              <Layout size={14} className="text-accent" />
+            <label className="text-xs font-semibold text-content flex items-center gap-1.5">
+              <Layout size={13} className="text-accent" />
               <span>Workspace Navigation Style</span>
             </label>
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setDisplayMode('top-bar')}
-                className={`flex flex-col gap-1 p-3.5 rounded-lg border-2 text-left transition-all cursor-pointer ${
+                className={`flex flex-col gap-1 p-3 rounded-xl border text-left transition-all ${
                   displayMode === 'top-bar'
-                    ? 'bg-secondary border-accent text-content shadow-xs'
-                    : 'bg-secondary/40 hover:bg-secondary border-border text-content-muted'
+                    ? 'bg-accent/15 border-accent text-content shadow-xs ring-1 ring-accent/30'
+                    : 'bg-primary/50 hover:bg-primary/80 border-border-subtle text-content-muted hover:text-content'
                 }`}
               >
-                <div className="text-xs font-bold text-content">Top Tab Bar (IDE / Browser)</div>
-                <div className="text-xs text-content-muted">Horizontal tabs directly beneath the header.</div>
+                <div className="text-xs font-semibold text-content">Top Tab Bar (IDE / Browser)</div>
+                <div className="text-[11px] text-content-muted mt-0.5">Horizontal tabs directly beneath the header.</div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setDisplayMode('sidebar')}
-                className={`flex flex-col gap-1 p-3.5 rounded-lg border-2 text-left transition-all cursor-pointer ${
+                className={`flex flex-col gap-1 p-3 rounded-xl border text-left transition-all ${
                   displayMode === 'sidebar'
-                    ? 'bg-secondary border-accent text-content shadow-xs'
-                    : 'bg-secondary/40 hover:bg-secondary border-border text-content-muted'
+                    ? 'bg-accent/15 border-accent text-content shadow-xs ring-1 ring-accent/30'
+                    : 'bg-primary/50 hover:bg-primary/80 border-border-subtle text-content-muted hover:text-content'
                 }`}
               >
-                <div className="text-xs font-bold text-content">Sidebar Workspace Drawer</div>
-                <div className="text-xs text-content-muted">Docked panel with project list and rich metadata.</div>
+                <div className="text-xs font-semibold text-content">Sidebar Workspace Drawer</div>
+                <div className="text-[11px] text-content-muted mt-0.5">Docked panel with project list and rich metadata.</div>
               </button>
             </div>
           </div>
 
           {/* Section 3: Keyboard Shortcuts */}
-          <div className="space-y-2 pt-2 border-t-2 border-border">
-            <label className="text-xs font-bold text-content flex items-center gap-1.5 uppercase tracking-wider">
-              <Command size={14} className="text-accent" />
+          <div className="space-y-2 pt-2 border-t border-border-subtle">
+            <label className="text-xs font-semibold text-content flex items-center gap-1.5">
+              <Command size={13} className="text-accent" />
               <span>Keyboard Shortcuts</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center justify-between p-2.5 rounded-md bg-secondary border border-border">
-                <span className="text-content-muted font-medium">Quick Switcher</span>
-                <kbd className="px-2 py-0.5 text-xs font-mono font-bold bg-card text-content rounded border border-border">⌘/Ctrl + K</kbd>
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-primary/50 border border-border-subtle">
+                <span className="text-content-muted">Quick Switcher</span>
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-secondary rounded border border-border-subtle text-content font-medium">⌘/Ctrl + K</kbd>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-md bg-secondary border border-border">
-                <span className="text-content-muted font-medium">Save Workspace</span>
-                <kbd className="px-2 py-0.5 text-xs font-mono font-bold bg-card text-content rounded border border-border">⌘/Ctrl + S</kbd>
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-primary/50 border border-border-subtle">
+                <span className="text-content-muted">Save Workspace</span>
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-secondary rounded border border-border-subtle text-content font-medium">⌘/Ctrl + S</kbd>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-md bg-secondary border border-border">
-                <span className="text-content-muted font-medium">Switch Tabs</span>
-                <kbd className="px-2 py-0.5 text-xs font-mono font-bold bg-card text-content rounded border border-border">Ctrl+Alt+←/→</kbd>
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-primary/50 border border-border-subtle">
+                <span className="text-content-muted">Switch Tabs</span>
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-secondary rounded border border-border-subtle text-content font-medium">Ctrl+Alt+←/→</kbd>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-md bg-secondary border border-border">
-                <span className="text-content-muted font-medium">Rename Tab</span>
-                <span className="text-xs font-mono font-bold text-accent">Double-click</span>
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-primary/50 border border-border-subtle">
+                <span className="text-content-muted">Rename Tab</span>
+                <span className="text-[10px] font-mono text-content-muted">Double-click</span>
               </div>
             </div>
           </div>
 
           {/* Section 4: Backup & Restore Workspaces */}
-          <div className="space-y-2 pt-2 border-t-2 border-border">
-            <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="space-y-2 pt-2 border-t border-border-subtle">
+            <div className="p-3 rounded-xl bg-primary/50 border border-border-subtle flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <div className="text-xs font-bold text-content">Export / Restore All Projects</div>
-                <div className="text-xs text-content-muted">Backup all active workspaces into a single JSON bundle</div>
+                <div className="text-xs font-semibold text-content">Export / Restore All Projects</div>
+                <div className="text-[11px] text-content-muted">Backup all active workspaces into a single JSON bundle</div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleExportAll}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-card border-2 border-border text-xs text-content font-bold transition-colors cursor-pointer shadow-xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary border border-border-subtle text-xs text-content font-medium transition-colors cursor-pointer"
                 >
-                  <Download size={13} />
+                  <Download size={12} />
                   <span>Export JSON</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-card border-2 border-border text-xs text-content font-bold transition-colors cursor-pointer shadow-xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary border border-border-subtle text-xs text-content font-medium transition-colors cursor-pointer"
                 >
-                  <Upload size={13} />
+                  <Upload size={12} />
                   <span>Restore</span>
                 </button>
                 <input
@@ -283,11 +287,11 @@ export const WorkspaceSettingsModal: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end px-5 py-3.5 border-t-2 border-border bg-secondary">
+        <div className="flex items-center justify-end px-5 py-3.5 border-t border-border-subtle bg-primary/40">
           <button
             type="button"
             onClick={() => setIsSettingsModalOpen(false)}
-            className="px-5 py-2 rounded-md bg-accent text-white text-xs font-bold hover:bg-accent-hover transition-colors shadow-xs cursor-pointer"
+            className="px-5 py-2 rounded-xl bg-accent text-white text-xs font-semibold hover:bg-accent-hover transition-colors shadow-xs cursor-pointer"
           >
             Done
           </button>

@@ -4,10 +4,12 @@
   --color-primary: var(--bg-primary);
   --color-secondary: var(--bg-secondary);
   --color-tertiary: var(--bg-tertiary);
+  --color-card: var(--bg-secondary);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-content: var(--text-main);
   --color-content-muted: var(--text-muted);
+  --color-border: var(--border-subtle);
   --color-border-subtle: var(--border-subtle);
 }
 

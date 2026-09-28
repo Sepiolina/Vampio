@@ -3,32 +3,31 @@ import {
   Plus, 
   X, 
   Search, 
-  Settings2, 
   Copy, 
+  FileCode, 
+  Sparkles, 
   Check, 
   Save, 
   FolderInput, 
-  PanelLeftClose, 
-  PanelLeftOpen, 
   Edit3,
   ChevronDown,
-  Layers,
-  Trash2
+  Layers
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { WorkspaceSession } from '../types';
 import { COLOR_TAGS } from '../utils/workspaceStorage';
+import { PRESET_SCHEMAS } from '../data/presets';
 
 interface Props {
   onOpenImportBundle?: () => void;
+  onOpenPresets?: () => void;
   onOpenFolderMonitor?: () => void;
-  onClearColumns?: () => void;
 }
 
 export const WorkspaceTabBar: React.FC<Props> = ({
   onOpenImportBundle,
-  onOpenFolderMonitor,
-  onClearColumns
+  onOpenPresets,
+  onOpenFolderMonitor
 }) => {
   const {
     workspaces,
@@ -42,30 +41,28 @@ export const WorkspaceTabBar: React.FC<Props> = ({
     renameWorkspace,
     deleteWorkspace,
     saveActiveWorkspace,
-    setDisplayMode,
-    setIsQuickSwitcherOpen,
-    setIsSettingsModalOpen
+    setIsQuickSwitcherOpen
   } = useWorkspace();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
-  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
-  const optionsMenuRef = useRef<HTMLDivElement>(null);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const tabListRef = useRef<HTMLDivElement>(null);
 
-  // Close options menu on outside click
+  // Close Add Menu on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (optionsMenuRef.current && !optionsMenuRef.current.contains(e.target as Node)) {
-        setIsOptionsOpen(false);
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setIsAddMenuOpen(false);
       }
     };
-    if (isOptionsOpen) {
+    if (isAddMenuOpen) {
       document.addEventListener('mousedown', handleClick);
     }
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [isOptionsOpen]);
+  }, [isAddMenuOpen]);
 
   // Focus rename input
   useEffect(() => {
@@ -74,6 +71,11 @@ export const WorkspaceTabBar: React.FC<Props> = ({
       editInputRef.current.select();
     }
   }, [editingId]);
+
+  // If sidebar mode is active, completely collapse/hide the top tab bar
+  if (displayMode !== 'top-bar') {
+    return null;
+  }
 
   const handleStartRename = (ws: WorkspaceSession, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -96,22 +98,29 @@ export const WorkspaceTabBar: React.FC<Props> = ({
     }
   };
 
-  // Direct 1-click creation of a 100% blank workspace (zero mock/fake columns)
   const handleCreateNewBlank = async () => {
-    setIsOptionsOpen(false);
-    const newWs = await createWorkspace({
-      name: `Workspace ${workspaces.length + 1}`,
-      tableName: `table_${workspaces.length + 1}`,
-      columns: [], // 100% blank state
+    setIsAddMenuOpen(false);
+    await createWorkspace({
+      name: `Project ${workspaces.length + 1}`,
+      tableName: `dataset_${workspaces.length + 1}`,
+      columns: [],
     });
-    // Immediately prompt rename so user can name it their real project
-    setEditingId(newWs.id);
-    setEditingName(newWs.name);
   };
 
   const handleDuplicateActive = async () => {
-    setIsOptionsOpen(false);
+    setIsAddMenuOpen(false);
     await duplicateWorkspace(activeWorkspaceId);
+  };
+
+  const handlePresetSelect = async (presetId: string) => {
+    setIsAddMenuOpen(false);
+    const preset = PRESET_SCHEMAS.find((p) => p.id === presetId);
+    if (!preset) return;
+    await createWorkspace({
+      name: preset.name,
+      tableName: preset.tableName,
+      columns: preset.columns,
+    });
   };
 
   const getColorDot = (tagId?: string) => {
@@ -120,31 +129,30 @@ export const WorkspaceTabBar: React.FC<Props> = ({
   };
 
   return (
-    <div className="flex items-center justify-between h-10 min-h-[40px] max-h-[40px] px-2.5 bg-secondary border-b border-border select-none text-xs z-30 shadow-xs">
-      {/* Left: Scrollable Project Tabs */}
+    <div className="flex items-center justify-between h-9 min-h-[36px] max-h-[36px] px-2 bg-secondary/80 border-b border-border-subtle select-none text-xs z-30">
+      {/* Left: Scrollable Tabs */}
       <div 
         ref={tabListRef} 
-        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 flex-1 max-w-[calc(100vw-360px)] sm:max-w-none mr-2"
+        className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 flex-1 max-w-[calc(100vw-340px)] sm:max-w-none mr-2"
       >
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId;
           const isEditing = editingId === ws.id;
-          const colCount = ws.columns?.length || 0;
 
           return (
             <div
               key={ws.id}
               onClick={() => !isEditing && switchWorkspace(ws.id)}
               onDoubleClick={(e) => handleStartRename(ws, e)}
-              className={`group relative flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-150 whitespace-nowrap border shrink-0 ${
+              className={`group relative flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-all duration-150 whitespace-nowrap border shrink-0 ${
                 isActive
-                  ? 'bg-card text-content border-border shadow-xs ring-1 ring-border'
-                  : 'bg-secondary hover:bg-card text-content-muted hover:text-content border-border/60 hover:border-border'
+                  ? 'bg-card text-content border-border shadow-xs'
+                  : 'bg-transparent text-content-muted hover:text-content hover:bg-card/40 border-transparent hover:border-border-subtle/50'
               }`}
-              title={`${ws.name} (${colCount} columns) - Double click to rename`}
+              title={`${ws.name} (${ws.columns?.length || 0} columns) - Double click to rename`}
             >
               {/* Colored status dot */}
-              <span className={`w-2 h-2 rounded-full shrink-0 ${getColorDot(ws.colorTag)}`} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${getColorDot(ws.colorTag)}`} />
 
               {/* Title / Rename input */}
               {isEditing ? (
@@ -156,23 +164,23 @@ export const WorkspaceTabBar: React.FC<Props> = ({
                   onBlur={handleCommitRename}
                   onKeyDown={handleKeyDownRename}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-28 px-1.5 py-0.5 bg-secondary border-2 border-accent rounded text-xs text-content focus:outline-hidden font-medium"
+                  className="w-24 px-1 py-0 bg-secondary border border-accent rounded text-xs text-content focus:outline-hidden"
                 />
               ) : (
-                <span className="max-w-[140px] truncate">{ws.name}</span>
+                <span className="max-w-[130px] truncate">{ws.name}</span>
               )}
 
               {/* Format tag & column count */}
-              <div className="flex items-center gap-1 text-[11px] font-mono tabular-nums text-content-muted">
-                <span className="uppercase font-semibold">{ws.format || 'csv'}</span>
+              <div className="flex items-center gap-1 text-[10px] text-content-muted/70 font-mono tabular-nums">
+                <span className="uppercase">{ws.format || 'csv'}</span>
                 <span>·</span>
-                <span>{colCount} cols</span>
+                <span>{ws.columns?.length || 0}c</span>
               </div>
 
               {/* Dirty indicator */}
               {ws.isDirty && (
                 <span 
-                  className="w-2 h-2 rounded-full bg-amber-400 shrink-0" 
+                  className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" 
                   title="Unsaved changes" 
                 />
               )}
@@ -185,123 +193,113 @@ export const WorkspaceTabBar: React.FC<Props> = ({
                     e.stopPropagation();
                     deleteWorkspace(ws.id);
                   }}
-                  className="ml-1 p-0.5 rounded hover:bg-rose-500/20 hover:text-rose-400 text-content-muted opacity-60 group-hover:opacity-100 transition-opacity"
+                  className="ml-0.5 p-0.5 rounded-sm hover:bg-rose-500/20 hover:text-rose-400 text-content-muted/60 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Close workspace"
                 >
-                  <X size={12} />
+                  <X size={11} />
                 </button>
               )}
             </div>
           );
         })}
 
-        {/* Action Group: Direct New Blank Workspace Button + Dropdown Options */}
-        <div className="flex items-center gap-0.5 shrink-0" ref={optionsMenuRef}>
+        {/* Plus / New Workspace Dropdown */}
+        <div ref={addMenuRef} className="relative inline-block shrink-0">
           <button
             type="button"
-            onClick={handleCreateNewBlank}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card hover:bg-tertiary text-content border border-border hover:border-accent text-xs font-semibold transition-all shadow-xs cursor-pointer"
-            title="Create 100% Blank Workspace (0 columns)"
+            onClick={() => setIsAddMenuOpen((prev) => !prev)}
+            className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-card/70 text-content-muted hover:text-content border border-transparent hover:border-border-subtle transition-colors"
+            title="New Project Workspace"
           >
-            <Plus size={13} className="text-accent" />
-            <span>New</span>
+            <Plus size={13} />
           </button>
 
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsOptionsOpen((prev) => !prev)}
-              className="p-1 rounded-md bg-card hover:bg-tertiary text-content-muted hover:text-content border border-border transition-colors cursor-pointer"
-              title="Workspace creation options"
-            >
-              <ChevronDown size={12} />
-            </button>
-
-            {isOptionsOpen && (
-              <div className="absolute top-full left-0 mt-1.5 w-56 bg-card border-2 border-border rounded-lg shadow-2xl p-1 z-50 text-xs">
+          {isAddMenuOpen && (
+            <div className="absolute top-full left-0 mt-1 w-52 bg-card border border-border rounded-lg shadow-xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+              <button
+                type="button"
+                onClick={handleCreateNewBlank}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
+              >
+                <Plus size={13} className="text-emerald-400" />
+                <span>Blank Workspace</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDuplicateActive}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
+              >
+                <Copy size={13} className="text-indigo-400" />
+                <span>Duplicate Active</span>
+              </button>
+              {onOpenPresets && (
                 <button
                   type="button"
-                  onClick={handleCreateNewBlank}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-content hover:bg-secondary text-left font-medium transition-colors"
+                  onClick={() => {
+                    setIsAddMenuOpen(false);
+                    onOpenPresets();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
                 >
-                  <Plus size={14} className="text-emerald-400" />
-                  <div>
-                    <div className="font-semibold">Blank Workspace</div>
-                    <div className="text-[10px] text-content-muted">Start fresh with 0 columns</div>
-                  </div>
+                  <Sparkles size={13} className="text-amber-400" />
+                  <span>From Preset Template...</span>
                 </button>
-
+              )}
+              {onOpenImportBundle && (
                 <button
                   type="button"
-                  onClick={handleDuplicateActive}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-content hover:bg-secondary text-left font-medium transition-colors"
+                  onClick={() => {
+                    setIsAddMenuOpen(false);
+                    onOpenImportBundle();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
                 >
-                  <Copy size={14} className="text-indigo-400" />
-                  <div>
-                    <div className="font-semibold">Duplicate Active</div>
-                    <div className="text-[10px] text-content-muted">Clone current schema</div>
-                  </div>
+                  <FolderInput size={13} className="text-sky-400" />
+                  <span>Import Profile Bundle...</span>
                 </button>
+              )}
 
-                {onOpenImportBundle && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsOptionsOpen(false);
-                      onOpenImportBundle();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-content hover:bg-secondary text-left font-medium transition-colors"
-                  >
-                    <FolderInput size={14} className="text-sky-400" />
-                    <div>
-                      <div className="font-semibold">Import Profile Bundle</div>
-                      <div className="text-[10px] text-content-muted">Open technician JSON profile</div>
-                    </div>
-                  </button>
-                )}
+              <div className="h-px bg-border-subtle my-1" />
 
-                {onClearColumns && (activeWorkspace?.columns?.length || 0) > 0 && (
-                  <>
-                    <div className="h-px bg-border my-1" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsOptionsOpen(false);
-                        onClearColumns();
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-rose-400 hover:bg-rose-500/10 text-left font-medium transition-colors"
-                    >
-                      <Trash2 size={13} />
-                      <span>Clear All Columns in Active Tab</span>
-                    </button>
-                  </>
-                )}
+              <div className="px-2 py-1 text-[10px] uppercase font-mono tracking-wider text-content-muted">
+                Popular Presets
               </div>
-            )}
-          </div>
+              {PRESET_SCHEMAS.slice(0, 3).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handlePresetSelect(p.id)}
+                  className="w-full flex items-center justify-between px-2.5 py-1 rounded-md text-xs text-content-muted hover:text-content hover:bg-secondary text-left transition-colors"
+                >
+                  <span className="truncate">{p.name}</span>
+                  <span className="text-[10px] font-mono text-content-muted/60">{p.columns.length}c</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Right Controls: High-Contrast Save Indicator, Quick Switcher & Layout Toggles */}
-      <div className="flex items-center gap-2 shrink-0 pl-2 border-l border-border">
+      {/* Right Controls: Quick Switcher, Save Indicator & Layout Toggles */}
+      <div className="flex items-center gap-1.5 shrink-0 pl-1 border-l border-border-subtle/80">
         {/* Save Status / Manual Save Button */}
         {savePolicy === 'manual' ? (
           <button
             type="button"
             onClick={saveActiveWorkspace}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-semibold transition-colors cursor-pointer ${
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors ${
               activeWorkspace?.isDirty
-                ? 'bg-amber-500 text-black border border-amber-400 shadow-xs'
-                : 'bg-card text-content border border-border hover:bg-tertiary'
+                ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 animate-pulse'
+                : 'bg-secondary text-content-muted border border-border-subtle hover:text-content'
             }`}
             title="Save active workspace (Ctrl/Cmd+S)"
           >
-            <Save size={12} />
+            <Save size={11} />
             <span>{activeWorkspace?.isDirty ? 'Save' : 'Saved'}</span>
           </button>
         ) : (
-          <div className="hidden lg:flex items-center gap-1.5 text-xs font-mono text-content font-medium px-2 py-0.5 rounded bg-card border border-border">
-            <Check size={12} className="text-emerald-400 stroke-[3]" />
+          <div className="hidden lg:flex items-center gap-1 text-[11px] font-mono text-content-muted/70 px-1.5">
+            <Check size={11} className="text-emerald-400" />
             <span className="capitalize">{savePolicy} save</span>
           </div>
         )}
@@ -310,38 +308,14 @@ export const WorkspaceTabBar: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => setIsQuickSwitcherOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card hover:bg-tertiary border border-border text-content text-xs font-medium transition-colors cursor-pointer shadow-xs"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-card/60 hover:bg-card border border-border-subtle hover:border-border text-content-muted hover:text-content text-[11px] transition-colors"
           title="Quick Switch Workspace (Ctrl/Cmd + K)"
         >
-          <Search size={12} className="text-content-muted" />
+          <Search size={11} />
           <span className="hidden xl:inline">Switch</span>
-          <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-secondary text-content rounded border border-border font-bold">
+          <kbd className="hidden sm:inline-block px-1 py-0 text-[9px] font-mono bg-secondary rounded border border-border-subtle">
             ⌘K
           </kbd>
-        </button>
-
-        {/* Toggle to Sidebar Mode */}
-        <button
-          type="button"
-          onClick={() => setDisplayMode(displayMode === 'top-bar' ? 'sidebar' : 'top-bar')}
-          className={`p-1.5 rounded-md transition-colors border cursor-pointer ${
-            displayMode === 'sidebar'
-              ? 'bg-accent text-white border-accent'
-              : 'bg-card hover:bg-tertiary text-content border-border'
-          }`}
-          title={displayMode === 'top-bar' ? 'Switch to Sidebar Workspace Drawer' : 'Switch to Top Tab Bar'}
-        >
-          {displayMode === 'sidebar' ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
-        </button>
-
-        {/* Workspace Settings Dialog */}
-        <button
-          type="button"
-          onClick={() => setIsSettingsModalOpen(true)}
-          className="p-1.5 rounded-md bg-card hover:bg-tertiary text-content border border-border transition-colors cursor-pointer"
-          title="Workspace Settings & Save Policy"
-        >
-          <Settings2 size={14} />
         </button>
       </div>
     </div>

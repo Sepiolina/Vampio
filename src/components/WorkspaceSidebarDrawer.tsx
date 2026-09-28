@@ -13,7 +13,8 @@ import {
   Download,
   Settings2,
   Clock,
-  Sparkles
+  Sparkles,
+  PanelLeftClose
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { WorkspaceSession } from '../types';
@@ -63,16 +64,6 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
     setEditingId(null);
   };
 
-  const handleCreateBlankWorkspace = async () => {
-    const newWs = await createWorkspace({
-      name: `Workspace ${workspaces.length + 1}`,
-      tableName: `table_${workspaces.length + 1}`,
-      columns: [],
-    });
-    setEditingId(newWs.id);
-    setEditingName(newWs.name);
-  };
-
   const getColorDot = (tagId?: string) => {
     const item = COLOR_TAGS.find((c) => c.id === tagId);
     return item ? item.dot : 'bg-emerald-500';
@@ -85,80 +76,85 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
   };
 
   return (
-    <aside className="w-72 shrink-0 bg-secondary border-r-2 border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20 shadow-md">
+    <aside className="w-72 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20">
       {/* Drawer Header */}
-      <div className="flex items-center justify-between px-3 py-3 border-b border-border bg-card">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle bg-card/40">
         <div className="flex items-center gap-2">
-          <Layers size={15} className="text-accent" />
-          <span className="font-bold text-content text-xs uppercase tracking-wider">Project Workspaces</span>
-          <span className="text-[11px] font-mono font-bold text-accent bg-accent/15 px-1.5 py-0.2 rounded border border-accent/30">
-            {workspaces.length}
+          <Layers size={14} className="text-accent" />
+          <span className="font-semibold text-content text-xs">Workspaces</span>
+          <span className="text-[10px] font-mono text-content-muted">
+            ({workspaces.length})
           </span>
         </div>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setIsSettingsModalOpen(true)}
-            className="p-1 rounded-md text-content hover:bg-secondary border border-transparent hover:border-border transition-colors cursor-pointer"
+            className="p-1 rounded-md text-content-muted hover:text-content hover:bg-card transition-colors"
             title="Workspace Settings"
           >
-            <Settings2 size={14} />
+            <Settings2 size={13} />
           </button>
           <button
             type="button"
             onClick={() => setDisplayMode('top-bar')}
-            className="p-1 rounded-md text-content hover:bg-secondary border border-transparent hover:border-border transition-colors cursor-pointer"
-            title="Switch to Top Tab Bar"
+            className="p-1 rounded-md text-content-muted hover:text-content hover:bg-card transition-colors flex items-center gap-1 cursor-pointer"
+            title="Collapse Sidebar & switch to Top Tab Bar"
           >
-            <X size={14} />
+            <PanelLeftClose size={13} />
           </button>
         </div>
       </div>
 
       {/* Search & Actions Bar */}
-      <div className="p-2.5 border-b border-border bg-secondary space-y-2">
+      <div className="p-2 border-b border-border-subtle space-y-1.5">
         <div className="relative">
-          <Search size={13} className="absolute left-2.5 top-2.5 text-content-muted" />
+          <Search size={12} className="absolute left-2.5 top-2 text-content-muted/60" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter projects..."
-            className="w-full pl-8 pr-2.5 py-1.5 bg-card border border-border rounded-md text-xs text-content placeholder:text-content-muted focus:outline-hidden focus:border-accent"
+            className="w-full pl-7 pr-2 py-1 bg-card border border-border-subtle rounded-md text-xs text-content placeholder:text-content-muted/50 focus:outline-hidden focus:border-accent"
           />
         </div>
 
         <button
           type="button"
-          onClick={handleCreateBlankWorkspace}
-          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-accent hover:bg-accent-hover text-white rounded-md font-bold text-xs transition-colors cursor-pointer shadow-xs"
+          onClick={() =>
+            createWorkspace({
+              name: `Project ${workspaces.length + 1}`,
+              tableName: `dataset_${workspaces.length + 1}`,
+              columns: [],
+            })
+          }
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-accent/10 hover:bg-accent/20 text-accent border border-accent/25 rounded-md font-medium text-xs transition-colors cursor-pointer"
         >
-          <Plus size={14} />
-          <span>New Blank Workspace</span>
+          <Plus size={13} />
+          <span>New Workspace</span>
         </button>
       </div>
 
       {/* Project Card List */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-secondary">
+      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
         {filtered.map((ws) => {
           const isActive = ws.id === activeWorkspaceId;
           const isEditing = editingId === ws.id;
-          const colCount = ws.columns?.length || 0;
 
           return (
             <div
               key={ws.id}
               onClick={() => !isEditing && switchWorkspace(ws.id)}
-              className={`group relative p-3 rounded-lg border-2 transition-all cursor-pointer ${
+              className={`group relative p-2.5 rounded-lg border transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-card border-accent shadow-sm'
-                  : 'bg-card hover:bg-tertiary border-border text-content'
+                  ? 'bg-card border-accent/40 shadow-xs ring-1 ring-accent/20'
+                  : 'bg-card/50 hover:bg-card border-border-subtle hover:border-border text-content-muted hover:text-content'
               }`}
             >
               {/* Card Top Row: Dot, Title, Actions */}
-              <div className="flex items-center justify-between gap-1 mb-2">
+              <div className="flex items-center justify-between gap-1 mb-1.5">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${getColorDot(ws.colorTag)}`} />
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${getColorDot(ws.colorTag)}`} />
                   {isEditing ? (
                     <input
                       type="text"
@@ -170,27 +166,27 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
                         if (e.key === 'Escape') setEditingId(null);
                       }}
                       autoFocus
-                      className="w-full px-1.5 py-0.5 bg-secondary border-2 border-accent rounded text-xs text-content font-bold focus:outline-hidden"
+                      className="w-full px-1 py-0 bg-secondary border border-accent rounded text-xs text-content focus:outline-hidden"
                     />
                   ) : (
-                    <span className="font-bold text-content text-xs truncate">
+                    <span className="font-semibold text-content text-xs truncate">
                       {ws.name}
                     </span>
                   )}
                 </div>
 
-                {/* Quick card action buttons */}
-                <div className="flex items-center gap-1">
+                {/* Quick card action buttons on hover */}
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleStartRename(ws);
                     }}
-                    className="p-1 rounded hover:bg-secondary text-content-muted hover:text-content border border-transparent hover:border-border"
+                    className="p-1 rounded hover:bg-secondary text-content-muted hover:text-content"
                     title="Rename"
                   >
-                    <Edit2 size={12} />
+                    <Edit2 size={11} />
                   </button>
                   <button
                     type="button"
@@ -198,10 +194,10 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
                       e.stopPropagation();
                       duplicateWorkspace(ws.id);
                     }}
-                    className="p-1 rounded hover:bg-secondary text-content-muted hover:text-content border border-transparent hover:border-border"
+                    className="p-1 rounded hover:bg-secondary text-content-muted hover:text-content"
                     title="Duplicate"
                   >
-                    <Copy size={12} />
+                    <Copy size={11} />
                   </button>
                   <button
                     type="button"
@@ -209,10 +205,10 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
                       e.stopPropagation();
                       exportSchemaJSON(ws.columns, ws.tableName);
                     }}
-                    className="p-1 rounded hover:bg-secondary text-content-muted hover:text-content border border-transparent hover:border-border"
+                    className="p-1 rounded hover:bg-secondary text-content-muted hover:text-content"
                     title="Export Blueprint JSON"
                   >
-                    <Download size={12} />
+                    <Download size={11} />
                   </button>
                   {workspaces.length > 1 && (
                     <button
@@ -221,35 +217,33 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
                         e.stopPropagation();
                         deleteWorkspace(ws.id);
                       }}
-                      className="p-1 rounded hover:bg-rose-500/20 text-content-muted hover:text-rose-400 border border-transparent hover:border-rose-500/30"
+                      className="p-1 rounded hover:bg-rose-500/20 text-content-muted hover:text-rose-400"
                       title="Delete"
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={11} />
                     </button>
                   )}
                 </div>
               </div>
 
               {/* Card Metadata: Table Name, Columns, Format, Time */}
-              <div className="flex items-center justify-between text-xs text-content-muted font-mono tabular-nums">
-                <span className="truncate max-w-[130px] font-semibold text-content">{ws.tableName}</span>
+              <div className="flex items-center justify-between text-[11px] text-content-muted/70 font-mono tabular-nums">
+                <span className="truncate max-w-[120px]">{ws.tableName}</span>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="uppercase text-[11px] font-bold px-1.5 py-0.2 rounded bg-secondary border border-border">
-                    {ws.format || 'csv'}
-                  </span>
+                  <span className="uppercase text-[10px]">{ws.format || 'csv'}</span>
                   <span>·</span>
-                  <span className="font-bold">{colCount} cols</span>
+                  <span>{ws.columns?.length || 0} cols</span>
                 </div>
               </div>
 
               {/* Sub-row: Updated time & Dirty status */}
-              <div className="mt-2 pt-1.5 border-t border-border/60 flex items-center justify-between text-[11px] text-content-muted">
+              <div className="mt-1 flex items-center justify-between text-[10px] text-content-muted/60">
                 <span className="flex items-center gap-1">
-                  <Clock size={11} />
+                  <Clock size={10} />
                   <span>{formatTime(ws.updatedAt)}</span>
                 </span>
                 {ws.isDirty && (
-                  <span className="text-amber-400 font-mono text-[10px] font-bold">
+                  <span className="text-amber-400 font-mono text-[9px] font-medium">
                     ● Unsaved
                   </span>
                 )}
@@ -259,7 +253,7 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
         })}
 
         {filtered.length === 0 && (
-          <div className="text-center py-8 text-content-muted bg-card p-4 rounded-lg border border-border">
+          <div className="text-center py-8 text-content-muted">
             <p className="text-xs">No workspaces match &quot;{search}&quot;</p>
           </div>
         )}
