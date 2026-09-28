@@ -1,5 +1,6 @@
 import { ColumnSpec, ColumnType, ExportFormat, OutputStrategy, PresetSchema } from '../types';
 import { PRESET_SCHEMAS } from '../data/presets';
+import { isTauri } from '@tauri-apps/api/core';
 
 export interface DiscoveredFolderFile {
   name: string;
@@ -9,6 +10,9 @@ export interface DiscoveredFolderFile {
   handle?: any;
   file?: File;
   sampleContent?: string;
+  rawBytes?: Uint8Array;
+  isLocked?: boolean;
+  lockReason?: string;
 }
 
 export interface FolderBehaviorMetrics {
@@ -29,6 +33,21 @@ export interface FolderBehaviorMetrics {
     hasSequenceDigits: boolean;
     hasDateStamp: boolean;
   };
+}
+
+export interface FileForensicsProfile {
+  dominantExtension: string; // e.g. ".log", ".csv", ".json", ".xlsx"
+  extensionsDetected: string[];
+  delimiter?: ',' | '\t' | ';' | '|' | ' ' | 'fixed_width';
+  delimiterName?: string; // "Comma", "Tab", "Semicolon", "Pipe", "Space / Log"
+  encoding: 'UTF-8' | 'UTF-8 with BOM' | 'UTF-16 LE' | 'UTF-16 BE' | 'TIS-620 / Windows-874' | 'Windows-1252 / ISO-8859-1' | 'ASCII';
+  encodingConfidence: number; // 0 - 100
+  newlineType: 'CRLF (Windows)' | 'LF (Unix)' | 'CR (Legacy)' | 'Mixed';
+  detectedLanguages: ('Thai' | 'English' | 'CJK' | 'Numeric/Symbols')[];
+  fileLockStatus: 'no_lock_detected' | 'active_lock_suspected' | 'file_in_use_error' | 'read_only';
+  lockDetails?: string;
+  hasContinuousAppend: boolean;
+  sampleLogFormat?: 'apache_nginx' | 'iso_timestamp_bracketed' | 'json_stream' | 'delimited_csv' | 'generic_text';
 }
 
 export interface SuggestedModeConfig {
@@ -76,13 +95,48 @@ export interface FolderMonitorEvent {
 
 export interface FolderAnalysisResult {
   folderName: string;
+  folderPath?: string;
   analyzedAt: string;
   metrics: FolderBehaviorMetrics;
+  forensics: FileForensicsProfile;
   files: DiscoveredFolderFile[];
   suggestedMode: SuggestedModeConfig;
   suggestedTemplate: SuggestedTemplateConfig;
   extractedColumns: ExtractedFolderColumn[];
   sampleFileUsed?: string;
+  sampleSnippet?: string;
+}
+
+export interface VampioWorkspaceProfileBundle {
+  $schema: string;
+  version: '1.0.0';
+  generatedAt: string;
+  generator: string;
+  source: {
+    platform: 'tauri' | 'web';
+    folderName: string;
+    folderPath?: string;
+    totalFilesDiscovered: number;
+    totalSizeBytes: number;
+  };
+  metrics: FolderBehaviorMetrics;
+  forensics: FileForensicsProfile;
+  samplePreview: {
+    filename?: string;
+    rawSnippet: string;
+    inferredHeaders: string[];
+    sampleRows: string[][];
+  };
+  vampioWorkspace: {
+    columns: ColumnSpec[];
+    tableName: string;
+    outputStrategy: OutputStrategy;
+    format: ExportFormat;
+    filenamePattern: string;
+    intervalMs: number;
+    rowsPerFile?: number;
+    targetFile?: string;
+  };
 }
 
 /**
@@ -91,22 +145,77 @@ export interface FolderAnalysisResult {
 export async function readFolderFromDirectoryHandle(
   dirHandle: FileSystemDirectoryHandle | any,
   sampleContentLimitBytes: number = 65536,
-  maxFilesToReadContent: number = 3
+  maxFilesToReadContent: number = 5
 ): Promise<DiscoveredFolderFile[]> {
   const discovered: DiscoveredFolderFile[] = [];
 
+  // 1. Support Tauri Native Desktop Folder
+  if (dirHandle && (dirHandle.kind === 'tauri-dir' || (isTauri() && typeof dirHandle.path === 'string'))) {
+    try {
+      const { readDir, readFile } = await import('@tauri-apps/plugin-fs');
+      const targetPath = dirHandle.path;
+      const entries = await readDir(targetPath);
+      for (const entry of entries) {
+        if (entry.isFile) {
+          const filePath = `${targetPath}/${entry.name}`;
+          let sampleContent = '';
+          let rawBytes: Uint8Array | undefined = undefined;
+          let isLocked = false;
+          let lockReason = '';
+
+          if (discovered.length < maxFilesToReadContent) {
+            try {
+              const fullBytes = await readFile(filePath);
+              rawBytes = fullBytes.slice(0, sampleContentLimitBytes);
+              // Decode with TextDecoder
+              sampleContent = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
+            } catch (readErr: any) {
+              isLocked = true;
+              lockReason = readErr?.message || 'Access denied / locked by another process';
+            }
+          }
+
+          discovered.push({
+            name: entry.name,
+            size: rawBytes ? rawBytes.byteLength : 0,
+            lastModified: Date.now(),
+            relativePath: filePath,
+            sampleContent: sampleContent || undefined,
+            rawBytes,
+            isLocked,
+            lockReason: isLocked ? lockReason : undefined,
+          });
+        }
+      }
+      return discovered;
+    } catch (tauriErr) {
+      console.warn('Tauri native readDir failed, falling back:', tauriErr);
+    }
+  }
+
+  // 2. Standard Web File System Access API
   try {
     // @ts-ignore
     for await (const entry of dirHandle.values()) {
       if (entry.kind === 'file') {
+        let isLocked = false;
+        let lockReason = '';
         try {
           const file = await entry.getFile();
           let sampleContent = '';
+          let rawBytes: Uint8Array | undefined = undefined;
 
           // Read content for the first few files to analyze headers/structure
           if (discovered.length < maxFilesToReadContent) {
-            const slice = file.slice(0, sampleContentLimitBytes);
-            sampleContent = await slice.text();
+            try {
+              const slice = file.slice(0, sampleContentLimitBytes);
+              const buffer = await slice.arrayBuffer();
+              rawBytes = new Uint8Array(buffer);
+              sampleContent = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
+            } catch (sliceErr: any) {
+              isLocked = true;
+              lockReason = sliceErr?.message || 'File locked / concurrent read error';
+            }
           }
 
           discovered.push({
@@ -116,9 +225,20 @@ export async function readFolderFromDirectoryHandle(
             handle: entry,
             file,
             sampleContent: sampleContent || undefined,
+            rawBytes,
+            isLocked,
+            lockReason: isLocked ? lockReason : undefined,
           });
-        } catch (fileErr) {
-          console.warn('Could not inspect file entry:', entry.name, fileErr);
+        } catch (fileErr: any) {
+          console.warn('Could not inspect file entry (possibly locked):', entry.name, fileErr);
+          discovered.push({
+            name: entry.name,
+            size: 0,
+            lastModified: Date.now(),
+            handle: entry,
+            isLocked: true,
+            lockReason: fileErr?.message || 'Permission denied / locked by another process',
+          });
         }
       }
     }
@@ -134,7 +254,7 @@ export async function readFolderFromDirectoryHandle(
  */
 export async function readFilesFromHtmlFileList(
   fileList: FileList | File[],
-  maxFilesToReadContent: number = 3,
+  maxFilesToReadContent: number = 5,
   sampleContentLimitBytes: number = 65536
 ): Promise<DiscoveredFolderFile[]> {
   const files: File[] = Array.from(fileList);
@@ -143,11 +263,19 @@ export async function readFilesFromHtmlFileList(
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     let sampleContent = '';
+    let rawBytes: Uint8Array | undefined = undefined;
+    let isLocked = false;
+    let lockReason = '';
+
     if (i < maxFilesToReadContent) {
       try {
         const slice = file.slice(0, sampleContentLimitBytes);
-        sampleContent = await slice.text();
-      } catch (e) {
+        const buffer = await slice.arrayBuffer();
+        rawBytes = new Uint8Array(buffer);
+        sampleContent = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
+      } catch (e: any) {
+        isLocked = true;
+        lockReason = e?.message || 'Read error / file busy';
         console.warn('Sample read error:', file.name, e);
       }
     }
@@ -159,6 +287,9 @@ export async function readFilesFromHtmlFileList(
       relativePath: (file as any).webkitRelativePath || file.name,
       file,
       sampleContent: sampleContent || undefined,
+      rawBytes,
+      isLocked,
+      lockReason: isLocked ? lockReason : undefined,
     });
   }
 
@@ -285,16 +416,20 @@ export function analyzeFolderFiles(
 
   const suggestedMode = deriveModeSuggestion(metrics, sortedFiles, folderName);
   const suggestedTemplate = deriveTemplateSuggestion(extractedColumns, files, folderName);
+  const forensics = detectFileForensics(files, metrics, sampleCandidate);
 
   return {
     folderName,
+    folderPath: sampleCandidate?.relativePath ? sampleCandidate.relativePath.split(/[\\/]/).slice(0, -1).join('/') : undefined,
     analyzedAt: new Date().toISOString(),
     metrics,
+    forensics,
     files,
     suggestedMode,
     suggestedTemplate,
     extractedColumns,
     sampleFileUsed,
+    sampleSnippet: sampleCandidate?.sampleContent ? sampleCandidate.sampleContent.slice(0, 1000) : undefined,
   };
 }
 
@@ -781,3 +916,339 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * Detects text encoding with Byte-Order-Mark (BOM) inspection and Thai TIS-620/Windows-874 heuristics
+ */
+export function detectEncoding(
+  bytes?: Uint8Array,
+  text?: string
+): { encoding: FileForensicsProfile['encoding']; confidence: number } {
+  if (bytes && bytes.length >= 2) {
+    // 1. BOM Checks
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+      return { encoding: 'UTF-8 with BOM', confidence: 100 };
+    }
+    if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+      return { encoding: 'UTF-16 LE', confidence: 100 };
+    }
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+      return { encoding: 'UTF-16 BE', confidence: 100 };
+    }
+
+    // 2. Pure ASCII Check (every byte < 128)
+    let isPureAscii = true;
+    let highByteCount = 0;
+    let thaiByteCandidates = 0;
+
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
+      if (b >= 128) {
+        isPureAscii = false;
+        highByteCount++;
+        // TIS-620 / Windows-874 Thai character code range (0xA1 - 0xFB)
+        if (b >= 0xa1 && b <= 0xfb) {
+          thaiByteCandidates++;
+        }
+      }
+    }
+
+    if (isPureAscii) {
+      return { encoding: 'ASCII', confidence: 95 };
+    }
+
+    // If text contains valid decoded Thai Unicode characters (\u0E00-\u0E7F)
+    if (text && /[\u0E00-\u0E7F]/.test(text)) {
+      return { encoding: 'UTF-8', confidence: 95 };
+    }
+
+    // If high bytes are predominantly in Thai TIS-620 range
+    if (thaiByteCandidates > 0 && highByteCount > 0 && (thaiByteCandidates / highByteCount) > 0.6) {
+      return { encoding: 'TIS-620 / Windows-874', confidence: 92 };
+    }
+
+    // Default to UTF-8
+    return { encoding: 'UTF-8', confidence: 85 };
+  }
+
+  // Fallback to text analysis
+  if (text) {
+    if (/[\u0E00-\u0E7F]/.test(text)) {
+      return { encoding: 'UTF-8', confidence: 90 };
+    }
+    if (/^[\x00-\x7F]*$/.test(text)) {
+      return { encoding: 'ASCII', confidence: 90 };
+    }
+  }
+
+  return { encoding: 'UTF-8', confidence: 80 };
+}
+
+/**
+ * Detects human languages and scripts present in the sample text
+ */
+export function detectLanguages(text?: string): FileForensicsProfile['detectedLanguages'] {
+  if (!text || text.trim().length === 0) return ['English'];
+  const languages: FileForensicsProfile['detectedLanguages'] = [];
+
+  if (/[\u0E00-\u0E7F]/.test(text)) {
+    languages.push('Thai');
+  }
+  if (/[a-zA-Z]/.test(text)) {
+    languages.push('English');
+  }
+  if (/[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF]/.test(text)) {
+    languages.push('CJK');
+  }
+  if (/[\d_#\$\-\.\/:]/.test(text) && languages.length === 0) {
+    languages.push('Numeric/Symbols');
+  }
+  return languages.length > 0 ? languages : ['English'];
+}
+
+/**
+ * Detects delimited separation characters (, \t ; |) or log space formatting
+ */
+export function detectDelimiter(lines: string[]): {
+  delimiter?: ',' | '\t' | ';' | '|' | ' ' | 'fixed_width';
+  delimiterName?: string;
+} {
+  const candidates: { char: ',' | '\t' | ';' | '|' | ' '; name: string }[] = [
+    { char: ',', name: 'Comma (,)' },
+    { char: '\t', name: 'Tab (\\t)' },
+    { char: ';', name: 'Semicolon (;)' },
+    { char: '|', name: 'Pipe (|)' },
+  ];
+
+  const sampleLines = lines.filter((l) => l.trim().length > 0).slice(0, 10);
+  if (sampleLines.length === 0) {
+    return { delimiter: ',', delimiterName: 'Comma (,)' };
+  }
+
+  let bestDelimiter: ',' | '\t' | ';' | '|' | ' ' | undefined = undefined;
+  let bestName: string = 'Comma (,)';
+  let bestScore = -1;
+
+  for (const cand of candidates) {
+    const counts = sampleLines.map((l) => splitDelimitedLine(l, cand.char).length);
+    const minCount = Math.min(...counts);
+    const maxCount = Math.max(...counts);
+
+    if (minCount >= 2) {
+      // Consistency score: higher column count + zero variance
+      const isConsistent = minCount === maxCount;
+      const score = (isConsistent ? 50 : 20) + minCount * 5;
+      if (score > bestScore) {
+        bestScore = score;
+        bestDelimiter = cand.char;
+        bestName = cand.name;
+      }
+    }
+  }
+
+  // Check if log format with spaces / brackets e.g. [2026-09-25] [INFO] message
+  if (!bestDelimiter) {
+    if (sampleLines.some((l) => l.startsWith('[') && l.includes(']'))) {
+      return { delimiter: ' ', delimiterName: 'Bracketed Space / Log' };
+    }
+  }
+
+  return {
+    delimiter: bestDelimiter || ',',
+    delimiterName: bestName || 'Comma (,)',
+  };
+}
+
+/**
+ * Checks for file locking indicators and active process contention
+ */
+export function detectFileLock(
+  files: DiscoveredFolderFile[],
+  temporalCadence: FolderBehaviorMetrics['temporalCadence']
+): {
+  fileLockStatus: FileForensicsProfile['fileLockStatus'];
+  lockDetails?: string;
+  hasContinuousAppend: boolean;
+} {
+  // Check if any file flagged with lock/in-use error
+  const lockedFile = files.find((f) => f.isLocked || (f.lockReason && f.lockReason.length > 0));
+  if (lockedFile) {
+    return {
+      fileLockStatus: 'file_in_use_error',
+      lockDetails: `Process lock conflict on: ${lockedFile.name} (${lockedFile.lockReason || 'Sharing violation'})`,
+      hasContinuousAppend: true,
+    };
+  }
+
+  // Check if active recent write stream
+  const now = Date.now();
+  const veryRecentFiles = files.filter((f) => now - f.lastModified < 15000); // modified within 15s
+  if (veryRecentFiles.length > 0 || temporalCadence === 'high_frequency_stream') {
+    return {
+      fileLockStatus: 'active_lock_suspected',
+      lockDetails: `Active file append stream detected on ${veryRecentFiles[0]?.name || 'live log file'}`,
+      hasContinuousAppend: true,
+    };
+  }
+
+  return {
+    fileLockStatus: 'no_lock_detected',
+    lockDetails: 'All files accessible for read/write without process locks',
+    hasContinuousAppend: false,
+  };
+}
+
+/**
+ * Generates forensic profile of monitored files
+ */
+export function detectFileForensics(
+  files: DiscoveredFolderFile[],
+  metrics: FolderBehaviorMetrics,
+  sampleCandidate?: DiscoveredFolderFile
+): FileForensicsProfile {
+  const extensions = Object.keys(metrics.formatDistribution).map((ext) => `.${ext}`);
+  const dominantExtension = `.${metrics.dominantFormat}`;
+
+  const text = sampleCandidate?.sampleContent || '';
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+
+  // Encoding & confidence
+  const { encoding, confidence } = detectEncoding(sampleCandidate?.rawBytes, text);
+
+  // Delimiter
+  const { delimiter, delimiterName } = detectDelimiter(lines);
+
+  // Newline standard
+  let newlineType: FileForensicsProfile['newlineType'] = 'LF (Unix)';
+  if (text.includes('\r\n')) {
+    newlineType = text.includes('\n') && !text.split('\r\n').every((s) => !s.includes('\n')) ? 'Mixed' : 'CRLF (Windows)';
+  } else if (text.includes('\r')) {
+    newlineType = 'CR (Legacy)';
+  }
+
+  // Languages
+  const detectedLanguages = detectLanguages(text);
+
+  // File Lock
+  const { fileLockStatus, lockDetails, hasContinuousAppend } = detectFileLock(files, metrics.temporalCadence);
+
+  // Sample Log Format
+  let sampleLogFormat: FileForensicsProfile['sampleLogFormat'] = undefined;
+  if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+    sampleLogFormat = 'json_stream';
+  } else if (lines.some((l) => l.startsWith('[') && (l.includes('INFO') || l.includes('WARN') || l.includes('ERROR') || l.includes('DEBUG')))) {
+    sampleLogFormat = 'iso_timestamp_bracketed';
+  } else if (lines.some((l) => /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} - - \[/.test(l))) {
+    sampleLogFormat = 'apache_nginx';
+  } else if (delimiter === ',' || delimiter === '\t' || delimiter === ';' || delimiter === '|') {
+    sampleLogFormat = 'delimited_csv';
+  } else {
+    sampleLogFormat = 'generic_text';
+  }
+
+  return {
+    dominantExtension,
+    extensionsDetected: extensions.length > 0 ? extensions : [dominantExtension],
+    delimiter,
+    delimiterName,
+    encoding,
+    encodingConfidence: confidence,
+    newlineType,
+    detectedLanguages,
+    fileLockStatus,
+    lockDetails,
+    hasContinuousAppend,
+    sampleLogFormat,
+  };
+}
+
+/**
+ * Packages an analysis result into a comprehensive, standardized Developer Workspace Profile JSON Bundle
+ */
+export function generateWorkspaceProfileBundle(
+  analysis: FolderAnalysisResult,
+  customFolderPath?: string
+): VampioWorkspaceProfileBundle {
+  const sampleCandidate = analysis.files.find((f) => f.sampleContent && f.sampleContent.trim().length > 0) || analysis.files[0];
+  const sampleText = sampleCandidate?.sampleContent || '';
+  const lines = sampleText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const delimiter = analysis.forensics?.delimiter || ',';
+
+  const inferredHeaders = analysis.extractedColumns.map((c) => c.name);
+  const sampleRows = lines.slice(0, 5).map((l) => splitDelimitedLine(l, delimiter));
+
+  return {
+    $schema: 'https://vampio.dev/schema/workspace-profile-v1.json',
+    version: '1.0.0',
+    generatedAt: new Date().toISOString(),
+    generator: 'Vampio Behavior Monitor v1.2',
+    source: {
+      platform: isTauri() ? 'tauri' : 'web',
+      folderName: analysis.folderName,
+      folderPath: customFolderPath || analysis.folderPath || undefined,
+      totalFilesDiscovered: analysis.metrics.totalFiles,
+      totalSizeBytes: analysis.metrics.totalSizeBytes,
+    },
+    metrics: analysis.metrics,
+    forensics: analysis.forensics,
+    samplePreview: {
+      filename: sampleCandidate?.name,
+      rawSnippet: sampleText.slice(0, 1500),
+      inferredHeaders,
+      sampleRows,
+    },
+    vampioWorkspace: {
+      columns: analysis.suggestedTemplate.columns,
+      tableName: analysis.suggestedTemplate.tableName,
+      outputStrategy: analysis.suggestedMode.outputStrategy,
+      format: analysis.suggestedMode.format,
+      filenamePattern: analysis.suggestedMode.suggestedFilenamePattern || `${analysis.suggestedMode.suggestedFilename}_{index}.${analysis.suggestedMode.format}`,
+      intervalMs: analysis.suggestedMode.suggestedIntervalMs,
+      rowsPerFile: analysis.suggestedMode.suggestedRowsPerFile,
+      targetFile: analysis.suggestedMode.suggestedTargetFile,
+    },
+  };
+}
+
+/**
+ * Exports the bundle as a formatted JSON string for download or clipboard
+ */
+export function exportWorkspaceProfileBundleJson(
+  analysis: FolderAnalysisResult,
+  customFolderPath?: string
+): string {
+  const bundle = generateWorkspaceProfileBundle(analysis, customFolderPath);
+  return JSON.stringify(bundle, null, 2);
+}
+
+/**
+ * Validates and parses an uploaded profile bundle JSON
+ */
+export function validateAndParseWorkspaceBundle(jsonText: string): {
+  valid: boolean;
+  error?: string;
+  bundle?: VampioWorkspaceProfileBundle;
+} {
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (!parsed || typeof parsed !== 'object') {
+      return { valid: false, error: 'File content is not a valid JSON object.' };
+    }
+
+    if (!parsed.vampioWorkspace || !Array.isArray(parsed.vampioWorkspace.columns)) {
+      return { valid: false, error: 'Missing vampioWorkspace schema configuration or columns array.' };
+    }
+
+    if (!parsed.metrics || !parsed.forensics) {
+      return { valid: false, error: 'Incomplete bundle: missing folder metrics or forensics profiles.' };
+    }
+
+    return {
+      valid: true,
+      bundle: parsed as VampioWorkspaceProfileBundle,
+    };
+  } catch (err: any) {
+    return { valid: false, error: `JSON Parse error: ${err?.message || 'Invalid syntax'}` };
+  }
+}
+

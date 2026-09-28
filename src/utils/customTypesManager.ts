@@ -201,10 +201,43 @@ export interface CustomColumnType {
   createdAt: number;
   author?: string;
   isBuiltin?: boolean;
+  isActive?: boolean;
 }
 
 // Preset Examples & Templates catalog (NOT auto-seeded into user custom types)
 export const EXAMPLE_PRESET_TYPES: CustomColumnType[] = [
+  {
+    id: 'example:js_rest_api_user',
+    name: 'REST API Real User Profile (JS Script)',
+    category: 'Identity',
+    description: 'Enriches dataset with live user email from DummyJSON REST API via api.get() in JavaScript',
+    baseMode: 'Script',
+    defaultRule: `// Fetch real user data from REST API using api.get()
+// Syntax: api.get(url, jsonPath) or ctx.api.get(...)
+const email = api.get('https://dummyjson.com/users', 'users[].email');
+return email || \`user_\${ctx.index}@example.com\`;`,
+    sampleOutputs: ['emily.johnson@x.dummyjson.com', 'michael.williams@x.dummyjson.com', 'sophia.brown@x.dummyjson.com'],
+    createdAt: 1700000000000,
+    author: 'REST API Engine'
+  },
+  {
+    id: 'example:lua_rest_api_product',
+    name: 'REST API Product Catalog & Pricing (Lua 5.3)',
+    category: 'Commerce',
+    description: 'Pulls live product title and formats price directly inside a Lua 5.3 virtual machine script',
+    baseMode: 'Lua',
+    defaultRule: `-- Fetch live products from REST API in Lua 5.3
+-- api.get(url, jsonPath) retrieves data synchronously with auto-caching
+local title = api.get("https://dummyjson.com/products", "products[].title")
+if title then
+  return string.format("ITEM-%04d: %s", ctx.index, title)
+else
+  return string.format("ITEM-%04d: Product Catalog", ctx.index)
+end`,
+    sampleOutputs: ['ITEM-0001: Essence Mascara Lash Princess', 'ITEM-0002: Eyeshadow Palette with Mirror', 'ITEM-0003: Powder Canister'],
+    createdAt: 1700000000000,
+    author: 'REST API Engine'
+  },
   {
     id: 'example:lua_bank_txn',
     name: 'Banking Txn Code & Luhn Checksum (Lua)',
@@ -436,12 +469,47 @@ export function saveCustomColumnType(item: CustomColumnType): void {
   const existingIndex = current.findIndex(t => t.id === item.id);
   let updated: CustomColumnType[];
   if (existingIndex >= 0) {
+    const prev = current[existingIndex];
     updated = [...current];
-    updated[existingIndex] = { ...item, isBuiltin: false };
+    updated[existingIndex] = {
+      ...item,
+      isActive: item.isActive !== undefined ? item.isActive : (prev.isActive !== undefined ? prev.isActive : true),
+      isBuiltin: false
+    };
   } else {
-    updated = [item, ...current];
+    updated = [{ ...item, isActive: item.isActive !== undefined ? item.isActive : true, isBuiltin: false }, ...current];
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+}
+
+export function toggleCustomTypeActive(id: string): boolean {
+  const current = getCustomColumnTypes();
+  let nextState = true;
+  const updated = current.map(t => {
+    if (t.id === id) {
+      nextState = t.isActive === false ? true : false;
+      return { ...t, isActive: nextState };
+    }
+    return t;
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  return nextState;
+}
+
+export function setCustomTypeActive(id: string, active: boolean): void {
+  const current = getCustomColumnTypes();
+  const updated = current.map(t => {
+    if (t.id === id) {
+      return { ...t, isActive: active };
+    }
+    return t;
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+}
+
+export function getActiveCustomColumnTypes(): CustomColumnType[] {
+  const types = getCustomColumnTypes();
+  return types.filter(t => t.isActive !== false);
 }
 
 export function deleteCustomColumnType(id: string): void {

@@ -50,6 +50,9 @@ import {
   getExamplePresetTypes,
   saveCustomColumnType,
   deleteCustomColumnType,
+  toggleCustomTypeActive,
+  setCustomTypeActive,
+  getActiveCustomColumnTypes,
   exportCustomColumnTypesJSON,
   importCustomColumnTypes,
   generateCustomTypeValue,
@@ -57,6 +60,7 @@ import {
   installExamplePreset,
   clearAllCustomTypes
 } from '../utils/customTypesManager';
+import { extractUrlsFromText, prefetchUrls } from '../utils/restApiManager';
 import { ColumnSpec } from '../types';
 
 export type CustomTypeModalTab = 'examples' | 'import' | 'create' | 'installed' | 'library';
@@ -117,6 +121,25 @@ const role = ctx.random.choice(['ADM', 'DEV', 'AUD', 'SVC']);
 const raw = \`\${role}_\${ctx.index}_\${Date.now()}\`;
 const hash = ctx.utils.hash(raw).slice(0, 6).toUpperCase();
 return \`TOK_\${role}_\${ctx.utils.pad(ctx.index, 4)}_\${hash}\`;`
+  },
+  {
+    label: 'REST API (User Profile)',
+    desc: 'Fetch live email/data from REST API via api.get',
+    code: `// Fetch real user email or property via REST API
+// Syntax: api.get(url, jsonPath) or ctx.api.get(url, jsonPath)
+const email = api.get('https://dummyjson.com/users', 'users[].email');
+return email;`
+  },
+  {
+    label: 'REST API (Products & Logic)',
+    desc: 'Fetch product catalog and format custom string',
+    code: `// Fetch products from REST API and transform with JS
+const data = api.get('https://dummyjson.com/products');
+if (data && data.products && data.products.length > 0) {
+  const item = data.products[(ctx.index - 1) % data.products.length];
+  return \`\${item.title} (\${item.category}) - $\${item.price}\`;
+}
+return \`Product-\${ctx.index}\`;`
   }
 ];
 
@@ -176,8 +199,58 @@ return string.format("%s (%s)", hex, tone)`
 local env = random.choice({"PROD", "STG", "DEV"})
 local id = string.sub(random.uuid(), 1, 8):upper()
 return string.format("%s-%05d-%s", env, ctx.index, id)`
+  },
+  {
+    label: 'REST API (User Profile)',
+    desc: 'Fetch live email/data from REST API in Lua 5.3',
+    code: `-- Fetch live REST API in Lua 5.3
+-- Syntax: api.get(url, jsonPath) or ctx.api.get(url, jsonPath)
+local email = api.get("https://dummyjson.com/users", "users[].email")
+return email`
+  },
+  {
+    label: 'REST API (Posts & Transform)',
+    desc: 'Fetch and format API post title in Lua 5.3',
+    code: `-- Fetch posts from REST API and transform in Lua
+local title = api.get("https://jsonplaceholder.typicode.com/posts", "[].title")
+return string.upper(tostring(title or "SAMPLE POST"))`
   }
 ];
+
+const DEFAULT_JS_SCRIPT = `// JavaScript Column Generator
+// Available: ctx.index, ctx.row, ctx.random, ctx.utils
+const dept = ctx.random.choice(['PAY', 'WIRE', 'ACH', 'REF']);
+const seq = ctx.utils.pad(ctx.index, 6);
+const check = ctx.utils.luhnChecksum(seq);
+return \`\${dept}-\${seq}-\${check}\`;`;
+
+const DEFAULT_LUA_SCRIPT = `-- Lua 5.3 Column Generator
+-- Available: ctx.index, ctx.row, random, utils, math, string, table
+local dept = random.choice({"PAY", "WIRE", "ACH", "REF"})
+local seq = utils.pad(ctx.index, 6)
+local check = utils.luhn(seq)
+return string.format("%s-%s-%d", dept, seq, check)`;
+
+const DEFAULT_TEMPLATE_RULE = 'SKU-{SET:ELEC,APPAREL,HOME}-{NUM:4}';
+const DEFAULT_BASE_RULE = '[A-Z]{3}-\\d{4}';
+
+const isLikelyLuaCode = (code: string): boolean => {
+  const trimmed = (code || '').trim();
+  if (trimmed.startsWith('--')) return true;
+  if (/^local\s+/m.test(trimmed)) return true;
+  if (/\b(then|elseif|end|repeat|until|~=)\b/.test(trimmed)) return true;
+  if (/\brandom\.choice\(\s*\{/.test(trimmed)) return true;
+  if (/string\.format\s*\(/.test(trimmed)) return true;
+  return false;
+};
+
+const isLikelyJsCode = (code: string): boolean => {
+  const trimmed = (code || '').trim();
+  if (trimmed.startsWith('//') || trimmed.startsWith('/*')) return true;
+  if (/\b(const\s+|let\s+|var\s+|function\s+|=>|===|!==)\b/.test(trimmed)) return true;
+  if (/`\$\{/.test(trimmed)) return true;
+  return false;
+};
 
 export const CustomTypeModal: React.FC<CustomTypeModalProps> = ({
   isOpen,
@@ -210,6 +283,51 @@ export const CustomTypeModal: React.FC<CustomTypeModalProps> = ({
     error: null
   });
   const [isCheatSheetOpen, setIsCheatSheetOpen] = useState(false);
+  const [installedStatusFilter, setInstalledStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+  // Per-mode draft memory to prevent language bleed when switching between JS and Lua
+  const [modeDrafts, setModeDrafts] = useState<Record<CustomTypeBaseMode, string>>({
+    Base: DEFAULT_BASE_RULE,
+    Template: DEFAULT_TEMPLATE_RULE,
+    Script: DEFAULT_JS_SCRIPT,
+    Lua: DEFAULT_LUA_SCRIPT,
+  });
+
+  const handleSwitchMode = (newMode: CustomTypeBaseMode) => {
+    if (newMode === typeBaseMode) return;
+
+    // 1. Save current active rule into draft for current mode
+    const updatedDrafts = { ...modeDrafts, [typeBaseMode]: typeRule };
+
+    // 2. Determine clean target rule for newMode
+    let targetRule = updatedDrafts[newMode] || '';
+
+    if (newMode === 'Base') {
+      if (!targetRule || isLikelyLuaCode(targetRule) || isLikelyJsCode(targetRule) || targetRule.includes('{SET:')) {
+        targetRule = typeBaseConfig ? serializeBaseConfig(typeBaseConfig) : DEFAULT_BASE_RULE;
+        setTypeBaseSubtype('RegEx');
+      }
+    } else if (newMode === 'Template') {
+      if (!targetRule || isLikelyLuaCode(targetRule) || isLikelyJsCode(targetRule) || targetRule.startsWith('[')) {
+        targetRule = DEFAULT_TEMPLATE_RULE;
+      }
+    } else if (newMode === 'Script') {
+      // Switching to JavaScript: targetRule MUST be JavaScript, NEVER Lua!
+      if (!targetRule || isLikelyLuaCode(targetRule) || (!isLikelyJsCode(targetRule) && isLikelyLuaCode(typeRule))) {
+        targetRule = DEFAULT_JS_SCRIPT;
+      }
+    } else if (newMode === 'Lua') {
+      // Switching to Lua: targetRule MUST be Lua, NEVER JavaScript!
+      if (!targetRule || isLikelyJsCode(targetRule) || (!isLikelyLuaCode(targetRule) && isLikelyJsCode(typeRule))) {
+        targetRule = DEFAULT_LUA_SCRIPT;
+      }
+    }
+
+    updatedDrafts[newMode] = targetRule;
+    setModeDrafts(updatedDrafts);
+    setTypeBaseMode(newMode);
+    setTypeRule(targetRule);
+  };
 
   // Import state
   const [importJsonText, setImportJsonText] = useState('');
@@ -246,7 +364,7 @@ export const CustomTypeModal: React.FC<CustomTypeModalProps> = ({
   };
 
   // Update live test samples when form changes with simulated row context
-  const runLiveTest = (
+  const runLiveTest = async (
     mode = typeBaseMode,
     rule = typeRule,
     subtype = typeBaseSubtype,
@@ -266,6 +384,14 @@ export const CustomTypeModal: React.FC<CustomTypeModalProps> = ({
     const t0 = performance.now();
     let errorMsg: string | null = null;
     try {
+      // If rule contains REST API URLs, prefetch them to ensure instant cached response
+      if (rule) {
+        const urls = extractUrlsFromText(rule);
+        if (urls.length > 0) {
+          await prefetchUrls(urls);
+        }
+      }
+
       const samples: string[] = [];
       for (let i = 0; i < 4; i++) {
         // Provide mock row context for testing dependent columns
@@ -277,7 +403,11 @@ export const CustomTypeModal: React.FC<CustomTypeModalProps> = ({
           category: ['Electronics', 'Books', 'Home', 'Apparel'][i]
         };
         const val = generateCustomTypeValue(tempType, rule, { rowIndex: i, row: mockRow });
-        const valStr = val === null || val === undefined ? '' : String(val);
+        const valStr = val === null || val === undefined
+          ? ''
+          : typeof val === 'object'
+          ? JSON.stringify(val)
+          : String(val);
         if (valStr.startsWith('[JS Error:') || valStr.startsWith('[Lua Error:')) {
           errorMsg = valStr;
         }
@@ -335,6 +465,13 @@ return code`;
 
     setTypeRule(initialRule);
     setTypeDescription('');
+    setModeDrafts({
+      Base: DEFAULT_BASE_RULE,
+      Template: DEFAULT_TEMPLATE_RULE,
+      Script: DEFAULT_JS_SCRIPT,
+      Lua: DEFAULT_LUA_SCRIPT,
+      [effectiveMode]: initialRule
+    });
     runLiveTest(effectiveMode, initialRule, initialSubtype, initialCfg);
     setActiveTab('create');
   };
@@ -353,6 +490,13 @@ return code`;
     setTypeBaseConfig(effectiveConfig);
     setTypeRule(t.defaultRule);
     setTypeDescription(t.description);
+    setModeDrafts({
+      Base: DEFAULT_BASE_RULE,
+      Template: DEFAULT_TEMPLATE_RULE,
+      Script: DEFAULT_JS_SCRIPT,
+      Lua: DEFAULT_LUA_SCRIPT,
+      [effectiveMode]: t.defaultRule
+    });
     runLiveTest(effectiveMode, t.defaultRule, effectiveSubtype, effectiveConfig);
     setActiveTab('create');
   };
@@ -396,6 +540,25 @@ return code`;
       refreshList();
       setStatusMessage(`Deleted custom type "${name}"`);
     }
+  };
+
+  const handleToggleActive = (id: string, name: string) => {
+    const nextState = toggleCustomTypeActive(id);
+    refreshList();
+    if (setStatusMessage) {
+      setStatusMessage(`"${name}" is now ${nextState ? 'turned ON (Active)' : 'turned OFF (Inactive)'}`);
+    }
+  };
+
+  const handleAddInstalledColumn = (item: CustomColumnType) => {
+    if (item.isActive === false) {
+      setCustomTypeActive(item.id, true);
+      refreshList();
+      if (setStatusMessage) {
+        setStatusMessage(`Activated and added "${item.name}" to schema`);
+      }
+    }
+    handleAddColumnDirectly({ ...item, isActive: true });
   };
 
   const handleClearAll = () => {
@@ -539,7 +702,13 @@ return code`;
       t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.defaultRule.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.baseMode.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    const matchesStatus =
+      installedStatusFilter === 'all'
+        ? true
+        : installedStatusFilter === 'active'
+        ? t.isActive !== false
+        : t.isActive === false;
+    return matchesCategory && matchesSearch && matchesStatus;
   });
 
   const getModeBadgeClass = (mode: string) => {
@@ -605,7 +774,7 @@ return code`;
               { id: 'examples', label: 'Examples (ตัวอย่าง)', icon: <Sparkles size={13} />, badge: examplePresets.length },
               { id: 'import', label: 'Import & Manage (หน้าจัดการ)', icon: <Upload size={13} /> },
               { id: 'create', label: editingId ? 'Edit Type' : 'Create Type', icon: <Plus size={13} /> },
-              { id: 'installed', label: 'My Types', icon: <Layers size={13} />, badge: types.length },
+              { id: 'installed', label: 'My Types', icon: <Layers size={13} />, badge: types.length > 0 ? (types.some(t => t.isActive === false) ? `${types.filter(t => t.isActive !== false).length}/${types.length}` : types.length) : undefined },
             ]}
             activeTab={activeTab}
             onChange={(tabId) => {
@@ -1036,34 +1205,7 @@ return code`;
                       <button
                         key={item.mode}
                         type="button"
-                        onClick={() => {
-                          const newMode = item.mode;
-                          setTypeBaseMode(newMode);
-                          if (newMode === 'Base') {
-                            if (!typeRule || typeRule.includes('ctx.') || typeRule.includes('local ') || typeRule.includes('{SET:')) {
-                              setTypeBaseSubtype('RegEx');
-                              setTypeRule('[A-Z]{3}-\\d{4}');
-                            }
-                          } else if (newMode === 'Template') {
-                            if (!typeRule || typeRule.includes('ctx.') || typeRule.includes('local ') || typeRule.startsWith('[')) {
-                              setTypeRule('SKU-{SET:ELEC,APPAREL,HOME}-{NUM:4}');
-                            }
-                          } else if (newMode === 'Script' && (!typeRule || !typeRule.includes('ctx'))) {
-                            setTypeRule(`// JavaScript Column Generator
-// Available: ctx.index, ctx.row, ctx.random, ctx.utils
-const dept = ctx.random.choice(['PAY', 'WIRE', 'ACH', 'REF']);
-const seq = ctx.utils.pad(ctx.index, 6);
-const check = ctx.utils.luhnChecksum(seq);
-return \`\${dept}-\${seq}-\${check}\`;`);
-                          } else if (newMode === 'Lua' && (!typeRule || !typeRule.includes('local'))) {
-                            setTypeRule(`-- Lua 5.3 Column Generator
--- Available: ctx.index, ctx.row, random, utils, math, string, table
-local dept = random.choice({"PAY", "WIRE", "ACH", "REF"})
-local seq = utils.pad(ctx.index, 6)
-local check = utils.luhn(seq)
-return string.format("%s-%s-%d", dept, seq, check)`);
-                          }
-                        }}
+                        onClick={() => handleSwitchMode(item.mode)}
                         className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer select-none ${
                           isActive
                             ? 'bg-accent text-white border-accent shadow-xs'
@@ -1231,6 +1373,7 @@ return string.format("%s-%s-%d", dept, seq, check)`);
                         type="button"
                         onClick={() => {
                           setTypeRule(snip.code);
+                          setModeDrafts(prev => ({ ...prev, [typeBaseMode]: snip.code }));
                           runLiveTest(typeBaseMode, snip.code, typeBaseSubtype);
                         }}
                         title={snip.desc}
@@ -1284,6 +1427,19 @@ return string.format("%s-%s-%d", dept, seq, check)`);
                             )}
                           </div>
                         </div>
+
+                        <div className="p-2 rounded bg-primary/80 border border-border-subtle space-y-1 col-span-1 md:col-span-2">
+                          <div className="font-bold text-violet-400 font-sans text-[11px] flex items-center justify-between">
+                            <span>REST API & HTTP Integration ({typeBaseMode === 'Script' ? 'api / http / ctx.api' : 'api / http / ctx.api'})</span>
+                            <span className="text-[10px] text-accent/80 font-normal">Auto-cached & Pre-fetched</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 text-content-muted text-[10.5px]">
+                            <div><strong className="text-content">.get(url, [jsonPath])</strong>: Fetch data & extract path (e.g. <code>'users[].email'</code>)</div>
+                            <div><strong className="text-content">.post(url, body, [path])</strong>: Post JSON payload & retrieve field</div>
+                            <div><strong className="text-content">.extract(data, path)</strong>: Extract deep property or array element</div>
+                            <div><strong className="text-content">http.get(url, path)</strong>: Convenience alias for GET queries</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1297,7 +1453,10 @@ return string.format("%s-%s-%d", dept, seq, check)`);
 
                     <HighlightedCodeEditor
                       value={typeRule}
-                      onChange={(val) => setTypeRule(val)}
+                      onChange={(val) => {
+                        setTypeRule(val);
+                        setModeDrafts(prev => ({ ...prev, [typeBaseMode]: val }));
+                      }}
                       language={typeBaseMode === 'Script' ? 'javascript' : 'lua'}
                       rows={10}
                       minHeight="220px"
@@ -1434,23 +1593,73 @@ return string.format("%s-%s-%d", dept, seq, check)`);
             ) : (
               /* Installed Types Grid */
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                {/* Search & Category Filter */}
+                {/* Search & Status Filter */}
                 <div className="p-3 sm:p-4 border-b border-border-subtle flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between bg-primary/20 flex-shrink-0">
-                  <div className="relative flex-1 max-w-md">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
-                    <input
-                      type="text"
-                      placeholder="Search my types..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent"
-                    />
+                  <div className="flex items-center gap-2 flex-1 max-w-xl flex-wrap sm:flex-nowrap">
+                    <div className="relative flex-1 min-w-[160px]">
+                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
+                      <input
+                        type="text"
+                        placeholder="Search my types..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-7 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted hover:text-content p-0.5 cursor-pointer"
+                        >
+                          <X size={11} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Status Filter (All / Active / Inactive) */}
+                    <div className="flex items-center bg-secondary p-0.5 rounded-lg border border-border-subtle text-[11px] shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setInstalledStatusFilter('all')}
+                        className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                          installedStatusFilter === 'all'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'text-content-muted hover:text-content'
+                        }`}
+                      >
+                        All ({types.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInstalledStatusFilter('active')}
+                        className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                          installedStatusFilter === 'active'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'text-content-muted hover:text-content'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span>Active ({types.filter(t => t.isActive !== false).length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInstalledStatusFilter('inactive')}
+                        className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                          installedStatusFilter === 'inactive'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'text-content-muted hover:text-content'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                        <span>Off ({types.filter(t => t.isActive === false).length})</span>
+                      </button>
+                    </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={handleStartCreate}
-                    className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                    className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs shrink-0 transition cursor-pointer"
                   >
                     <Plus size={13} />
                     <span>Create New Type</span>
@@ -1467,28 +1676,50 @@ return string.format("%s-%s-%d", dept, seq, check)`);
                       return (
                         <div
                           key={t.id}
-                          className="p-3.5 rounded-xl bg-primary border border-border-subtle hover:border-accent/40 transition flex flex-col justify-between shadow-2xs group"
+                          className={`p-3.5 rounded-xl border transition flex flex-col justify-between shadow-2xs group ${
+                            t.isActive !== false
+                              ? 'bg-primary border-border-subtle hover:border-accent/40'
+                              : 'bg-primary/40 border-dashed border-border-subtle/80 opacity-75 hover:opacity-95'
+                          }`}
                         >
                           <div className="space-y-2">
                             <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <h3 className="text-xs font-bold text-content">{t.name}</h3>
-                                <p className="text-[11px] text-content-muted line-clamp-1 mt-0.5">
+                              <div className="min-w-0 flex-1">
+                                <h3 className={`text-xs font-bold truncate ${t.isActive !== false ? 'text-content' : 'text-content-muted'}`}>{t.name}</h3>
+                                <p className="text-[11px] text-content-muted truncate mt-0.5">
                                   {t.description || 'Custom generator rule'}
                                 </p>
                               </div>
 
-                              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-secondary border border-border-subtle text-accent font-semibold flex-shrink-0">
-                                {t.category}
-                              </span>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {/* Single Clean Interactive Toggle ON/OFF Switch Pill */}
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={t.isActive !== false}
+                                  onClick={() => handleToggleActive(t.id, t.name)}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium transition cursor-pointer border ${
+                                    t.isActive !== false
+                                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                                      : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/25'
+                                  }`}
+                                  title={t.isActive !== false ? 'Active: Click to turn off' : 'Turned off: Click to turn on'}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full transition-colors ${t.isActive !== false ? 'bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.6)]' : 'bg-zinc-500'}`} />
+                                  <span>{t.isActive !== false ? 'Active' : 'Off'}</span>
+                                </button>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-secondary border border-border-subtle text-accent font-semibold">
+                                  {t.category}
+                                </span>
+                              </div>
                             </div>
 
                             {/* Rule Spec Snippet */}
-                            <div className="p-2 rounded-lg bg-secondary/80 border border-border-subtle font-mono text-[11px] text-content-muted flex items-center justify-between">
-                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${getModeBadgeClass(t.baseMode)}`}>
+                            <div className="px-2.5 py-1.5 rounded-lg bg-secondary/80 border border-border-subtle font-mono text-[11px] text-content-muted flex items-center justify-between gap-2">
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 ${getModeBadgeClass(t.baseMode)}`}>
                                 {getModeLabel(t)}
                               </span>
-                              <span className="truncate max-w-[200px] text-accent font-mono text-[11px]" title={t.defaultRule}>
+                              <span className="truncate flex-1 text-right text-accent font-mono text-[11px]" title={t.defaultRule}>
                                 {t.baseMode === 'Script' || t.baseMode === 'Lua'
                                   ? `${t.defaultRule.split('\n').filter(l => l.trim() && !l.trim().startsWith('//') && !l.trim().startsWith('--'))[0] || 'Custom Script'}`
                                   : t.defaultRule}
@@ -1496,15 +1727,16 @@ return string.format("%s-%s-%d", dept, seq, check)`);
                             </div>
 
                             {/* Live Samples preview */}
-                            <div className="space-y-1">
-                              <span className="text-[10px] uppercase font-bold tracking-wider text-content-muted">
-                                Sample Output:
+                            <div className="flex items-center gap-1.5 overflow-hidden text-[11px]">
+                              <span className="text-[10px] uppercase font-semibold tracking-wider text-content-muted shrink-0">
+                                Sample:
                               </span>
-                              <div className="flex flex-wrap gap-1">
-                                {samples.map((s, idx) => (
+                              <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+                                {samples.slice(0, 2).map((s, idx) => (
                                   <span
                                     key={idx}
-                                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-secondary border border-border-subtle text-content truncate max-w-[200px]"
+                                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-secondary border border-border-subtle text-content truncate max-w-[180px]"
+                                    title={s}
                                   >
                                     {s}
                                   </span>
@@ -1519,28 +1751,28 @@ return string.format("%s-%s-%d", dept, seq, check)`);
                               <button
                                 type="button"
                                 onClick={() => handleStartEdit(t)}
-                                className="p-1.5 text-content-muted hover:text-accent hover:bg-tertiary rounded transition"
+                                className="p-1.5 text-content-muted hover:text-accent hover:bg-tertiary rounded-lg transition cursor-pointer"
                                 title="Edit Type Rule"
                               >
-                                <Edit2 size={12} />
+                                <Edit2 size={13} />
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDelete(t.id, t.name)}
-                                className="p-1.5 text-content-muted hover:text-rose-400 hover:bg-tertiary rounded transition"
+                                className="p-1.5 text-content-muted hover:text-rose-400 hover:bg-tertiary rounded-lg transition cursor-pointer"
                                 title="Delete Type"
                               >
-                                <Trash2 size={12} />
+                                <Trash2 size={13} />
                               </button>
                             </div>
 
                             <button
                               type="button"
-                              onClick={() => handleAddColumnDirectly(t)}
-                              className="px-2.5 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-xs"
+                              onClick={() => handleAddInstalledColumn(t)}
+                              className="px-2.5 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
                             >
                               <Plus size={12} />
-                              <span>Add Field to Schema</span>
+                              <span>Add Field</span>
                             </button>
                           </div>
                         </div>
@@ -1550,17 +1782,19 @@ return string.format("%s-%s-%d", dept, seq, check)`);
                 </div>
 
                 {/* Footer Info */}
-                <div className="p-3 border-t border-border-subtle bg-secondary flex items-center justify-between text-xs text-content-muted flex-shrink-0">
-                  <span className="text-[11px]">
-                    {types.length} custom column type{types.length !== 1 ? 's' : ''} registered
+                <div className="px-4 py-2.5 border-t border-border-subtle bg-secondary/60 flex items-center justify-between text-xs text-content-muted flex-shrink-0">
+                  <span className="text-[11px] font-mono">
+                    {types.length} custom type{types.length !== 1 ? 's' : ''} • {types.filter(t => t.isActive !== false).length} active • {types.filter(t => t.isActive === false).length} off
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleClearAll}
-                    className="text-[11px] text-rose-400 hover:underline"
-                  >
-                    Clear All My Types
-                  </button>
+                  {types.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAll}
+                      className="text-[11px] text-rose-400 hover:text-rose-300 transition hover:underline cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  )}
                 </div>
               </div>
             )}

@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+
 /**
  * REST API Retrieval & Enrichment Engine for Columns and Rows.
  * Supports:
@@ -16,6 +18,23 @@ export interface RestApiHeader {
   key: string;
   value: string;
   enabled: boolean;
+}
+
+export interface RestApiLatencyStats {
+  columnId?: string;
+  url: string;
+  method: string;
+  lastLatencyMs: number;
+  avgLatencyMs: number;
+  minLatencyMs: number;
+  maxLatencyMs: number;
+  history: number[]; // Array of last N response times in ms (up to 10 measurements)
+  lastPrefetchedAt: number;
+  sampleCount: number;
+  success: boolean;
+  status?: number;
+  error?: string;
+  isPrefetching?: boolean;
 }
 
 export interface RestApiColumnConfig {
@@ -151,10 +170,187 @@ export const CURATED_REST_API_PRESETS: RestApiPreset[] = [
   }
 ];
 
-// In-memory cache for API responses: Map<cacheKey, { data: unknown; timestamp: number }>
-const apiResponseCache = new Map<string, { data: unknown; timestamp: number }>();
+// In-memory cache for API responses: Map<cacheKey, { data: unknown; timestamp: number; latencyMs?: number }>
+interface ApiResponseCacheEntry {
+  data: unknown;
+  timestamp: number;
+  latencyMs?: number;
+}
+const apiResponseCache = new Map<string, ApiResponseCacheEntry>();
 const inFlightRequests = new Map<string, Promise<unknown>>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Latency & Metrics tracking registry for batch prefetches
+const latencyStatsByColId = new Map<string, RestApiLatencyStats>();
+const latencyStatsByUrl = new Map<string, RestApiLatencyStats>();
+const latencyListeners = new Set<() => void>();
+
+function notifyLatencyListeners() {
+  latencyListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {}
+  });
+}
+
+function normalizeApiUrl(url: string): string {
+  return (url || '').trim().toLowerCase().replace(/\/+$/, '');
+}
+
+/**
+ * Records a measured network latency for a REST API endpoint.
+ * Automatically updates moving average, min, max, and history buffer (for sparklines).
+ */
+export function recordLatencyMetric(params: {
+  columnId?: string;
+  url: string;
+  method?: string;
+  latencyMs: number;
+  success: boolean;
+  status?: number;
+  error?: string;
+}): RestApiLatencyStats {
+  const url = params.url || '';
+  const normUrl = normalizeApiUrl(url);
+  const method = (params.method || 'GET').toUpperCase();
+
+  const existing =
+    (params.columnId ? latencyStatsByColId.get(params.columnId) : null) ||
+    (normUrl ? latencyStatsByUrl.get(normUrl) : null);
+
+  const latency = Math.max(1, Math.round(params.latencyMs));
+  const prevHistory = existing?.history && existing.history.length > 0 ? existing.history : [];
+  const newHistory = [...prevHistory, latency].slice(-10);
+
+  const sum = newHistory.reduce((acc, v) => acc + v, 0);
+  const avgLatencyMs = Math.round(sum / newHistory.length);
+  const minLatencyMs = Math.min(...newHistory);
+  const maxLatencyMs = Math.max(...newHistory);
+
+  const stats: RestApiLatencyStats = {
+    columnId: params.columnId || existing?.columnId,
+    url,
+    method,
+    lastLatencyMs: latency,
+    avgLatencyMs,
+    minLatencyMs,
+    maxLatencyMs,
+    history: newHistory,
+    lastPrefetchedAt: Date.now(),
+    sampleCount: (existing?.sampleCount || 0) + 1,
+    success: params.success,
+    status: params.status ?? (params.success ? 200 : undefined),
+    error: params.error,
+    isPrefetching: false
+  };
+
+  if (params.columnId) {
+    latencyStatsByColId.set(params.columnId, stats);
+  }
+  if (normUrl) {
+    latencyStatsByUrl.set(normUrl, stats);
+  }
+
+  notifyLatencyListeners();
+  return stats;
+}
+
+/**
+ * Sets the prefetching state for a column or URL.
+ */
+export function setLatencyPrefetching(columnId?: string, url?: string, isPrefetching: boolean = true): void {
+  const normUrl = url ? normalizeApiUrl(url) : '';
+  const existing =
+    (columnId ? latencyStatsByColId.get(columnId) : null) ||
+    (normUrl ? latencyStatsByUrl.get(normUrl) : null);
+
+  if (existing) {
+    const updated: RestApiLatencyStats = { ...existing, isPrefetching };
+    if (columnId) latencyStatsByColId.set(columnId, updated);
+    if (normUrl) latencyStatsByUrl.set(normUrl, updated);
+    notifyLatencyListeners();
+  } else if (isPrefetching && (columnId || normUrl)) {
+    const placeholder: RestApiLatencyStats = {
+      columnId,
+      url: url || '',
+      method: 'GET',
+      lastLatencyMs: 0,
+      avgLatencyMs: 0,
+      minLatencyMs: 0,
+      maxLatencyMs: 0,
+      history: [],
+      lastPrefetchedAt: Date.now(),
+      sampleCount: 0,
+      success: true,
+      isPrefetching: true
+    };
+    if (columnId) latencyStatsByColId.set(columnId, placeholder);
+    if (normUrl) latencyStatsByUrl.set(normUrl, placeholder);
+    notifyLatencyListeners();
+  }
+}
+
+/**
+ * Retrieves the current latency stats for a column ID or URL.
+ */
+export function getLatencyStats(columnId?: string, url?: string): RestApiLatencyStats | null {
+  if (columnId && latencyStatsByColId.has(columnId)) {
+    return latencyStatsByColId.get(columnId)!;
+  }
+  if (url) {
+    const normUrl = normalizeApiUrl(url);
+    if (latencyStatsByUrl.has(normUrl)) {
+      return latencyStatsByUrl.get(normUrl)!;
+    }
+  }
+  return null;
+}
+
+/**
+ * Subscribes to latency stats updates.
+ */
+export function subscribeLatencyStats(listener: () => void): () => void {
+  latencyListeners.add(listener);
+  return () => {
+    latencyListeners.delete(listener);
+  };
+}
+
+/**
+ * React hook to observe real-time latency stats and prefetch state for a REST API column.
+ */
+export function useRestApiLatency(columnId?: string, url?: string): RestApiLatencyStats | null {
+  const [stats, setStats] = useState<RestApiLatencyStats | null>(() => getLatencyStats(columnId, url));
+
+  useEffect(() => {
+    setStats(getLatencyStats(columnId, url));
+    return subscribeLatencyStats(() => {
+      setStats(getLatencyStats(columnId, url));
+    });
+  }, [columnId, url]);
+
+  return stats;
+}
+
+/**
+ * Directly pings an endpoint to test connection and refresh latency metrics immediately.
+ */
+export async function pingRestApiEndpoint(
+  config: RestApiColumnConfig,
+  columnId?: string
+): Promise<RestApiLatencyStats> {
+  setLatencyPrefetching(columnId, config.url, true);
+  const result = await executeRestApiFetch(config, { rowIndex: 0 }, { forceRefresh: true, columnId });
+  return recordLatencyMetric({
+    columnId,
+    url: config.url,
+    method: config.method || 'GET',
+    latencyMs: result.durationMs || 0,
+    success: result.success,
+    status: result.status,
+    error: result.error
+  });
+}
 
 /**
  * Parses a REST API rule string into a RestApiColumnConfig object.
@@ -332,7 +528,7 @@ function resolvePropertyPath(obj: unknown, path: string): unknown {
 /**
  * Computes a unique cache key for an API request.
  */
-function computeCacheKey(url: string, method: string, headers?: RestApiHeader[], body?: string): string {
+export function computeCacheKey(url: string, method: string = 'GET', headers?: RestApiHeader[], body?: string): string {
   const activeHeaders = (headers || [])
     .filter((h) => h.enabled && h.key)
     .map((h) => `${h.key}:${h.value}`)
@@ -342,11 +538,146 @@ function computeCacheKey(url: string, method: string, headers?: RestApiHeader[],
 }
 
 /**
+ * Retrieves cached response data directly by URL and method if available and valid.
+ */
+export function getCachedApiResponse(
+  url: string,
+  method: string = 'GET',
+  headers?: RestApiHeader[],
+  body?: string
+): unknown | undefined {
+  const cacheKey = computeCacheKey(url, method, headers, body);
+  const cached = apiResponseCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+  return undefined;
+}
+
+/**
+ * Stores data into the API response cache.
+ */
+export function setCachedApiResponse(
+  url: string,
+  data: unknown,
+  method: string = 'GET',
+  headers?: RestApiHeader[],
+  body?: string
+): void {
+  const cacheKey = computeCacheKey(url, method, headers, body);
+  apiResponseCache.set(cacheKey, { data, timestamp: Date.now(), latencyMs: 38 });
+  recordLatencyMetric({
+    url,
+    method,
+    latencyMs: 38,
+    success: true,
+    status: 200
+  });
+}
+
+/**
+ * Scans code or rule text to extract any HTTP/HTTPS URLs for prefetching.
+ */
+export function extractUrlsFromText(text: string): string[] {
+  if (!text) return [];
+  const urls: string[] = [];
+  const regex = /https?:\/\/[^\s"'`<>)+,;\]]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const url = match[0].replace(/[.,;:)\]]+$/, '');
+    if (url && !urls.includes(url)) {
+      urls.push(url);
+    }
+  }
+  return urls;
+}
+
+/**
+ * Pre-fetches a list of URLs in parallel to prime the cache.
+ */
+export async function prefetchUrls(urls: string[]): Promise<void> {
+  const promises: Promise<unknown>[] = [];
+  for (const url of urls) {
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      const cacheKey = computeCacheKey(url, 'GET');
+      if (!apiResponseCache.has(cacheKey) && !inFlightRequests.has(cacheKey)) {
+        promises.push(executeRestApiFetch({ url, method: 'GET' }, { rowIndex: 0 }));
+      }
+    }
+  }
+  if (promises.length > 0) {
+    await Promise.allSettled(promises);
+  }
+}
+
+export interface ApiCallSyncOptions {
+  url: string;
+  method?: RestApiMethod;
+  headers?: Record<string, string>;
+  body?: unknown;
+  jsonPath?: string;
+  sampleStrategy?: 'sequential' | 'random';
+  fallback?: unknown;
+  rowIndex?: number;
+  row?: Record<string, unknown>;
+}
+
+/**
+ * Universal synchronous API retrieval function used by script engines (JS & Lua).
+ * Checks the in-memory cache; if not cached yet, triggers background fetch and returns fallback/null.
+ */
+export function apiCallSync(options: ApiCallSyncOptions): unknown {
+  const url = options.url || '';
+  const method = (options.method || 'GET').toUpperCase() as RestApiMethod;
+  const headerList: RestApiHeader[] = options.headers
+    ? Object.entries(options.headers).map(([key, value]) => ({ key, value, enabled: true }))
+    : [];
+  const stringBody = typeof options.body === 'object' && options.body !== null
+    ? JSON.stringify(options.body)
+    : options.body !== undefined ? String(options.body) : undefined;
+
+  const finalUrl = interpolateTemplate(url, { rowIndex: options.rowIndex, row: options.row });
+  const cacheKey = computeCacheKey(finalUrl, method, headerList, stringBody);
+
+  const cached = apiResponseCache.get(cacheKey);
+  if (cached) {
+    if (options.jsonPath) {
+      const extracted = extractValueByPath(
+        cached.data,
+        options.jsonPath,
+        options.rowIndex ?? 0,
+        options.sampleStrategy || 'sequential'
+      );
+      return extracted !== null && extracted !== undefined ? extracted : options.fallback ?? null;
+    }
+    return cached.data;
+  }
+
+  // Not in cache yet: trigger background fetch so subsequent calls/rows have it
+  if (!inFlightRequests.has(cacheKey)) {
+    executeRestApiFetch(
+      {
+        url: finalUrl,
+        method,
+        headers: headerList,
+        body: stringBody,
+        jsonPath: options.jsonPath,
+        sampleStrategy: options.sampleStrategy
+      },
+      { rowIndex: options.rowIndex, row: options.row }
+    ).catch(() => {});
+  }
+
+  return options.fallback !== undefined ? options.fallback : null;
+}
+
+/**
  * Executes a live fetch to an external REST API endpoint with caching and timeout.
  */
 export async function executeRestApiFetch(
   config: RestApiColumnConfig,
-  context?: { rowIndex?: number; row?: Record<string, unknown> }
+  context?: { rowIndex?: number; row?: Record<string, unknown> },
+  options?: { forceRefresh?: boolean; columnId?: string }
 ): Promise<{
   success: boolean;
   value: unknown;
@@ -363,26 +694,29 @@ export async function executeRestApiFetch(
 
   const cacheKey = computeCacheKey(finalUrl, method, config.headers, finalBody);
 
-  // Check in-memory cache
-  const cached = apiResponseCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    const extracted = extractValueByPath(
-      cached.data,
-      config.jsonPath || '',
-      context?.rowIndex ?? 0,
-      config.sampleStrategy || 'sequential'
-    );
-    return {
-      success: true,
-      value: extracted ?? config.fallbackValue ?? null,
-      rawResponse: cached.data,
-      status: 200,
-      durationMs: Math.round(performance.now() - startTime)
-    };
+  // Check in-memory cache if not forcing fresh request
+  if (!options?.forceRefresh) {
+    const cached = apiResponseCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      const extracted = extractValueByPath(
+        cached.data,
+        config.jsonPath || '',
+        context?.rowIndex ?? 0,
+        config.sampleStrategy || 'sequential'
+      );
+      const measured = cached.latencyMs ?? Math.max(1, Math.round(performance.now() - startTime));
+      return {
+        success: true,
+        value: extracted ?? config.fallbackValue ?? null,
+        rawResponse: cached.data,
+        status: 200,
+        durationMs: measured
+      };
+    }
   }
 
   // Deduplicate in-flight identical requests
-  if (inFlightRequests.has(cacheKey)) {
+  if (inFlightRequests.has(cacheKey) && !options?.forceRefresh) {
     try {
       const data = await inFlightRequests.get(cacheKey)!;
       const extracted = extractValueByPath(
@@ -396,7 +730,7 @@ export async function executeRestApiFetch(
         value: extracted ?? config.fallbackValue ?? null,
         rawResponse: data,
         status: 200,
-        durationMs: Math.round(performance.now() - startTime)
+        durationMs: Math.max(1, Math.round(performance.now() - startTime))
       };
     } catch (err: any) {
       return {
@@ -452,8 +786,9 @@ export async function executeRestApiFetch(
       }
     }
 
-    // Cache the response
-    apiResponseCache.set(cacheKey, { data: parsedData, timestamp: Date.now() });
+    const elapsed = Math.max(1, Math.round(performance.now() - startTime));
+    // Cache the response along with measured network latency
+    apiResponseCache.set(cacheKey, { data: parsedData, timestamp: Date.now(), latencyMs: elapsed });
     return parsedData;
   })();
 
@@ -470,12 +805,23 @@ export async function executeRestApiFetch(
       config.sampleStrategy || 'sequential'
     );
 
+    const durationMs = Math.max(1, Math.round(performance.now() - startTime));
+
+    recordLatencyMetric({
+      columnId: options?.columnId,
+      url: finalUrl || config.url,
+      method,
+      latencyMs: durationMs,
+      success: true,
+      status: 200
+    });
+
     return {
       success: true,
       value: extracted ?? config.fallbackValue ?? null,
       rawResponse: data,
       status: 200,
-      durationMs: Math.round(performance.now() - startTime)
+      durationMs
     };
   } catch (err: any) {
     inFlightRequests.delete(cacheKey);
@@ -487,11 +833,22 @@ export async function executeRestApiFetch(
       ? 'Network/CORS error: The endpoint blocked cross-origin access from browser.'
       : err.message || 'Unknown network error';
 
+    const durationMs = Math.max(1, Math.round(performance.now() - startTime));
+
+    recordLatencyMetric({
+      columnId: options?.columnId,
+      url: finalUrl || config.url,
+      method,
+      latencyMs: durationMs,
+      success: false,
+      error: msg
+    });
+
     return {
       success: false,
       value: config.fallbackValue || 'api_error',
       error: msg,
-      durationMs: Math.round(performance.now() - startTime)
+      durationMs
     };
   }
 }
@@ -501,7 +858,7 @@ export async function executeRestApiFetch(
  * This guarantees instantaneous synchronous row generation during large exports!
  */
 export async function prefetchRestApiBatch(
-  columns: { type: string; rule?: string }[],
+  columns: { id?: string; name?: string; type: string; rule?: string }[],
   targetRowCount: number = 100
 ): Promise<void> {
   const fetchPromises: Promise<unknown>[] = [];
@@ -509,8 +866,50 @@ export async function prefetchRestApiBatch(
   for (const col of columns) {
     if (col.type === 'REST_API' || (col.rule && col.rule.includes('"type": "REST_API"'))) {
       const config = parseRestApiConfig(col.rule || '');
-      if (config.url && config.retrievalMode !== 'per_row') {
-        fetchPromises.push(executeRestApiFetch(config, { rowIndex: 0 }));
+      if (config.url) {
+        setLatencyPrefetching(col.id, config.url, true);
+
+        if (config.retrievalMode === 'per_row') {
+          // For per-row mode, sample up to 3 queries to prefetch and calculate average response time
+          const sampleCount = Math.min(3, Math.max(1, targetRowCount));
+          const samplePromises: Promise<any>[] = [];
+          for (let r = 0; r < sampleCount; r++) {
+            samplePromises.push(
+              executeRestApiFetch(
+                config,
+                { rowIndex: r },
+                { forceRefresh: true, columnId: col.id }
+              )
+            );
+          }
+          fetchPromises.push(
+            Promise.allSettled(samplePromises).finally(() => {
+              setLatencyPrefetching(col.id, config.url, false);
+            })
+          );
+        } else {
+          // Pool mode: execute fresh fetch to measure current response time
+          fetchPromises.push(
+            executeRestApiFetch(
+              config,
+              { rowIndex: 0 },
+              { forceRefresh: true, columnId: col.id }
+            ).finally(() => {
+              setLatencyPrefetching(col.id, config.url, false);
+            })
+          );
+        }
+      }
+    }
+
+    // Also scan any script rules (Script/Lua) for embedded REST API URLs
+    if (col.rule) {
+      const urls = extractUrlsFromText(col.rule);
+      for (const url of urls) {
+        const cacheKey = computeCacheKey(url, 'GET');
+        if (!apiResponseCache.has(cacheKey) && !inFlightRequests.has(cacheKey)) {
+          fetchPromises.push(executeRestApiFetch({ url, method: 'GET' }, { rowIndex: 0 }));
+        }
       }
     }
   }

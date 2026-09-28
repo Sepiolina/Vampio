@@ -136,6 +136,7 @@ export type TranslationDictionary = {
     quickEnum: string;
     quickBool: string;
     quickFormula: string;
+    quickRestApi: string;
     quickPresets: string;
     quickExtract: string;
     nullLabel: string;
@@ -190,6 +191,14 @@ export type TranslationDictionary = {
     typeRegEx: string;
     typeString: string;
     typeBlobHex: string;
+    typeRestApi: string;
+    restApiAvgLatency: string;
+    restApiPrefetching: string;
+    restApiRePing: string;
+    restApiFast: string;
+    restApiModerate: string;
+    restApiSlow: string;
+    restApiBatchPrefetch: string;
     columnName: string;
     dataType: string;
     nullPercentage: string;

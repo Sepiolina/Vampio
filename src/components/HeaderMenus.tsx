@@ -29,13 +29,17 @@ import {
   Wand2,
   FileCode,
   Tag,
-  Globe
+  Globe,
+  Activity,
+  Plus
 } from 'lucide-react';
 import { ColumnSpec, ExportFormat } from '../types';
 import { AnimatedTabs } from './AnimatedTabs';
 import { FormatSelectDropdown } from './FormatSelectDropdown';
 import { CustomTypeModal, CustomTypeModalTab } from './CustomTypeModal';
 import { useI18n, LanguageSelectDropdown } from '../i18n';
+import { useUserRole } from '../context/UserRoleContext';
+import { useWorkspace } from '../context/WorkspaceContext';
 import { getCustomColumnTypes, CustomColumnType, exportCustomColumnTypesJSON } from '../utils/customTypesManager';
 import {
   getLatestSession,
@@ -70,6 +74,7 @@ interface HeaderMenusProps {
   onOpenPresets: () => void;
   onOpenOfflineExtractor: () => void;
   onOpenFolderMonitor: () => void;
+  onOpenImportBundle?: () => void;
   onOpenRestApi?: () => void;
   setStatusMessage: (msg: string) => void;
 }
@@ -92,10 +97,20 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
   onOpenPresets,
   onOpenOfflineExtractor,
   onOpenFolderMonitor,
+  onOpenImportBundle,
   onOpenRestApi,
   setStatusMessage
 }) => {
   const { t, locale, setLocale, availableLocales } = useI18n();
+  const { setRole } = useUserRole();
+  const { 
+    workspaces, 
+    activeWorkspaceId, 
+    switchWorkspace, 
+    createWorkspace, 
+    setIsQuickSwitcherOpen, 
+    setIsSettingsModalOpen 
+  } = useWorkspace();
   const [activeMenu, setActiveMenu] = useState<'files' | 'settings' | 'advance' | null>(null);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isFormulasOpen, setIsFormulasOpen] = useState(false);
@@ -366,6 +381,81 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Multi-Project Workspaces Section */}
+              <div className="space-y-1 bg-primary/40 p-2 rounded-lg border border-border-subtle/70">
+                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-content-muted">
+                  <div className="flex items-center gap-1.5">
+                    <Layers size={11} className="text-accent" />
+                    <span>Project Workspaces ({workspaces.length})</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        createWorkspace({
+                          name: `Project ${workspaces.length + 1}`,
+                          tableName: `dataset_${workspaces.length + 1}`,
+                          columns: [],
+                        });
+                        setActiveMenu(null);
+                      }}
+                      title="New Project Workspace"
+                      className="text-[9px] text-accent hover:underline flex items-center gap-0.5 cursor-pointer font-normal"
+                    >
+                      <Plus size={10} />
+                      <span>New</span>
+                    </button>
+                    <span className="text-border-subtle">·</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsQuickSwitcherOpen(true);
+                        setActiveMenu(null);
+                      }}
+                      className="text-[9px] text-content-muted hover:text-content font-mono cursor-pointer"
+                    >
+                      ⌘K
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                  {workspaces.map((ws) => {
+                    const isActive = ws.id === activeWorkspaceId;
+                    return (
+                      <button
+                        key={ws.id}
+                        type="button"
+                        onClick={() => {
+                          switchWorkspace(ws.id);
+                          setActiveMenu(null);
+                        }}
+                        className={`w-full flex items-center justify-between p-1.5 rounded-md text-left transition cursor-pointer border ${
+                          isActive
+                            ? 'bg-card border-accent/40 text-content shadow-2xs'
+                            : 'hover:bg-primary border-transparent text-content-muted hover:text-content'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 truncate">
+                          <div className="font-semibold text-xs truncate flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                            <span className="truncate">{ws.name}</span>
+                          </div>
+                          <div className="text-[10px] text-content-muted truncate font-mono">
+                            {ws.tableName} · {ws.columns?.length || 0} cols · {ws.format?.toUpperCase() || 'CSV'}
+                          </div>
+                        </div>
+                        {isActive && (
+                          <span className="text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-400 font-mono shrink-0 ml-1">
+                            active
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Sessions Management */}
@@ -762,32 +852,15 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                       <div className="text-[10px] text-content-muted truncate">{t('header.customColumnStudioDesc')}</div>
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono bg-secondary px-2 py-0.5 rounded text-content-muted border border-border-subtle flex-shrink-0 ml-2">
-                    {customTypesList.length} {t('common.active')}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenRestApi?.();
-                    setActiveMenu(null);
-                  }}
-                  title="Connect external REST APIs to fetch real columns and enrich synthetic rows"
-                  className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-tertiary text-content transition text-left group border border-border-subtle/70 bg-primary/40 hover:border-border-subtle cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-2 rounded-lg bg-sky-500/15 text-sky-400 group-hover:bg-sky-500 group-hover:text-white transition flex-shrink-0">
-                      <Globe size={16} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-xs text-content truncate">REST API Live Retrieval</div>
-                      <div className="text-[10px] text-content-muted truncate">Real API endpoints for columns & rows</div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20 px-1.5 py-0.5 rounded flex-shrink-0 ml-2 font-bold">
-                    HTTP/S
-                  </span>
+                  {(() => {
+                    const activeCount = customTypesList.filter(t => t.isActive !== false).length;
+                    const totalCount = customTypesList.length;
+                    return (
+                      <span className="text-[10px] font-mono bg-secondary px-2 py-0.5 rounded text-content-muted border border-border-subtle flex-shrink-0 ml-2">
+                        {activeCount === totalCount ? `${totalCount} ${t('common.active')}` : `${activeCount}/${totalCount} ${t('common.active')}`}
+                      </span>
+                    );
+                  })()}
                 </button>
               </div>
 
@@ -849,6 +922,47 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                   <div className="min-w-0">
                     <div className="font-semibold">{t('header.offlineExtractor')}</div>
                     <div className="text-[10px] text-content-muted">{t('header.offlineExtractorDesc')}</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenImportBundle) onOpenImportBundle();
+                    setActiveMenu(null);
+                  }}
+                  title="Import .vampio.profile.json bundle exported by field operators or folder monitors"
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
+                >
+                  <div className="p-1.5 rounded-md bg-indigo-500/15 text-indigo-400 flex-shrink-0">
+                    <FileCode size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <span>Import Profile Bundle</span>
+                      <span className="px-1 py-0.2 rounded text-[9px] font-mono bg-indigo-500/20 text-indigo-400 font-bold">
+                        .JSON
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-content-muted">Load machine profile & auto-configure schema</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRole('operator');
+                    setActiveMenu(null);
+                  }}
+                  title="Switch to Simplified Field Operator Mode (Folder Monitor & Profile Exporter)"
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-500/10 text-emerald-400 transition text-left cursor-pointer border border-emerald-500/20"
+                >
+                  <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-400 flex-shrink-0">
+                    <Activity size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold">Switch to Operator Mode</div>
+                    <div className="text-[10px] text-content-muted">Minimalist 2-click interface for technicians</div>
                   </div>
                 </button>
               </div>

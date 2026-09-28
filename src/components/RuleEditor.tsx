@@ -4,6 +4,7 @@ import { Sparkles, Hash, Calculator, Clock, Code2, Tag, Sliders, RefreshCw, Laye
 import { getCustomColumnTypes, getExamplePresetTypes, generateCustomTypeValue, CustomColumnType, getRegisteredCustomEntities, CustomEntityDataset } from '../utils/customTypesManager';
 import { CustomEntityModal } from './CustomEntityModal';
 import { RestApiConfigModal } from './RestApiConfigModal';
+import { RestApiLatencyBadge } from './RestApiLatencyBadge';
 import { parseRestApiConfig, serializeRestApiConfig } from '../utils/restApiManager';
 import { useI18n } from '../i18n';
 
@@ -129,6 +130,15 @@ export const RuleEditor: React.FC<Props> = ({ col, onChange, availableColumns })
             >
               {customType.baseMode}
             </span>
+            {customType.isActive === false && (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-500/20 text-zinc-400 border border-zinc-500/30 shrink-0"
+                title="This custom type is deactivated (Off) in My Types"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                <span>Off</span>
+              </span>
+            )}
 
             <span className="truncate flex-1 font-mono text-[11px] text-content-muted" title={col.rule || customType.defaultRule}>
               {(col.rule || customType.defaultRule).split('\n').find(l => l.trim() && !l.trim().startsWith('//') && !l.trim().startsWith('--')) || 'Custom Script'}
@@ -148,6 +158,15 @@ export const RuleEditor: React.FC<Props> = ({ col, onChange, availableColumns })
             <span className="text-[10px] text-accent font-bold uppercase tracking-wider font-mono">
               {customType.baseMode === 'Base' ? (customType.baseSubtype || 'Base') : customType.baseMode}:
             </span>
+            {customType.isActive === false && (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-500/20 text-zinc-400 border border-zinc-500/30 shrink-0"
+                title="This custom type is deactivated (Off) in My Types"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                <span>Off</span>
+              </span>
+            )}
             {(col.rule || customType.defaultRule).trim().startsWith('{') ? (
               <span className="w-full text-xs text-content font-mono truncate" title={col.rule || customType.defaultRule}>
                 {(() => {
@@ -655,34 +674,62 @@ export const RuleEditor: React.FC<Props> = ({ col, onChange, availableColumns })
     case 'REST_API': {
       const apiConfig = parseRestApiConfig(col.rule || '');
       return (
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 bg-primary border border-border-subtle rounded-md px-2.5 py-1">
-            <span className="text-[10px] font-bold uppercase font-mono px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/25">
-              {apiConfig.method || 'GET'}
-            </span>
-            <span
-              className="text-xs font-mono text-content max-w-[200px] truncate"
-              title={apiConfig.url}
+        <div className="flex items-center gap-2 flex-wrap w-full">
+          <div className="flex items-center gap-1.5 bg-primary border border-border-subtle rounded-md px-2 py-1 flex-1 min-w-[200px]">
+            <Globe size={13} className="text-sky-400 flex-shrink-0" />
+            <select
+              value={apiConfig.method || 'GET'}
+              onChange={(e) => {
+                const updated = { ...apiConfig, method: e.target.value as 'GET' | 'POST' };
+                onChange(serializeRestApiConfig(updated));
+              }}
+              className="bg-secondary text-accent font-bold text-[10px] font-mono px-1 py-0.5 rounded border border-border-subtle focus:outline-none cursor-pointer"
             >
-              {apiConfig.url}
-            </span>
-            {apiConfig.jsonPath && (
-              <span className="text-[10px] font-mono text-content-muted bg-secondary px-1.5 py-0.5 rounded border border-border-subtle truncate max-w-[120px]">
-                {apiConfig.jsonPath}
-              </span>
-            )}
-            <span className="text-[9px] uppercase font-bold text-accent px-1 rounded bg-secondary">
-              {apiConfig.retrievalMode === 'per_row' ? 'Row' : 'Pool'}
-            </span>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+            </select>
+            <input
+              type="text"
+              value={apiConfig.url}
+              placeholder="https://api.example.com/data"
+              onChange={(e) => {
+                const updated = { ...apiConfig, url: e.target.value };
+                onChange(serializeRestApiConfig(updated));
+              }}
+              className="flex-1 min-w-[120px] text-xs bg-transparent text-content font-mono focus:outline-none"
+              title="REST API URL endpoint"
+            />
           </div>
+
+          <div className="flex items-center gap-1.5 bg-primary border border-border-subtle rounded-md px-2 py-1">
+            <span className="text-[10px] text-content-muted font-mono">Path:</span>
+            <input
+              type="text"
+              value={apiConfig.jsonPath || ''}
+              placeholder="users[].email"
+              onChange={(e) => {
+                const updated = { ...apiConfig, jsonPath: e.target.value };
+                onChange(serializeRestApiConfig(updated));
+              }}
+              className="w-28 text-xs bg-transparent text-content font-mono focus:outline-none"
+              title="JSONPath expression (e.g. data[].id or root)"
+            />
+          </div>
+
+          <RestApiLatencyBadge
+            columnId={col.id}
+            config={apiConfig}
+            compact={false}
+          />
 
           <button
             type="button"
             onClick={() => setIsRestApiModalOpen(true)}
             className="px-2.5 py-1 text-xs bg-secondary hover:bg-tertiary text-accent font-semibold border border-border-subtle rounded-md transition flex items-center gap-1.5 cursor-pointer"
+            title="Configure headers, params, and response preview"
           >
-            <Globe size={13} />
-            <span>Configure REST API</span>
+            <Sliders size={12} />
+            <span>Configure</span>
           </button>
 
           <RestApiConfigModal

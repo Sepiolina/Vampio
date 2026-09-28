@@ -120,3 +120,36 @@ export interface PresetSchema {
   tableName: string;
   columns: ColumnSpec[];
 }
+
+export type WorkspaceSavePolicy = 'auto' | 'prompt' | 'manual';
+export type WorkspaceDisplayMode = 'top-bar' | 'sidebar';
+
+export interface WorkspaceSession {
+  id: string;
+  name: string;
+  tableName: string;
+  createdAt: number;
+  updatedAt: number;
+  isDirty?: boolean;
+  colorTag?: string; // e.g. 'emerald', 'indigo', 'amber', 'rose', 'sky', 'purple'
+  description?: string;
+
+  // Schema state
+  columns: ColumnSpec[];
+  format: ExportFormat;
+  count: number;
+  intervalMs: number;
+  outputDestination: OutputDestination;
+  outputStrategy: OutputStrategy;
+  multiFileConfig: MultiFileConfig;
+  appendConfig: AppendConfig;
+  selectedFolderName: string | null;
+  filename?: string;
+}
+
+export interface WorkspaceSettings {
+  savePolicy: WorkspaceSavePolicy;
+  displayMode: WorkspaceDisplayMode;
+  autoSaveDelayMs: number;
+}
+

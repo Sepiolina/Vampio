@@ -24,7 +24,8 @@ import {
   Pause,
   Upload,
   Zap,
-  Check
+  Check,
+  Download
 } from 'lucide-react';
 import { ColumnSpec, ExportFormat, OutputStrategy, ImportedFileContext } from '../types';
 import { AnimatedTabs } from './AnimatedTabs';
@@ -35,7 +36,8 @@ import {
   analyzeFolderFiles,
   readFolderFromDirectoryHandle,
   readFilesFromHtmlFileList,
-  formatFileSize
+  formatFileSize,
+  exportWorkspaceProfileBundleJson
 } from '../utils/folderBehaviorAnalyzer';
 import { requestDirectoryHandle, isFileSystemAccessSupported } from '../utils/fileSystem';
 import { useI18n } from '../i18n';
@@ -1007,14 +1009,38 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   Close
                 </button>
                 {analysis && (
-                  <button
-                    type="button"
-                    onClick={handleApplyAll}
-                    className="px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Sparkles size={13} />
-                    <span>Apply Recommendations</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const jsonStr = exportWorkspaceProfileBundleJson(analysis);
+                        const blob = new Blob([jsonStr], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                        const safeName = (folderName || 'folder').replace(/[^a-zA-Z0-9_-]/g, '_');
+                        a.href = url;
+                        a.download = `${safeName}-profile-${timestamp}.vampio.profile.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                      title="Export complete forensic profile bundle for developer workspace"
+                    >
+                      <Download size={13} />
+                      <span>Export Profile Bundle (.JSON)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyAll}
+                      className="px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Sparkles size={13} />
+                      <span>Apply Recommendations</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>

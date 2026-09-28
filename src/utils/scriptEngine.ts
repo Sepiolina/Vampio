@@ -1,4 +1,41 @@
 import * as fengari from 'fengari';
+import { apiCallSync, extractValueByPath, executeRestApiFetch } from './restApiManager';
+
+export interface ScriptApiHelper {
+  get: (
+    url: string,
+    jsonPathOrOptions?: string | {
+      path?: string;
+      headers?: Record<string, string>;
+      sampleStrategy?: 'sequential' | 'random';
+      fallback?: unknown;
+    }
+  ) => unknown;
+  post: (
+    url: string,
+    body?: unknown,
+    options?: {
+      headers?: Record<string, string>;
+      path?: string;
+      fallback?: unknown;
+    }
+  ) => unknown;
+  extract: (data: unknown, path: string, strategy?: 'sequential' | 'random') => unknown;
+  fetchAsync: (
+    url: string,
+    options?: {
+      method?: 'GET' | 'POST';
+      headers?: Record<string, string>;
+      body?: unknown;
+      path?: string;
+    }
+  ) => Promise<unknown>;
+}
+
+export interface ScriptHttpHelper {
+  get: (url: string, pathOrHeaders?: string | Record<string, string>) => unknown;
+  post: (url: string, body?: unknown, headers?: Record<string, string>) => unknown;
+}
 
 export interface ScriptContext {
   index: number;
@@ -24,6 +61,8 @@ export interface ScriptContext {
     slugify: (str: string) => string;
     clamp: (val: number, min: number, max: number) => number;
   };
+  api: ScriptApiHelper;
+  http: ScriptHttpHelper;
 }
 
 export function createScriptContext(
@@ -147,12 +186,80 @@ export function createScriptContext(
     }
   };
 
+  const api: ScriptApiHelper = {
+    get: (url: string, jsonPathOrOptions?: string | { path?: string; headers?: Record<string, string>; sampleStrategy?: 'sequential' | 'random'; fallback?: unknown }): unknown => {
+      let jsonPath = '';
+      let headers: Record<string, string> | undefined;
+      let sampleStrategy: 'sequential' | 'random' = 'sequential';
+      let fallback: unknown = undefined;
+
+      if (typeof jsonPathOrOptions === 'string') {
+        jsonPath = jsonPathOrOptions;
+      } else if (jsonPathOrOptions && typeof jsonPathOrOptions === 'object') {
+        jsonPath = jsonPathOrOptions.path || '';
+        headers = jsonPathOrOptions.headers;
+        if (jsonPathOrOptions.sampleStrategy) sampleStrategy = jsonPathOrOptions.sampleStrategy;
+        fallback = jsonPathOrOptions.fallback;
+      }
+
+      return apiCallSync({
+        url,
+        method: 'GET',
+        headers,
+        jsonPath,
+        sampleStrategy,
+        fallback,
+        rowIndex,
+        row
+      });
+    },
+    post: (url: string, body?: unknown, options?: { headers?: Record<string, string>; path?: string; fallback?: unknown }): unknown => {
+      return apiCallSync({
+        url,
+        method: 'POST',
+        headers: options?.headers,
+        body,
+        jsonPath: options?.path,
+        fallback: options?.fallback,
+        rowIndex,
+        row
+      });
+    },
+    extract: (data: unknown, path: string, strategy: 'sequential' | 'random' = 'sequential'): unknown => {
+      return extractValueByPath(data, path, rowIndex, strategy);
+    },
+    fetchAsync: async (url: string, options?: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: unknown; path?: string }): Promise<unknown> => {
+      const res = await executeRestApiFetch({
+        url,
+        method: options?.method || 'GET',
+        headers: options?.headers ? Object.entries(options.headers).map(([k, v]) => ({ key: k, value: v, enabled: true })) : undefined,
+        body: options?.body ? JSON.stringify(options.body) : undefined,
+        jsonPath: options?.path
+      }, { rowIndex, row });
+      return res.value;
+    }
+  };
+
+  const http: ScriptHttpHelper = {
+    get: (url: string, pathOrHeaders?: string | Record<string, string>): unknown => {
+      if (typeof pathOrHeaders === 'string') {
+        return api.get(url, pathOrHeaders);
+      }
+      return api.get(url, { headers: pathOrHeaders });
+    },
+    post: (url: string, body?: unknown, headers?: Record<string, string>): unknown => {
+      return api.post(url, body, { headers });
+    }
+  };
+
   return {
     index,
     rowIndex,
     row,
     random,
-    utils
+    utils,
+    api,
+    http
   };
 }
 
@@ -160,7 +267,7 @@ export function createScriptContext(
 // JAVASCRIPT SCRIPT EXECUTOR
 // -------------------------------------------------------------
 
-const jsFunctionCache = new Map<string, (ctx: ScriptContext) => unknown>();
+const jsFunctionCache = new Map<string, (ctx: ScriptContext, api: ScriptApiHelper, http: ScriptHttpHelper, row: Record<string, unknown>, index: number, random: any, utils: any) => unknown>();
 
 export function executeJavaScriptScript(
   scriptText: string,
@@ -171,16 +278,24 @@ export function executeJavaScriptScript(
     return { success: true, result: '' };
   }
 
+  // Guard against Lua syntax accidentally passed to JavaScript engine
+  if (code.startsWith('--') || /^local\s+/m.test(code)) {
+    return {
+      success: false,
+      error: 'Lua syntax detected (-- comment or local variable). Please switch language mode to Lua 5.3.'
+    };
+  }
+
   try {
     let fn = jsFunctionCache.get(code);
     if (!fn) {
       let body: string;
       if (code.includes('function generate') || code.includes('const generate') || code.includes('let generate')) {
-        // User defined a generate(ctx) function
+        // User defined a generate(ctx, api, http) function
         body = `
           ${code}
           if (typeof generate === 'function') {
-            return generate(ctx);
+            return generate(ctx, api, http);
           }
           throw new Error("Defined script did not return a value. Please call return or define generate(ctx)");
         `;
@@ -192,20 +307,98 @@ export function executeJavaScriptScript(
         body = `return (${code});`;
       }
 
-      // Compile function
+      // Compile function with ctx, api, http, row, index, random, utils in scope
       // eslint-disable-next-line @typescript-eslint/no-implied-eval
-      fn = new Function('ctx', body) as (ctx: ScriptContext) => unknown;
+      fn = new Function('ctx', 'api', 'http', 'row', 'index', 'random', 'utils', body) as any;
       if (jsFunctionCache.size > 200) {
         jsFunctionCache.clear();
       }
       jsFunctionCache.set(code, fn);
     }
 
-    const result = fn(ctx);
+    const result = fn(ctx, ctx.api, ctx.http, ctx.row, ctx.index, ctx.random, ctx.utils);
     return { success: true, result };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
   }
+}
+
+// -------------------------------------------------------------
+// LUA <-> JAVASCRIPT VALUE CONVERTERS
+// -------------------------------------------------------------
+
+export function pushJsValueToLua(L: any, val: unknown, depth: number = 0): void {
+  if (depth > 12 || val === null || val === undefined) {
+    fengari.lua.lua_pushnil(L);
+    return;
+  }
+  if (typeof val === 'boolean') {
+    fengari.lua.lua_pushboolean(L, val ? 1 : 0);
+  } else if (typeof val === 'number') {
+    if (Number.isInteger(val)) {
+      fengari.lua.lua_pushinteger(L, val);
+    } else {
+      fengari.lua.lua_pushnumber(L, val);
+    }
+  } else if (typeof val === 'string') {
+    fengari.lua.lua_pushstring(L, fengari.to_luastring(val));
+  } else if (Array.isArray(val)) {
+    fengari.lua.lua_createtable(L, val.length, 0);
+    for (let i = 0; i < val.length; i++) {
+      pushJsValueToLua(L, val[i], depth + 1);
+      fengari.lua.lua_rawseti(L, -2, i + 1);
+    }
+  } else if (typeof val === 'object') {
+    const entries = Object.entries(val as Record<string, unknown>);
+    fengari.lua.lua_createtable(L, 0, entries.length);
+    for (const [k, v] of entries) {
+      pushJsValueToLua(L, v, depth + 1);
+      fengari.lua.lua_setfield(L, -2, fengari.to_luastring(k));
+    }
+  } else {
+    fengari.lua.lua_pushstring(L, fengari.to_luastring(String(val)));
+  }
+}
+
+export function luaValueToJs(L: any, idx: number, depth: number = 0): unknown {
+  if (depth > 12) return null;
+  const t = fengari.lua.lua_type(L, idx);
+  if (t === fengari.lua.LUA_TNIL || t === fengari.lua.LUA_TNONE) return null;
+  if (t === fengari.lua.LUA_TBOOLEAN) return Boolean(fengari.lua.lua_toboolean(L, idx));
+  if (t === fengari.lua.LUA_TNUMBER) {
+    return fengari.lua.lua_isinteger(L, idx)
+      ? fengari.lua.lua_tointeger(L, idx)
+      : fengari.lua.lua_tonumber(L, idx);
+  }
+  if (t === fengari.lua.LUA_TSTRING) {
+    return fengari.to_jsstring(fengari.lua.lua_tostring(L, idx));
+  }
+  if (t === fengari.lua.LUA_TTABLE) {
+    const rawLen = fengari.lua.lua_rawlen(L, idx);
+    if (rawLen > 0) {
+      const arr: unknown[] = [];
+      for (let i = 1; i <= rawLen; i++) {
+        fengari.lua.lua_rawgeti(L, idx, i);
+        arr.push(luaValueToJs(L, -1, depth + 1));
+        fengari.lua.lua_pop(L, 1);
+      }
+      return arr;
+    } else {
+      const obj: Record<string, unknown> = {};
+      fengari.lua.lua_pushnil(L);
+      const tableIdx = idx < 0 ? idx - 1 : idx;
+      while (fengari.lua.lua_next(L, tableIdx) !== 0) {
+        const key = luaValueToJs(L, -2, depth + 1);
+        const val = luaValueToJs(L, -1, depth + 1);
+        if (typeof key === 'string' || typeof key === 'number') {
+          obj[String(key)] = val;
+        }
+        fengari.lua.lua_pop(L, 1);
+      }
+      return obj;
+    }
+  }
+  return fengari.to_jsstring(fengari.lua.lua_tostring(L, idx)) || null;
 }
 
 // -------------------------------------------------------------
@@ -219,6 +412,14 @@ export function executeLuaScript(
   const code = (scriptText || '').trim();
   if (!code) {
     return { success: true, result: '' };
+  }
+
+  // Guard against JavaScript syntax accidentally passed to Lua engine
+  if (code.startsWith('//') || code.startsWith('/*') || /\b(const|let|var)\s+[a-zA-Z_$]/m.test(code)) {
+    return {
+      success: false,
+      error: 'JavaScript syntax detected (// comment or const/let/var). Please switch language mode to JavaScript.'
+    };
   }
 
   const L = fengari.lauxlib.luaL_newstate();
@@ -383,6 +584,98 @@ export function executeLuaScript(
     // Set 'utils' global
     fengari.lua.lua_setglobal(L, fengari.to_luastring('utils'));
 
+    // 4. Create 'api' helper table for REST API retrieval
+    const registerLuaApi = () => {
+      fengari.lua.lua_newtable(L);
+
+      // api.get(url, jsonPath)
+      fengari.lua.lua_pushjsfunction(L, (l) => {
+        const urlStr = fengari.to_jsstring(fengari.lauxlib.luaL_checkstring(l, 1));
+        let pathStr: string | undefined;
+        if (!fengari.lua.lua_isnoneornil(l, 2)) {
+          pathStr = fengari.to_jsstring(fengari.lua.lua_tostring(l, 2));
+        }
+        const val = ctx.api.get(urlStr, pathStr);
+        pushJsValueToLua(l, val);
+        return 1;
+      });
+      fengari.lua.lua_setfield(L, -2, fengari.to_luastring('get'));
+
+      // api.post(url, body, jsonPath)
+      fengari.lua.lua_pushjsfunction(L, (l) => {
+        const urlStr = fengari.to_jsstring(fengari.lauxlib.luaL_checkstring(l, 1));
+        let body: unknown = undefined;
+        if (!fengari.lua.lua_isnoneornil(l, 2)) {
+          body = luaValueToJs(l, 2);
+        }
+        let pathStr: string | undefined;
+        if (!fengari.lua.lua_isnoneornil(l, 3)) {
+          pathStr = fengari.to_jsstring(fengari.lua.lua_tostring(l, 3));
+        }
+        const val = ctx.api.post(urlStr, body, { path: pathStr });
+        pushJsValueToLua(l, val);
+        return 1;
+      });
+      fengari.lua.lua_setfield(L, -2, fengari.to_luastring('post'));
+
+      // api.extract(data, jsonPath)
+      fengari.lua.lua_pushjsfunction(L, (l) => {
+        const data = luaValueToJs(l, 1);
+        const pathStr = fengari.to_jsstring(fengari.lauxlib.luaL_checkstring(l, 2));
+        const val = ctx.api.extract(data, pathStr);
+        pushJsValueToLua(l, val);
+        return 1;
+      });
+      fengari.lua.lua_setfield(L, -2, fengari.to_luastring('extract'));
+    };
+
+    // 5. Create 'http' helper table (convenience alias)
+    const registerLuaHttp = () => {
+      fengari.lua.lua_newtable(L);
+
+      // http.get(url, jsonPath)
+      fengari.lua.lua_pushjsfunction(L, (l) => {
+        const urlStr = fengari.to_jsstring(fengari.lauxlib.luaL_checkstring(l, 1));
+        let pathStr: string | undefined;
+        if (!fengari.lua.lua_isnoneornil(l, 2)) {
+          pathStr = fengari.to_jsstring(fengari.lua.lua_tostring(l, 2));
+        }
+        const val = ctx.http.get(urlStr, pathStr);
+        pushJsValueToLua(l, val);
+        return 1;
+      });
+      fengari.lua.lua_setfield(L, -2, fengari.to_luastring('get'));
+
+      // http.post(url, body)
+      fengari.lua.lua_pushjsfunction(L, (l) => {
+        const urlStr = fengari.to_jsstring(fengari.lauxlib.luaL_checkstring(l, 1));
+        let body: unknown = undefined;
+        if (!fengari.lua.lua_isnoneornil(l, 2)) {
+          body = luaValueToJs(l, 2);
+        }
+        const val = ctx.http.post(urlStr, body);
+        pushJsValueToLua(l, val);
+        return 1;
+      });
+      fengari.lua.lua_setfield(L, -2, fengari.to_luastring('post'));
+    };
+
+    // Set 'api' global
+    registerLuaApi();
+    fengari.lua.lua_setglobal(L, fengari.to_luastring('api'));
+
+    // Set 'http' global
+    registerLuaHttp();
+    fengari.lua.lua_setglobal(L, fengari.to_luastring('http'));
+
+    // Also attach 'api' and 'http' to 'ctx' table
+    fengari.lua.lua_getglobal(L, fengari.to_luastring('ctx'));
+    registerLuaApi();
+    fengari.lua.lua_setfield(L, -2, fengari.to_luastring('api'));
+    registerLuaHttp();
+    fengari.lua.lua_setfield(L, -2, fengari.to_luastring('http'));
+    fengari.lua.lua_pop(L, 1);
+
     // Prepare code chunk
     let luaCodeToRun = code;
     if (!code.includes('return ') && !code.includes('function generate')) {
@@ -438,6 +731,8 @@ export function executeLuaScript(
       finalResult = Boolean(fengari.lua.lua_toboolean(L, -1));
     } else if (luaType === fengari.lua.LUA_TNIL) {
       finalResult = null;
+    } else if (luaType === fengari.lua.LUA_TTABLE) {
+      finalResult = luaValueToJs(L, -1);
     } else {
       finalResult = fengari.to_jsstring(fengari.lua.lua_tostring(L, -1)) || '[Lua Object]';
     }

@@ -4,6 +4,7 @@ import { ColumnSpec, ColumnType, DependencyCase } from '../types';
 import { RuleEditor } from './RuleEditor';
 import { getCustomColumnTypes, getExamplePresetTypes } from '../utils/customTypesManager';
 import { serializeRestApiConfig } from '../utils/restApiManager';
+import { RestApiLatencyBadge } from './RestApiLatencyBadge';
 import { useI18n } from '../i18n';
 import { 
   Trash2, 
@@ -75,7 +76,7 @@ export const ColumnCard: React.FC<Props> = ({
     switch (type) {
       case 'Sequence': return t('schema.typeSequence');
       case 'Entity': return t('schema.typeEntity');
-      case 'REST_API': return 'REST API (Live Fetch)';
+      case 'REST_API': return t('schema.typeRestApi');
       case 'Set/Enum': return t('schema.typeSetEnum');
       case 'Int': return t('schema.typeInt');
       case 'Float': return t('schema.typeFloat');
@@ -96,6 +97,7 @@ export const ColumnCard: React.FC<Props> = ({
   );
 
   const customTypes = getCustomColumnTypes();
+  const activeCustomTypes = customTypes.filter((t) => t.isActive !== false);
   const examplePresets = getExamplePresetTypes();
   const matchedCustomType = customTypes.find(
     (t) => t.id === col.type || t.id === col.customTypeId
@@ -238,14 +240,19 @@ export const ColumnCard: React.FC<Props> = ({
                   </option>
                 ))}
               </optgroup>
-              {(customTypes.length > 0 || (matchedCustomType && !customTypes.some(c => c.id === matchedCustomType.id))) && (
+              {(activeCustomTypes.length > 0 || (matchedCustomType && !activeCustomTypes.some(c => c.id === matchedCustomType.id))) && (
                 <optgroup label={t('schema.customTypesAdvance')}>
-                  {customTypes.map((ct) => (
+                  {activeCustomTypes.map((ct) => (
                     <option key={ct.id} value={ct.id}>
                       ⚡ {ct.name}
                     </option>
                   ))}
-                  {matchedCustomType && !customTypes.some(c => c.id === matchedCustomType.id) && (
+                  {matchedCustomType && matchedCustomType.isActive === false && (
+                    <option key={matchedCustomType.id} value={matchedCustomType.id}>
+                      ⚡ {matchedCustomType.name} (Off)
+                    </option>
+                  )}
+                  {matchedCustomType && matchedCustomType.isActive !== false && !activeCustomTypes.some(c => c.id === matchedCustomType.id) && (
                     <option key={matchedCustomType.id} value={matchedCustomType.id}>
                       ⚡ {matchedCustomType.name}
                     </option>
@@ -255,6 +262,15 @@ export const ColumnCard: React.FC<Props> = ({
             </select>
             <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-content-muted pointer-events-none" />
           </div>
+
+          {/* REST API Visual Indicator (Latency Badge & Sparkline) */}
+          {(col.type === 'REST_API' || (col.rule && col.rule.includes('"type": "REST_API"'))) && (
+            <RestApiLatencyBadge
+              columnId={col.id}
+              rule={col.rule}
+              compact={true}
+            />
+          )}
         </div>
 
         {/* Right: Modifiers & Actions */}

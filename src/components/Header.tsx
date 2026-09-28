@@ -12,13 +12,15 @@ import {
   RefreshCw,
   FileSpreadsheet,
   Sun,
-  Moon
+  Moon,
+  Activity
 } from 'lucide-react';
 import { ThemeId, ColumnSpec, ExportFormat } from '../types';
 import { VampireSquidLogo } from './VampireSquidLogo';
 import { HeaderMenus } from './HeaderMenus';
 import { AnimatedTabs } from './AnimatedTabs';
 import { useI18n, LanguageSelectDropdown } from '../i18n';
+import { useUserRole } from '../context/UserRoleContext';
 
 export type WorkspaceTab = 'schema' | 'preview' | 'split';
 
@@ -69,6 +71,7 @@ interface Props {
   onOpenPresets: () => void;
   onOpenOfflineExtractor: () => void;
   onOpenFolderMonitor: () => void;
+  onOpenImportBundle?: () => void;
   onOpenRestApiModal?: () => void;
   isStreaming: boolean;
   isGeneratingBatch: boolean;
@@ -99,6 +102,7 @@ export const Header: React.FC<Props> = ({
   onOpenPresets,
   onOpenOfflineExtractor,
   onOpenFolderMonitor,
+  onOpenImportBundle,
   onOpenRestApiModal,
   isStreaming,
   isGeneratingBatch,
@@ -107,6 +111,7 @@ export const Header: React.FC<Props> = ({
   setStatusMessage
 }) => {
   const { t } = useI18n();
+  const { setRole } = useUserRole();
   const [isThemeOpen, setIsThemeOpen] = useState(false);
   const themeDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -148,6 +153,17 @@ export const Header: React.FC<Props> = ({
           </span>
         </div>
 
+        {/* Quick Switch to Operator Mode */}
+        <button
+          type="button"
+          onClick={() => setRole('operator')}
+          className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/25 text-[10px] font-mono font-semibold transition cursor-pointer"
+          title="Switch to Simplified Field Operator Mode (Folder Monitor & Profile Exporter)"
+        >
+          <Activity size={11} />
+          <span>Operator Mode</span>
+        </button>
+
         <div className="h-3.5 w-px bg-border-subtle/80 mx-0.5 hidden sm:block" />
 
         {/* Pro Menu Bar: Files | Settings | Other */}
@@ -169,6 +185,7 @@ export const Header: React.FC<Props> = ({
           onOpenPresets={onOpenPresets}
           onOpenOfflineExtractor={onOpenOfflineExtractor}
           onOpenFolderMonitor={onOpenFolderMonitor}
+          onOpenImportBundle={onOpenImportBundle}
           onOpenRestApi={onOpenRestApiModal}
           setStatusMessage={setStatusMessage}
         />

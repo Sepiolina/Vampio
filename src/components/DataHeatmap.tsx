@@ -597,6 +597,10 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
         const height = 230;
         const radius = Math.min(85, Math.max(45, (height - 50) / 2));
 
+        // Column to visualize
+        const targetCol = columns.find(c => c.name === selectedColumn) || columns[0];
+        const targetColName = targetCol ? targetCol.name : selectedColumn;
+
         // Center donut on the left and legend on the right
         const chartCenterX = Math.max(radius + 25, Math.min(containerWidth * 0.35, 170));
 
@@ -612,7 +616,7 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
         // Compute frequency map
         const freqMap = new Map<string, number>();
         displayData.forEach(row => {
-          const val = row[selectedColumn];
+          const val = row[targetColName];
           const key = val === null || val === undefined ? '(null)' : String(val);
           freqMap.set(key, (freqMap.get(key) || 0) + 1);
         });
@@ -670,10 +674,10 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
           .on('mouseover', function(event, d) {
             d3.select(this).attr('d', arcHover);
             if (tooltipRef.current) {
-              const pct = Math.round((d.data.count / displayData.length) * 100);
+              const pct = Math.round((d.data.count / (displayData.length || 1)) * 100);
               tooltipRef.current.style.opacity = '1';
               tooltipRef.current.innerHTML = `
-                <div class="text-[10px] font-bold text-accent uppercase mb-0.5">${selectedColumn}</div>
+                <div class="text-[10px] font-bold text-accent uppercase mb-0.5">${targetColName}</div>
                 <div class="text-xs font-mono font-bold text-content">${d.data.label}</div>
                 <div class="text-[11px] text-content-muted mt-1">
                   Count: <strong class="text-content">${d.data.count}</strong> (${pct}%)
@@ -958,100 +962,91 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
 
           {/* Chart Display Body */}
           <div className="relative flex-1 p-3 overflow-x-auto flex flex-col justify-center">
-             <AnimatePresence mode="wait">
-               {data.length === 0 ? (
-                 <motion.div 
-                   key="view-no-data"
-                   initial={{ opacity: 0 }}
-                   animate={{ opacity: 1 }}
-                   exit={{ opacity: 0 }}
-                   className="text-xs text-content-muted text-center py-8 font-mono"
-                 >
-                   No data available to visualize. Generate or stream rows to activate analytics.
-                 </motion.div>
-               ) : vizMode === 'health' ? (
-                 /* Mode 5: Column Health & Quality Cards */
-                 <motion.div 
-                   key="view-health-panel"
-                   initial={{ opacity: 0, y: 6 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   exit={{ opacity: 0, y: -6 }}
-                   transition={{ duration: 0.2 }}
-                   className="w-full h-full max-h-[260px] overflow-y-auto pr-1"
-                 >
-                   <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2 py-1">
-                 {columnHealthMetrics.map(metric => (
-                   <div 
-                     key={metric.name}
-                     className="bg-primary border border-border-subtle rounded-lg p-2.5 sm:p-3 shadow-xs flex flex-col justify-between min-w-0"
-                   >
-                     <div className="min-w-0">
-                       <div className="flex items-center justify-between gap-1.5 mb-1.5 min-w-0">
-                         <span className="text-xs font-bold text-content truncate font-mono min-w-0" title={metric.name}>
-                           {metric.name}
-                         </span>
-                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-secondary text-content-muted font-mono shrink-0 border border-border-subtle/50 whitespace-nowrap">
-                           {metric.type}
-                         </span>
-                       </div>
-                       
-                       {/* Fill Rate Progress Bar */}
-                       <div className="mt-1">
-                         <div className="flex items-center justify-between gap-1 text-[10px] text-content-muted font-mono mb-1">
-                           <span className="truncate">Populated</span>
-                           <span className={`shrink-0 font-bold whitespace-nowrap ${metric.fillRate < 80 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                             {metric.fillRate}%
-                           </span>
-                         </div>
-                         <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
-                           <div 
-                             className={`h-full rounded-full transition-all duration-300 ${
-                               metric.fillRate < 80 ? 'bg-amber-500' : 'bg-accent'
-                             }`}
-                             style={{ width: `${metric.fillRate}%` }}
-                           />
-                         </div>
-                       </div>
+            {data.length === 0 ? (
+              <div 
+                className="text-xs text-content-muted text-center py-8 font-mono"
+              >
+                No data available to visualize. Generate or stream rows to activate analytics.
+              </div>
+            ) : (
+              <>
+                {/* Modes 1-4: D3 SVG Rendering Container (remains mounted to preserve refs & eliminate transition race) */}
+                <div 
+                  ref={containerRef} 
+                  id="vampio-viz-chart-container" 
+                  className={`w-full h-[240px] min-h-[240px] max-h-[240px] items-center justify-start sm:justify-center overflow-x-auto overflow-y-hidden select-none ${
+                    vizMode === 'health' ? 'hidden' : 'flex'
+                  }`} 
+                />
 
-                       {/* Extra stats */}
-                       <div className="mt-2 text-[10px] font-mono text-content-muted flex items-center justify-between gap-1">
-                         <span className="truncate">Distinct</span>
-                         <span className="text-content font-semibold shrink-0 whitespace-nowrap">{metric.distinctCount}</span>
-                       </div>
-                       {metric.avg !== null && (
-                         <div className="mt-0.5 text-[10px] font-mono text-content-muted flex items-center justify-between gap-1">
-                           <span className="truncate">Avg</span>
-                           <span className="text-content font-semibold shrink-0 truncate max-w-[55%] text-right font-mono" title={String(metric.avg)}>
-                             {metric.avg}
-                           </span>
-                         </div>
-                       )}
-                     </div>
+                {/* Mode 5: Column Health & Quality Cards */}
+                {vizMode === 'health' && (
+                  <div 
+                    id="vampio-viz-health-panel"
+                    className="w-full h-full max-h-[260px] overflow-y-auto pr-1 animate-in fade-in duration-150"
+                  >
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2 py-1">
+                      {columnHealthMetrics.map(metric => (
+                        <div 
+                          key={metric.name}
+                          className="bg-primary border border-border-subtle rounded-lg p-2.5 sm:p-3 shadow-xs flex flex-col justify-between min-w-0"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center justify-between gap-1.5 mb-1.5 min-w-0">
+                              <span className="text-xs font-bold text-content truncate font-mono min-w-0" title={metric.name}>
+                                {metric.name}
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-secondary text-content-muted font-mono shrink-0 border border-border-subtle/50 whitespace-nowrap">
+                                {metric.type}
+                              </span>
+                            </div>
+                            
+                            {/* Fill Rate Progress Bar */}
+                            <div className="mt-1">
+                              <div className="flex items-center justify-between gap-1 text-[10px] text-content-muted font-mono mb-1">
+                                <span className="truncate">Populated</span>
+                                <span className={`shrink-0 font-bold whitespace-nowrap ${metric.fillRate < 80 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                  {metric.fillRate}%
+                                </span>
+                              </div>
+                              <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    metric.fillRate < 80 ? 'bg-amber-500' : 'bg-accent'
+                                  }`}
+                                  style={{ width: `${metric.fillRate}%` }}
+                                />
+                              </div>
+                            </div>
 
-                     <div className="mt-2.5 pt-2 border-t border-border-subtle/60 text-[10px] font-mono flex items-center justify-between gap-1">
-                       <span className="text-content-muted truncate">Missing</span>
-                       <span className={`shrink-0 whitespace-nowrap font-medium ${metric.nullCount > 0 ? 'text-amber-500 font-bold' : 'text-emerald-500'}`}>
-                         {metric.nullCount > 0 ? `${metric.nullCount} null` : '0 null'}
-                       </span>
-                     </div>
-                   </div>
-                 ))}
-               </div>
-             </motion.div>
-           ) : (
-             /* Modes 1-4: D3 SVG Rendering Container */
-             <motion.div 
-               key="view-d3-chart-panel"
-               initial={{ opacity: 0 }}
-               animate={{ opacity: 1 }}
-               exit={{ opacity: 0 }}
-               transition={{ duration: 0.15 }}
-               ref={containerRef} 
-               id="vampio-viz-chart-container" 
-               className="w-full h-[240px] min-h-[240px] max-h-[240px] flex items-center justify-start sm:justify-center overflow-x-auto overflow-y-hidden select-none" 
-             />
-           )}
-           </AnimatePresence>
+                            {/* Extra stats */}
+                            <div className="mt-2 text-[10px] font-mono text-content-muted flex items-center justify-between gap-1">
+                              <span className="truncate">Distinct</span>
+                              <span className="text-content font-semibold shrink-0 whitespace-nowrap">{metric.distinctCount}</span>
+                            </div>
+                            {metric.avg !== null && (
+                              <div className="mt-0.5 text-[10px] font-mono text-content-muted flex items-center justify-between gap-1">
+                                <span className="truncate">Avg</span>
+                                <span className="text-content font-semibold shrink-0 truncate max-w-[55%] text-right font-mono" title={String(metric.avg)}>
+                                  {metric.avg}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-2.5 pt-2 border-t border-border-subtle/60 text-[10px] font-mono flex items-center justify-between gap-1">
+                            <span className="text-content-muted truncate">Missing</span>
+                            <span className={`shrink-0 whitespace-nowrap font-medium ${metric.nullCount > 0 ? 'text-amber-500 font-bold' : 'text-emerald-500'}`}>
+                              {metric.nullCount > 0 ? `${metric.nullCount} null` : '0 null'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
            
            {/* Custom Tooltip */}
            <div 

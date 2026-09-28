@@ -205,12 +205,12 @@ function highlightCode(code: string, language: 'javascript' | 'lua'): string {
   ]);
 
   const jsBuiltins = new Set([
-    'ctx', 'row', 'index', 'random', 'utils', 'Math', 'Date', 'String', 'Number',
+    'ctx', 'row', 'index', 'random', 'utils', 'api', 'http', 'Math', 'Date', 'String', 'Number',
     'Array', 'Object', 'JSON', 'console', 'RegExp', 'Boolean', 'parseInt', 'parseFloat'
   ]);
 
   const luaBuiltins = new Set([
-    'ctx', 'row', 'index', 'random', 'utils', 'math', 'string', 'table', 'io', 'os',
+    'ctx', 'row', 'index', 'random', 'utils', 'api', 'http', 'math', 'string', 'table', 'io', 'os',
     'ipairs', 'pairs', 'tostring', 'tonumber', 'type', 'print', 'select', 'pcall'
   ]);
 

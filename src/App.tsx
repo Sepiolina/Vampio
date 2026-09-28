@@ -45,6 +45,17 @@ import { PresetSelector } from './components/PresetSelector';
 import { OfflineExtractorModal } from './components/OfflineExtractorModal';
 import { FolderMonitorModal } from './components/FolderMonitorModal';
 import { RestApiConfigModal } from './components/RestApiConfigModal';
+import { WorkspaceBundleImportModal } from './components/WorkspaceBundleImportModal';
+import { OperatorMonitorView } from './components/OperatorMonitorView';
+import { RoleOnboardingModal } from './components/RoleOnboardingModal';
+import { useUserRole } from './context/UserRoleContext';
+import { useWorkspace } from './context/WorkspaceContext';
+import { WorkspaceTabBar } from './components/WorkspaceTabBar';
+import { WorkspaceSidebarDrawer } from './components/WorkspaceSidebarDrawer';
+import { WorkspaceQuickSwitcherModal } from './components/WorkspaceQuickSwitcherModal';
+import { WorkspaceSettingsModal } from './components/WorkspaceSettingsModal';
+import { UnsavedChangesPromptModal } from './components/UnsavedChangesPromptModal';
+import { VampioWorkspaceProfileBundle } from './utils/folderBehaviorAnalyzer';
 import { prefetchRestApiBatch, serializeRestApiConfig } from './utils/restApiManager';
 import { useI18n } from './i18n';
 
@@ -66,8 +77,6 @@ import {
   Upload,
   Globe
 } from 'lucide-react';
-
-const INITIAL_DEMO: ColumnSpec[] = PRESET_SCHEMAS[0].columns;
 
 export default function App() {
   const { t } = useI18n();
@@ -169,6 +178,147 @@ export default function App() {
       });
     }
   }, [columns, tableName, format, count, intervalMs, selectedFolderName]);
+
+  // Multi-Project Workspace System
+  const {
+    activeWorkspace,
+    activeWorkspaceId,
+    updateActiveWorkspace,
+    importAsNewWorkspace,
+    displayMode,
+    isInitialized: isWorkspaceInitialized,
+    savePolicy: workspaceSavePolicy
+  } = useWorkspace();
+
+  const lastLoadedWorkspaceIdRef = useRef<string>('');
+
+  // Sync state when active workspace changes
+  useEffect(() => {
+    if (!isWorkspaceInitialized || !activeWorkspace || activeWorkspace.id === lastLoadedWorkspaceIdRef.current) return;
+    lastLoadedWorkspaceIdRef.current = activeWorkspace.id;
+    setColumns(activeWorkspace.columns || []);
+    setTableName(activeWorkspace.tableName || 'synthetic_records');
+    setFormat(activeWorkspace.format || 'csv');
+    setCount(activeWorkspace.count || 1000);
+    setIntervalMs(activeWorkspace.intervalMs || 150);
+    setOutputDestination(activeWorkspace.outputDestination || 'download');
+    setOutputStrategy(activeWorkspace.outputStrategy || 'single');
+    if (activeWorkspace.multiFileConfig) {
+      setMultiFileConfig(activeWorkspace.multiFileConfig);
+    }
+    if (activeWorkspace.appendConfig) {
+      setAppendConfig(activeWorkspace.appendConfig);
+    }
+    setSelectedFolderName(activeWorkspace.selectedFolderName || null);
+    if (activeWorkspace.filename) {
+      setFilename(activeWorkspace.filename);
+    }
+  }, [activeWorkspaceId, activeWorkspace, isWorkspaceInitialized]);
+
+  // Sync local changes back to active workspace
+  useEffect(() => {
+    if (!isWorkspaceInitialized || !activeWorkspaceId || lastLoadedWorkspaceIdRef.current !== activeWorkspaceId) return;
+    updateActiveWorkspace({
+      columns,
+      tableName,
+      format,
+      count,
+      intervalMs,
+      outputDestination,
+      outputStrategy,
+      multiFileConfig,
+      appendConfig,
+      selectedFolderName,
+      filename,
+    });
+  }, [
+    columns,
+    tableName,
+    format,
+    count,
+    intervalMs,
+    outputDestination,
+    outputStrategy,
+    multiFileConfig,
+    appendConfig,
+    selectedFolderName,
+    filename,
+    isWorkspaceInitialized,
+    activeWorkspaceId,
+    updateActiveWorkspace
+  ]);
+
+  // User Role & Workspace Mode
+  const { role, setRole, isRoleModalOpen, setIsRoleModalOpen } = useUserRole();
+  const [isBundleImportModalOpen, setIsBundleImportModalOpen] = useState(false);
+  const [profileBannerInfo, setProfileBannerInfo] = useState<{
+    folderName: string;
+    platform: string;
+    encoding: string;
+    delimiter?: string;
+    lockStatus?: string;
+  } | null>(null);
+
+  const handleApplyProfileBundle = (bundle: VampioWorkspaceProfileBundle) => {
+    if (bundle.vampioWorkspace.columns && bundle.vampioWorkspace.columns.length > 0) {
+      setColumns(bundle.vampioWorkspace.columns);
+    }
+    if (bundle.vampioWorkspace.tableName) {
+      setTableName(bundle.vampioWorkspace.tableName);
+    }
+    if (bundle.vampioWorkspace.format) {
+      setFormat(bundle.vampioWorkspace.format);
+    }
+    if (bundle.vampioWorkspace.outputStrategy) {
+      setOutputStrategy(bundle.vampioWorkspace.outputStrategy);
+    }
+    if (bundle.vampioWorkspace.filenamePattern) {
+      setMultiFileConfig((prev) => ({
+        ...prev,
+        enabled: bundle.vampioWorkspace.outputStrategy === 'multi_file',
+        filenamePattern: bundle.vampioWorkspace.filenamePattern,
+        rowsPerFile: bundle.vampioWorkspace.rowsPerFile || prev.rowsPerFile,
+      }));
+    }
+    if (bundle.vampioWorkspace.intervalMs) {
+      setIntervalMs(bundle.vampioWorkspace.intervalMs);
+    }
+    setProfileBannerInfo({
+      folderName: bundle.source.folderName,
+      platform: bundle.source.platform,
+      encoding: bundle.forensics.encoding,
+      delimiter: bundle.forensics.delimiterName,
+      lockStatus: bundle.forensics.fileLockStatus,
+    });
+    setStatusMessage(
+      `Loaded profile for ${bundle.source.folderName} (${bundle.forensics.encoding}, ${bundle.vampioWorkspace.columns.length} cols)`
+    );
+  };
+
+  const handleApplyAsNewWorkspace = async (bundle: VampioWorkspaceProfileBundle) => {
+    const newWs = await importAsNewWorkspace({
+      name: bundle.source.folderName || 'Imported Profile',
+      tableName: bundle.vampioWorkspace.tableName || 'imported_schema',
+      columns: bundle.vampioWorkspace.columns || [],
+      format: bundle.vampioWorkspace.format || 'csv',
+      outputStrategy: bundle.vampioWorkspace.outputStrategy,
+      multiFileConfig: bundle.vampioWorkspace.filenamePattern ? {
+        enabled: bundle.vampioWorkspace.outputStrategy === 'multi_file',
+        filenamePattern: bundle.vampioWorkspace.filenamePattern,
+        rowsPerFile: bundle.vampioWorkspace.rowsPerFile || 1,
+        packageAsZip: true,
+      } : undefined,
+      intervalMs: bundle.vampioWorkspace.intervalMs,
+    });
+    setProfileBannerInfo({
+      folderName: bundle.source.folderName,
+      platform: bundle.source.platform,
+      encoding: bundle.forensics.encoding,
+      delimiter: bundle.forensics.delimiterName,
+      lockStatus: bundle.forensics.fileLockStatus,
+    });
+    setStatusMessage(`Created new workspace tab "${newWs.name}" from profile bundle.`);
+  };
 
   // Presets Modal
   const [isPresetsOpen, setIsPresetsOpen] = useState(false);
@@ -510,13 +660,28 @@ export default function App() {
     setContextMenu(null);
   };
 
-  const handleAddColumn = (type: ColumnSpec['type'] = 'String', defaultRule: string = '12') => {
+  const handleAddColumn = (type: ColumnSpec['type'] = 'String', defaultRule?: string) => {
     const nextNum = columns.length + 1;
+    let rule = defaultRule;
+    if (rule === undefined) {
+      if (type === 'REST_API') {
+        rule = serializeRestApiConfig({
+          url: 'https://dummyjson.com/users?limit=50',
+          method: 'GET',
+          jsonPath: 'users[].email',
+          retrievalMode: 'pool',
+          sampleStrategy: 'sequential',
+          fallbackValue: 'api_unavailable'
+        });
+      } else {
+        rule = '12';
+      }
+    }
     const newCol: ColumnSpec = {
       id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-      name: `field_${nextNum}`,
+      name: type === 'REST_API' ? `api_${nextNum}` : `field_${nextNum}`,
       type,
-      rule: defaultRule,
+      rule,
       skip_pct: 0,
       condition: '',
     };
@@ -1268,33 +1433,17 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => {
-              setRestApiModalTab('column');
-              setIsRestApiModalOpen(true);
-            }}
-            className="h-6 px-2 rounded-md bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30 transition-all whitespace-nowrap text-[11px] font-bold flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Live REST API Remote Retrieval Column"
+            onClick={() => handleAddColumn('REST_API')}
+            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+            title="Add REST API Column"
           >
-            <Globe size={11} className="text-sky-400" />
-            <span>+ REST API</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+            <span>{t('schema.quickRestApi')}</span>
           </button>
         </div>
 
         {/* Right: Quick Tools & Actions */}
         <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto pl-2 border-l border-border-subtle/60">
-          <button
-            type="button"
-            onClick={() => {
-              setRestApiModalTab('row');
-              setIsRestApiModalOpen(true);
-            }}
-            className="h-6 px-2 rounded-md hover:bg-tertiary text-content-muted hover:text-content transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1 cursor-pointer"
-            title="Fetch records from REST API to enrich rows and auto-generate columns"
-          >
-            <Globe size={11} className="text-sky-400" />
-            <span>REST API Rows</span>
-          </button>
-
           <button
             type="button"
             onClick={() => setIsPresetsOpen(true)}
@@ -1475,6 +1624,18 @@ export default function App() {
     </div>
   );
 
+  if (role === 'operator') {
+    return (
+      <div className={`min-h-screen ${theme}`}>
+        <OperatorMonitorView onOpenInDeveloperStudio={handleApplyProfileBundle} />
+        <RoleOnboardingModal
+          isOpen={isRoleModalOpen}
+          onClose={() => setIsRoleModalOpen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-primary text-content font-sans select-none">
       {/* Top Application Header */}
@@ -1500,6 +1661,7 @@ export default function App() {
         onOpenPresets={() => setIsPresetsOpen(true)}
         onOpenOfflineExtractor={() => setIsOfflineExtractorOpen(true)}
         onOpenFolderMonitor={() => setIsFolderMonitorOpen(true)}
+        onOpenImportBundle={() => setIsBundleImportModalOpen(true)}
         onOpenRestApiModal={() => {
           setRestApiModalTab('row');
           setIsRestApiModalOpen(true);
@@ -1511,8 +1673,40 @@ export default function App() {
         setStatusMessage={setStatusMessage}
       />
 
+      {/* Multi-Project Workspace Tab Bar (IDE / Browser Tabs) */}
+      <WorkspaceTabBar
+        onOpenImportBundle={() => setIsBundleImportModalOpen(true)}
+        onOpenFolderMonitor={() => setIsFolderMonitorOpen(true)}
+        onClearColumns={() => {
+          setColumns([]);
+          setStatusMessage('Cleared all columns. Workspace is now 100% blank.');
+        }}
+      />
+
+      {/* Production Profile Banner */}
+      {profileBannerInfo && (
+        <div className="bg-emerald-500/10 border-b border-emerald-500/25 px-4 py-1.5 flex items-center justify-between text-xs text-emerald-300 flex-shrink-0 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2 truncate">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <span className="truncate">
+              <strong>Profile Loaded:</strong> {profileBannerInfo.folderName} ({profileBannerInfo.platform.toUpperCase()}) · Encoding: <strong>{profileBannerInfo.encoding}</strong> · Delimiter: <strong>{profileBannerInfo.delimiter || 'N/A'}</strong> · Lock: <strong>{profileBannerInfo.lockStatus === 'no_lock_detected' ? 'Clean' : 'Active write'}</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setProfileBannerInfo(null)}
+            className="text-xs text-emerald-400 hover:text-white transition cursor-pointer shrink-0 ml-2 font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Main Workspace with Toggleable Tab Views and Sidebar */}
       <div className="flex-1 flex overflow-hidden min-h-0 relative">
+        {/* Workspace Sidebar Drawer (when in sidebar display mode) */}
+        {displayMode === 'sidebar' && <WorkspaceSidebarDrawer />}
+
         {/* Tab View Container */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           {activeTab === 'schema' && renderSchemaView(false)}
@@ -1661,6 +1855,25 @@ export default function App() {
         }}
         setStatusMessage={setStatusMessage}
       />
+
+      {/* Developer Workspace Bundle Importer Modal */}
+      <WorkspaceBundleImportModal
+        isOpen={isBundleImportModalOpen}
+        onClose={() => setIsBundleImportModalOpen(false)}
+        onApplyBundle={handleApplyProfileBundle}
+        onApplyAsNewWorkspace={handleApplyAsNewWorkspace}
+      />
+
+      {/* Role Onboarding Modal */}
+      <RoleOnboardingModal
+        isOpen={isRoleModalOpen}
+        onClose={() => setIsRoleModalOpen(false)}
+      />
+
+      {/* Multi-Project Workspace Switcher & Settings Modals */}
+      <WorkspaceQuickSwitcherModal />
+      <WorkspaceSettingsModal />
+      <UnsavedChangesPromptModal />
 
       {/* Context Menu Overlay */}
       <AnimatePresence>
