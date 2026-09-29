@@ -1068,21 +1068,23 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 2, scale: 0.98 }}
               transition={{ duration: 0.12 }}
-              className="absolute left-0 top-full mt-1.5 w-80 min-w-[320px] max-w-[92vw] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-2 backdrop-blur-md space-y-2 text-xs select-none max-h-[85vh] overflow-y-auto"
+              className="absolute left-0 top-full mt-1.5 w-84 min-w-[330px] max-w-[94vw] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-2.5 backdrop-blur-md space-y-2.5 text-xs select-none max-h-[85vh] overflow-y-auto"
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-2 pt-1 pb-1.5 border-b border-border-subtle/60">
-                <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-between px-1 pb-1.5 border-b border-border-subtle/60">
+                <span className="font-bold uppercase tracking-wider text-[11px] text-content flex items-center gap-1.5">
                   <Sparkles size={13} className="text-accent" />
-                  <span className="font-bold text-xs text-content uppercase tracking-wider">{t('header.advanceEngine')}</span>
-                </div>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-accent/10 text-accent border border-accent/20">
-                  Extensible
+                  <span>{t('header.advanceEngine')}</span>
                 </span>
               </div>
 
-              {/* Section 1: Custom Column Type Architect */}
+              {/* Section 1: Custom Column Type Architect & Presets */}
               <div className="space-y-1">
+                <div className="px-1 pt-0.5 pb-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-content-muted/70">
+                  Generators & Presets
+                </div>
+
+                {/* Custom Column Studio */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1091,31 +1093,33 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                     setActiveMenu(null);
                   }}
                   title={t('header.customColumnStudioDesc')}
-                  className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-tertiary text-content transition text-left group border border-border-subtle/70 bg-primary/40 hover:border-border-subtle cursor-pointer"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-tertiary text-content transition-all text-left group border border-transparent hover:border-border-subtle/80 cursor-pointer"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-2 rounded-lg bg-accent/15 text-accent group-hover:bg-accent group-hover:text-white transition flex-shrink-0">
-                      <Layers size={16} />
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/15 text-violet-400 border border-violet-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Layers size={15} />
                     </div>
                     <div className="min-w-0">
-                      <div className="font-semibold text-xs text-content truncate">{t('header.customColumnStudio')}</div>
-                      <div className="text-[10px] text-content-muted truncate">{t('header.customColumnStudioDesc')}</div>
+                      <div className="font-semibold text-xs text-content truncate group-hover:text-accent transition-colors">
+                        {t('header.customColumnStudio')}
+                      </div>
+                      <div className="text-[10px] text-content-muted truncate">
+                        {t('header.customColumnStudioDesc')}
+                      </div>
                     </div>
                   </div>
                   {(() => {
                     const activeCount = customTypesList.filter(t => t.isActive !== false).length;
                     const totalCount = customTypesList.length;
                     return (
-                      <span className="text-[10px] font-mono bg-secondary px-2 py-0.5 rounded text-content-muted border border-border-subtle flex-shrink-0 ml-2">
+                      <span className="text-[9px] font-mono bg-secondary px-1.5 py-0.5 rounded text-content-muted border border-border-subtle shrink-0 ml-2">
                         {activeCount === totalCount ? `${totalCount} ${t('common.active')}` : `${activeCount}/${totalCount} ${t('common.active')}`}
                       </span>
                     );
                   })()}
                 </button>
-              </div>
 
-              {/* Section 2: Schemas & Tools */}
-              <div className="pt-1.5 border-t border-border-subtle/60 space-y-1">
+                {/* Schema Presets */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1123,17 +1127,34 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                     setActiveMenu(null);
                   }}
                   title={t('header.presetsDesc')}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-tertiary text-content transition-all text-left group border border-transparent hover:border-border-subtle/80 cursor-pointer"
                 >
-                  <div className="p-1.5 rounded-md bg-accent/10 text-accent flex-shrink-0">
-                    <Layers size={14} />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent border border-accent/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Sparkles size={15} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-xs text-content truncate group-hover:text-accent transition-colors">
+                        {t('header.presetsMenu')}
+                      </div>
+                      <div className="text-[10px] text-content-muted truncate">
+                        {t('header.presetsDesc')}
+                      </div>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold">{t('header.presetsMenu')}</div>
-                    <div className="text-[10px] text-content-muted">{t('header.presetsDesc')}</div>
-                  </div>
+                  <span className="text-[9px] font-mono bg-secondary px-1.5 py-0.5 rounded text-content-muted border border-border-subtle shrink-0 ml-2">
+                    Templates
+                  </span>
                 </button>
+              </div>
 
+              {/* Section 2: Automation & Offline Extraction */}
+              <div className="pt-2 border-t border-border-subtle/60 space-y-1">
+                <div className="px-1 pt-0.5 pb-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-content-muted/70">
+                  Offline Tools & Automation
+                </div>
+
+                {/* Target Folder Monitor */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1141,22 +1162,27 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                     setActiveMenu(null);
                   }}
                   title={t('header.folderMonitorDesc')}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-tertiary text-content transition-all text-left group border border-transparent hover:border-border-subtle/80 cursor-pointer"
                 >
-                  <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-500 flex-shrink-0">
-                    <FolderLock size={14} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <span>{t('header.folderMonitor')}</span>
-                      <span className="px-1 py-0.2 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-400 font-bold">
-                        100% Offline
-                      </span>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FolderLock size={15} />
                     </div>
-                    <div className="text-[10px] text-content-muted">{t('header.folderMonitorDesc')}</div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-xs text-content truncate group-hover:text-accent transition-colors">
+                        {t('header.folderMonitor')}
+                      </div>
+                      <div className="text-[10px] text-content-muted truncate">
+                        {t('header.folderMonitorDesc')}
+                      </div>
+                    </div>
                   </div>
+                  <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold shrink-0 ml-2">
+                    100% Offline
+                  </span>
                 </button>
 
+                {/* Offline Schema Extractor */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1164,17 +1190,27 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                     setActiveMenu(null);
                   }}
                   title={t('header.offlineExtractorDesc')}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-tertiary text-content transition-all text-left group border border-transparent hover:border-border-subtle/80 cursor-pointer"
                 >
-                  <div className="p-1.5 rounded-md bg-accent/10 text-accent flex-shrink-0">
-                    <FileSpreadsheet size={14} />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileSpreadsheet size={15} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-xs text-content truncate group-hover:text-accent transition-colors">
+                        {t('header.offlineExtractor')}
+                      </div>
+                      <div className="text-[10px] text-content-muted truncate">
+                        {t('header.offlineExtractorDesc')}
+                      </div>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold">{t('header.offlineExtractor')}</div>
-                    <div className="text-[10px] text-content-muted">{t('header.offlineExtractorDesc')}</div>
-                  </div>
+                  <span className="text-[9px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold shrink-0 ml-2">
+                    CSV/XLSX
+                  </span>
                 </button>
 
+                {/* Machine Profile Bundle */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1182,22 +1218,27 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                     setActiveMenu(null);
                   }}
                   title="Import .vampio.profile.json bundle exported by field operators or folder monitors"
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-tertiary text-content transition-all text-left group border border-transparent hover:border-border-subtle/80 cursor-pointer"
                 >
-                  <div className="p-1.5 rounded-md bg-indigo-500/15 text-indigo-400 flex-shrink-0">
-                    <FileCode size={14} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <span>Import Profile Bundle</span>
-                      <span className="px-1 py-0.2 rounded text-[9px] font-mono bg-indigo-500/20 text-indigo-400 font-bold">
-                        .JSON
-                      </span>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileCode size={15} />
                     </div>
-                    <div className="text-[10px] text-content-muted">Load machine profile & auto-configure schema</div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-xs text-content truncate group-hover:text-accent transition-colors">
+                        Import Machine Profile Bundle
+                      </div>
+                      <div className="text-[10px] text-content-muted truncate">
+                        Load machine profile & auto-configure schema
+                      </div>
+                    </div>
                   </div>
+                  <span className="text-[9px] font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded font-bold shrink-0 ml-2">
+                    .JSON
+                  </span>
                 </button>
 
+                {/* Switch to Operator Mode */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1205,58 +1246,78 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                     setActiveMenu(null);
                   }}
                   title="Switch to Simplified Field Operator Mode (Folder Monitor & Profile Exporter)"
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-emerald-500/10 text-emerald-400 transition text-left cursor-pointer border border-emerald-500/20"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-tertiary text-content transition-all text-left group border border-transparent hover:border-border-subtle/80 cursor-pointer"
                 >
-                  <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-400 flex-shrink-0">
-                    <Activity size={14} />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-teal-500/15 text-teal-400 border border-teal-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Activity size={15} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-xs text-content truncate group-hover:text-accent transition-colors">
+                        Switch to Operator Mode
+                      </div>
+                      <div className="text-[10px] text-content-muted truncate">
+                        Minimalist 2-click interface for technicians
+                      </div>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold">Switch to Operator Mode</div>
-                    <div className="text-[10px] text-content-muted">Minimalist 2-click interface for technicians</div>
-                  </div>
+                  <span className="text-[9px] font-mono bg-teal-500/10 text-teal-400 border border-teal-500/20 px-1.5 py-0.5 rounded font-bold shrink-0 ml-2">
+                    Switch
+                  </span>
                 </button>
               </div>
 
-              {/* Section 3: Reference & Guides */}
-              <div className="pt-1.5 border-t border-border-subtle/60 space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsFormulasOpen(true);
-                    setActiveMenu(null);
-                  }}
-                  title={t('header.formulaEngine')}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
-                >
-                  <HelpCircle size={13} className="text-content-muted" />
-                  <span>{t('header.formulaEngine')}</span>
-                </button>
+              {/* Section 3: Reference & Guides (Consistent 3-card micro grid) */}
+              <div className="pt-2 border-t border-border-subtle/60 space-y-1.5">
+                <div className="px-1 pt-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-content-muted/70">
+                  Documentation & References
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 px-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFormulasOpen(true);
+                      setActiveMenu(null);
+                    }}
+                    title={t('header.formulaEngine')}
+                    className="flex flex-col items-center justify-center py-2 px-1 rounded-lg bg-primary/40 hover:bg-tertiary border border-border-subtle/60 hover:border-border-subtle text-content transition-all text-center group cursor-pointer"
+                  >
+                    <HelpCircle size={15} className="text-content-muted group-hover:text-accent mb-1 transition-colors" />
+                    <span className="text-[10px] font-medium leading-tight text-content-muted group-hover:text-content">
+                      Formulas
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsShortcutsOpen(true);
-                    setActiveMenu(null);
-                  }}
-                  title={t('header.shortcutsGuide')}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
-                >
-                  <Keyboard size={13} className="text-content-muted" />
-                  <span>{t('header.shortcutsGuide')}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsShortcutsOpen(true);
+                      setActiveMenu(null);
+                    }}
+                    title={t('header.shortcutsGuide')}
+                    className="flex flex-col items-center justify-center py-2 px-1 rounded-lg bg-primary/40 hover:bg-tertiary border border-border-subtle/60 hover:border-border-subtle text-content transition-all text-center group cursor-pointer"
+                  >
+                    <Keyboard size={15} className="text-content-muted group-hover:text-accent mb-1 transition-colors" />
+                    <span className="text-[10px] font-medium leading-tight text-content-muted group-hover:text-content">
+                      Shortcuts
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAboutOpen(true);
-                    setActiveMenu(null);
-                  }}
-                  title={t('header.aboutEngine')}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-tertiary text-content transition text-left cursor-pointer"
-                >
-                  <Info size={13} className="text-content-muted" />
-                  <span>{t('header.aboutEngine')}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAboutOpen(true);
+                      setActiveMenu(null);
+                    }}
+                    title={t('header.aboutEngine')}
+                    className="flex flex-col items-center justify-center py-2 px-1 rounded-lg bg-primary/40 hover:bg-tertiary border border-border-subtle/60 hover:border-border-subtle text-content transition-all text-center group cursor-pointer"
+                  >
+                    <Info size={15} className="text-content-muted group-hover:text-accent mb-1 transition-colors" />
+                    <span className="text-[10px] font-medium leading-tight text-content-muted group-hover:text-content">
+                      About
+                    </span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
