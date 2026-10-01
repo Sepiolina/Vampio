@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { 
   X, 
   Settings2, 
@@ -29,6 +29,19 @@ export const WorkspaceSettingsModal: React.FC = () => {
   } = useWorkspace();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isSettingsModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsSettingsModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSettingsModalOpen, setIsSettingsModalOpen]);
 
   if (!isSettingsModalOpen) return null;
 
@@ -73,7 +86,12 @@ export const WorkspaceSettingsModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setIsSettingsModalOpen(false);
+      }}
+    >
       <div className="w-full max-w-lg bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-content">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle bg-primary/40">

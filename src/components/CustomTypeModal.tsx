@@ -62,6 +62,7 @@ import {
 } from '../utils/customTypesManager';
 import { extractUrlsFromText, prefetchUrls } from '../utils/restApiManager';
 import { ColumnSpec } from '../types';
+import { useI18n } from '../i18n';
 
 export type CustomTypeModalTab = 'examples' | 'import' | 'create' | 'installed' | 'library';
 
@@ -259,6 +260,7 @@ export const CustomTypeModal: React.FC<CustomTypeModalProps> = ({
   setStatusMessage,
   initialTab = 'examples'
 }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<'examples' | 'import' | 'create' | 'installed'>('examples');
   const [types, setTypes] = useState<CustomColumnType[]>([]);
   const [examplePresets, setExamplePresets] = useState<CustomColumnType[]>([]);
@@ -356,6 +358,19 @@ export const CustomTypeModal: React.FC<CustomTypeModalProps> = ({
       setImportNotice(null);
     }
   }, [isOpen, initialTab]);
+
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Roll sample for an individual example
   const handleRollExampleSample = (example: CustomColumnType) => {
@@ -679,6 +694,21 @@ return code`;
 
   const categories = ['All', 'Scripting', 'Identity', 'Finance', 'Telecom', 'Commerce', 'Security', 'Network', 'Custom'];
 
+  const getCategoryLabel = (cat: string) => {
+    switch (cat) {
+      case 'All': return t('customTypeModal.catAll');
+      case 'Scripting': return t('customTypeModal.catScripting');
+      case 'Identity': return t('customTypeModal.catIdentity');
+      case 'Finance': return t('customTypeModal.catFinance');
+      case 'Telecom': return t('customTypeModal.catTelecom');
+      case 'Commerce': return t('customTypeModal.catCommerce');
+      case 'Security': return t('customTypeModal.catSecurity');
+      case 'Network': return t('customTypeModal.catNetwork');
+      case 'Custom': return t('customTypeModal.catCustom');
+      default: return cat;
+    }
+  };
+
   const isInstalled = (id: string, name: string) => {
     return types.some(
       (t) => t.id === id || t.id.replace('custom:', '') === id.replace('example:', '') || t.name === name
@@ -720,7 +750,7 @@ return code`;
 
   const getModeLabel = (item: CustomColumnType) => {
     if (item.baseMode === 'Base') {
-      return item.baseSubtype ? `Base: ${item.baseSubtype}` : 'Base Engine';
+      return item.baseSubtype ? `Base: ${item.baseSubtype}` : t('customTypeModal.baseEngine');
     }
     if (item.baseMode === 'RegEx' || item.baseMode === 'Set/Enum' || item.baseMode === 'Int' || item.baseMode === 'Float' || item.baseMode === 'Sequence') {
       return `Base: ${item.baseMode}`;
@@ -731,7 +761,12 @@ return code`;
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs select-none">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -747,13 +782,13 @@ return code`;
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm sm:text-base font-bold text-content">Custom Column Type Studio</h2>
+                <h2 className="text-sm sm:text-base font-bold text-content">{t('customTypeModal.title')}</h2>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-accent/15 text-accent border border-accent/30 font-semibold">
-                  Advance Studio
+                  {t('customTypeModal.advanceBadge')}
                 </span>
               </div>
               <p className="text-xs text-content-muted">
-                Explore example generators, import custom JSON schemas, or build your own column rules
+                {t('customTypeModal.subtitle')}
               </p>
             </div>
           </div>
@@ -771,10 +806,10 @@ return code`;
         <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-border-subtle bg-secondary flex-shrink-0 gap-2 flex-wrap">
           <AnimatedTabs
             tabs={[
-              { id: 'examples', label: 'Examples (ตัวอย่าง)', icon: <Sparkles size={13} />, badge: examplePresets.length },
-              { id: 'import', label: 'Import & Manage (หน้าจัดการ)', icon: <Upload size={13} /> },
-              { id: 'create', label: editingId ? 'Edit Type' : 'Create Type', icon: <Plus size={13} /> },
-              { id: 'installed', label: 'My Types', icon: <Layers size={13} />, badge: types.length > 0 ? (types.some(t => t.isActive === false) ? `${types.filter(t => t.isActive !== false).length}/${types.length}` : types.length) : undefined },
+              { id: 'examples', label: t('customTypeModal.tabExamples'), icon: <Sparkles size={13} />, badge: examplePresets.length },
+              { id: 'import', label: t('customTypeModal.tabImport'), icon: <Upload size={13} /> },
+              { id: 'create', label: editingId ? t('customTypeModal.tabEdit') : t('customTypeModal.tabCreate'), icon: <Plus size={13} /> },
+              { id: 'installed', label: t('customTypeModal.tabMyTypes'), icon: <Layers size={13} />, badge: types.length > 0 ? (types.some(t => t.isActive === false) ? `${types.filter(t => t.isActive !== false).length}/${types.length}` : types.length) : undefined },
             ]}
             activeTab={activeTab}
             onChange={(tabId) => {
@@ -798,7 +833,7 @@ return code`;
                 title="Download all installed types as JSON"
               >
                 <Download size={12} className="text-accent" />
-                <span>Export JSON</span>
+                <span>{t('customTypeModal.exportJson')}</span>
               </button>
             )}
           </div>
@@ -812,7 +847,7 @@ return code`;
               <div className="flex items-center gap-2">
                 <Info size={14} className="text-accent flex-shrink-0" />
                 <span>
-                  Preset examples are kept separate so your schema remains clean. Choose any example to add to your custom types or directly apply to your schema.
+                  {t('customTypeModal.examplesBanner')}
                 </span>
               </div>
             </div>
@@ -823,7 +858,7 @@ return code`;
                 <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
                 <input
                   type="text"
-                  placeholder="Search examples (e.g. Thai ID, Mobile, Wallet, SKU)..."
+                  placeholder={t('customTypeModal.searchExamplesPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent"
@@ -832,7 +867,7 @@ return code`;
 
               {/* Category Filter Pills */}
               <AnimatedTabs
-                tabs={categories.map((c) => ({ id: c, label: c }))}
+                tabs={categories.map((c) => ({ id: c, label: getCategoryLabel(c) }))}
                 activeTab={selectedCategory}
                 onChange={(cat) => setSelectedCategory(cat)}
                 layoutId="example-categories-filter"
@@ -860,7 +895,7 @@ return code`;
                               <h3 className="text-xs font-bold text-content">{ex.name}</h3>
                               {installed && (
                                 <span className="text-[9px] px-1.5 py-0.2 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center gap-1">
-                                  <Check size={10} /> Installed
+                                  <Check size={10} /> {t('customTypeModal.installed')}
                                 </span>
                               )}
                             </div>
@@ -870,7 +905,7 @@ return code`;
                           </div>
 
                           <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-secondary border border-border-subtle text-accent font-semibold flex-shrink-0">
-                            {ex.category}
+                            {getCategoryLabel(ex.category)}
                           </span>
                         </div>
 
@@ -890,14 +925,14 @@ return code`;
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] uppercase font-bold tracking-wider text-content-muted">
-                              Sample Output:
+                              {t('customTypeModal.sampleOutput')}
                             </span>
                             <button
                               type="button"
                               onClick={() => handleRollExampleSample(ex)}
-                              className="text-[10px] text-accent hover:underline flex items-center gap-1"
+                              className="text-[10px] text-accent hover:underline flex items-center gap-1 cursor-pointer"
                             >
-                              <RefreshCw size={9} /> Roll sample
+                              <RefreshCw size={9} /> {t('customTypeModal.rollSample')}
                             </button>
                           </div>
                           <div className="flex flex-wrap gap-1">
@@ -919,26 +954,26 @@ return code`;
                           <button
                             type="button"
                             onClick={() => handleInstallExample(ex)}
-                            className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition"
+                            className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                             title="Add to My Custom Types registry"
                           >
                             <BookmarkPlus size={12} className="text-accent" />
-                            <span>Add to My Types</span>
+                            <span>{t('customTypeModal.addToMyTypes')}</span>
                           </button>
                         ) : (
                           <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
-                            <CheckCircle2 size={12} /> Ready in registry
+                            <CheckCircle2 size={12} /> {t('customTypeModal.readyInRegistry')}
                           </span>
                         )}
 
                         <button
                           type="button"
                           onClick={() => handleAddColumnDirectly(ex)}
-                          className="px-3 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-xs"
+                          className="px-3 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
                           title="Insert this field directly into the active table schema"
                         >
                           <Plus size={12} />
-                          <span>Use in Schema</span>
+                          <span>{t('customTypeModal.useInSchema')}</span>
                         </button>
                       </div>
                     </div>
@@ -950,15 +985,15 @@ return code`;
             {/* Bottom Footer */}
             <div className="p-3 border-t border-border-subtle bg-secondary flex items-center justify-between text-xs text-content-muted flex-shrink-0">
               <span className="text-[11px]">
-                Showing {filteredExamples.length} of {examplePresets.length} ready-to-use template examples
+                {t('customTypeModal.showingExamples', { count: filteredExamples.length, total: examplePresets.length })}
               </span>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setActiveTab('import')}
-                  className="text-[11px] text-accent hover:underline flex items-center gap-1"
+                  className="text-[11px] text-accent hover:underline flex items-center gap-1 cursor-pointer"
                 >
-                  <Upload size={11} /> Go to Import Manager
+                  <Upload size={11} /> {t('customTypeModal.goToImport')}
                 </button>
               </div>
             </div>
@@ -982,7 +1017,7 @@ return code`;
                   <button
                     type="button"
                     onClick={() => setImportNotice(null)}
-                    className="p-1 hover:opacity-75"
+                    className="p-1 hover:opacity-75 cursor-pointer"
                   >
                     <X size={12} />
                   </button>
@@ -994,14 +1029,14 @@ return code`;
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-content flex items-center gap-1.5">
                     <FolderDown size={14} className="text-accent" />
-                    <span>Upload Schema File (.json)</span>
+                    <span>{t('customTypeModal.uploadSchemaTitle')}</span>
                   </h3>
                   <span className="text-[10px] text-content-muted font-mono bg-secondary px-2 py-0.5 rounded border border-border-subtle">
-                    Drag & Drop or Select
+                    {t('customTypeModal.uploadDragDrop')}
                   </span>
                 </div>
                 <p className="text-xs text-content-muted leading-relaxed">
-                  Upload a previously exported custom type bundle or shared definition JSON file. Existing types with matching IDs will be safely updated.
+                  {t('customTypeModal.uploadSchemaSubtitle')}
                 </p>
 
                 <input
@@ -1017,8 +1052,8 @@ return code`;
                   className="p-4 border-2 border-dashed border-border-subtle hover:border-accent/50 rounded-xl bg-secondary/50 hover:bg-secondary transition cursor-pointer flex flex-col items-center justify-center text-center gap-1.5"
                 >
                   <Upload size={20} className="text-accent" />
-                  <div className="text-xs font-semibold text-content">Click to select or drop a JSON file here</div>
-                  <div className="text-[11px] text-content-muted">Supports array of CustomColumnType or `{'{ column_types: [...] }'}`</div>
+                  <div className="text-xs font-semibold text-content">{t('customTypeModal.uploadDropHint')}</div>
+                  <div className="text-[11px] text-content-muted">{t('customTypeModal.uploadSupports')}</div>
                 </div>
               </div>
 
@@ -1027,18 +1062,18 @@ return code`;
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-content flex items-center gap-1.5">
                     <FileCode size={14} className="text-accent" />
-                    <span>Paste Raw JSON Definition</span>
+                    <span>{t('customTypeModal.pasteJsonTitle')}</span>
                   </h3>
                   <button
                     type="button"
                     onClick={handleCopySampleJson}
-                    className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium"
+                    className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium cursor-pointer"
                   >
-                    <Copy size={11} /> Copy Sample Format
+                    <Copy size={11} /> {t('customTypeModal.copySampleFormat')}
                   </button>
                 </div>
                 <p className="text-xs text-content-muted leading-relaxed">
-                  Directly paste an array of column type definitions or a single object:
+                  {t('customTypeModal.pasteJsonSubtitle')}
                 </p>
 
                 <textarea
@@ -1062,10 +1097,10 @@ return code`;
                     type="button"
                     disabled={!importJsonText.trim()}
                     onClick={handleImportText}
-                    className="px-3.5 py-1.5 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-50 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                    className="px-3.5 py-1.5 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-50 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <Check size={13} />
-                    <span>Validate & Import Types</span>
+                    <span>{t('customTypeModal.validateAndImport')}</span>
                   </button>
                 </div>
               </div>
@@ -1074,10 +1109,10 @@ return code`;
               <div className="p-4 rounded-xl bg-primary border border-border-subtle space-y-2">
                 <h3 className="text-xs font-bold text-content flex items-center gap-1.5">
                   <SlidersHorizontal size={14} className="text-accent" />
-                  <span>Installed Types Maintenance</span>
+                  <span>{t('customTypeModal.maintenanceTitle')}</span>
                 </h3>
                 <p className="text-xs text-content-muted leading-relaxed">
-                  Currently, you have <strong className="text-content">{types.length}</strong> custom column types installed in your registry.
+                  {t('customTypeModal.maintenanceDesc', { count: types.length })}
                 </p>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -1085,10 +1120,10 @@ return code`;
                     <button
                       type="button"
                       onClick={handleExportAll}
-                      className="px-3 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-xs font-semibold text-content transition flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-xs font-semibold text-content transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <Download size={13} className="text-accent" />
-                      <span>Backup All Installed Types (JSON)</span>
+                      <span>{t('customTypeModal.backupInstalled')}</span>
                     </button>
                   )}
 
@@ -1096,20 +1131,20 @@ return code`;
                     <button
                       type="button"
                       onClick={handleClearAll}
-                      className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-semibold text-rose-400 transition flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-semibold text-rose-400 transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <Trash2 size={13} />
-                      <span>Clear Registry (Reset to 0)</span>
+                      <span>{t('customTypeModal.clearRegistry')}</span>
                     </button>
                   )}
 
                   <button
                     type="button"
                     onClick={() => setActiveTab('examples')}
-                    className="px-3 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-xs font-semibold text-accent transition flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-xs font-semibold text-accent transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <Sparkles size={13} />
-                    <span>Browse Preset Examples (ตัวอย่าง)</span>
+                    <span>{t('customTypeModal.browsePresetExamples')}</span>
                   </button>
                 </div>
               </div>
@@ -1125,35 +1160,35 @@ return code`;
                 {/* Type Name */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-content flex items-center gap-1">
-                    <span>Type Name</span>
+                    <span>{t('customTypeModal.typeName')}</span>
                     <span className="text-rose-400">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Thai National ID, Crypto Wallet, SKU"
+                    placeholder={t('customTypeModal.typeNamePlaceholder')}
                     value={typeName}
                     onChange={(e) => setTypeName(e.target.value)}
                     className="w-full px-3 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent"
                   />
                   <p className="text-[11px] text-content-muted">
-                    Display name shown in column type selector
+                    {t('customTypeModal.typeNameDesc')}
                   </p>
                 </div>
 
                 {/* Category */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-content">Category</label>
+                  <label className="text-xs font-bold text-content">{t('customTypeModal.category')}</label>
                   <select
                     value={typeCategory}
                     onChange={(e) => setTypeCategory(e.target.value as any)}
                     className="w-full px-3 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent cursor-pointer"
                   >
                     {categories.filter(c => c !== 'All').map(c => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c} value={c}>{getCategoryLabel(c)}</option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-content-muted">Organizes this type in category lists</p>
+                  <p className="text-[11px] text-content-muted">{t('customTypeModal.categoryDesc')}</p>
                 </div>
               </div>
 
@@ -1162,7 +1197,7 @@ return code`;
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-content flex items-center gap-1.5">
                     <Cpu size={14} className="text-accent" />
-                    <span>Generator Engine Mode</span>
+                    <span>{t('customTypeModal.generatorEngineMode')}</span>
                   </label>
                   <span className="text-[11px] text-accent font-mono font-semibold">
                     Engine: {typeBaseMode === 'Base' ? `Base (${typeBaseSubtype})` : typeBaseMode}
@@ -1173,30 +1208,30 @@ return code`;
                   {[
                     {
                       mode: 'Base' as const,
-                      label: 'Base Engine',
-                      badge: 'Core Primitives',
-                      desc: 'RegEx patterns, Enum pools, Number ranges & Sequences',
+                      label: t('customTypeModal.baseEngine'),
+                      badge: t('customTypeModal.corePrimitives'),
+                      desc: t('customTypeModal.baseEngineDesc'),
                       icon: <Database size={13} className="text-sky-400" />
                     },
                     {
                       mode: 'Template' as const,
-                      label: 'Smart Template',
-                      badge: 'Dynamic Tokens',
-                      desc: 'Tokens: {INT}, {SET}, {NUM}, {HEX}, {UUID}, {row.col}',
+                      label: t('customTypeModal.smartTemplate'),
+                      badge: t('customTypeModal.dynamicTokens'),
+                      desc: t('customTypeModal.smartTemplateDesc'),
                       icon: <SlidersHorizontal size={13} className="text-emerald-400" />
                     },
                     {
                       mode: 'Script' as const,
-                      label: 'JavaScript',
-                      badge: 'ES6+ Sandbox',
-                      desc: 'ctx.row, ctx.random, ctx.utils, math, checksums',
+                      label: t('customTypeModal.javascript'),
+                      badge: t('customTypeModal.jsSandbox'),
+                      desc: t('customTypeModal.javascriptDesc'),
                       icon: <Code size={13} className="text-amber-400" />
                     },
                     {
                       mode: 'Lua' as const,
-                      label: 'Lua 5.3',
-                      badge: 'Native VM',
-                      desc: 'Lua tables, math, random, luhn check digit',
+                      label: t('customTypeModal.lua'),
+                      badge: t('customTypeModal.nativeVm'),
+                      desc: t('customTypeModal.luaDesc'),
                       icon: <Terminal size={13} className="text-indigo-400" />
                     },
                   ].map((item) => {
@@ -1264,11 +1299,11 @@ return code`;
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-content flex items-center gap-1">
-                        <span>Template Expression</span>
+                        <span>{t('customTypeModal.templateExpression')}</span>
                         <span className="text-rose-400">*</span>
                       </label>
                       <span className="text-[10px] text-content-muted font-mono">
-                        Mix literal text with dynamic tokens
+                        {t('customTypeModal.mixLiteralTokens')}
                       </span>
                     </div>
                     <input
@@ -1284,8 +1319,8 @@ return code`;
                   {/* Interactive Quick Token Insertion Chips */}
                   <div className="space-y-1.5 pt-1">
                     <div className="text-[10px] uppercase font-bold tracking-wider text-content-muted flex items-center justify-between">
-                      <span>Click token to append to template:</span>
-                      <span className="text-[9px] text-emerald-400 font-mono">Instant live preview</span>
+                      <span>{t('customTypeModal.clickTokenToAppend')}</span>
+                      <span className="text-[9px] text-emerald-400 font-mono">{t('customTypeModal.instantLivePreview')}</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {[
@@ -1328,12 +1363,12 @@ return code`;
                         {typeBaseMode === 'Script' ? (
                           <>
                             <Code size={14} className="text-amber-400" />
-                            <span>JavaScript Script Editor</span>
+                            <span>{t('customTypeModal.jsScriptEditor')}</span>
                           </>
                         ) : (
                           <>
                             <Terminal size={14} className="text-indigo-400" />
-                            <span>Lua 5.3 Script Editor</span>
+                            <span>{t('customTypeModal.luaScriptEditor')}</span>
                           </>
                         )}
                       </span>
@@ -1341,11 +1376,11 @@ return code`;
                       {/* Benchmark & Diagnostics Badge */}
                       {benchmarkResult.error ? (
                         <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center gap-1 font-semibold">
-                          <AlertCircle size={10} /> Runtime Error
+                          <AlertCircle size={10} /> {t('customTypeModal.runtimeError')}
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 font-semibold">
-                          <CheckCircle2 size={10} /> Executed in {benchmarkResult.timeMs}ms
+                          <CheckCircle2 size={10} /> {t('customTypeModal.executedIn', { time: benchmarkResult.timeMs })}
                         </span>
                       )}
                     </div>
@@ -1354,10 +1389,10 @@ return code`;
                     <button
                       type="button"
                       onClick={() => setIsCheatSheetOpen(!isCheatSheetOpen)}
-                      className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium bg-secondary px-2.5 py-1 rounded-lg border border-border-subtle hover:bg-tertiary transition"
+                      className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium bg-secondary px-2.5 py-1 rounded-lg border border-border-subtle hover:bg-tertiary transition cursor-pointer"
                     >
                       <BookOpen size={12} />
-                      <span>Context Cheat Sheet (ctx)</span>
+                      <span>{t('customTypeModal.contextCheatSheet')}</span>
                       {isCheatSheetOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </button>
                   </div>
@@ -1365,7 +1400,7 @@ return code`;
                   {/* Quick Code Templates / Snippets */}
                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted flex items-center gap-1">
-                      <Zap size={11} className="text-amber-400" /> Quick Templates:
+                      <Zap size={11} className="text-amber-400" /> {t('customTypeModal.quickTemplates')}
                     </span>
                     {(typeBaseMode === 'Script' ? JS_SNIPPETS : LUA_SNIPPETS).map((snip) => (
                       <button
@@ -1377,7 +1412,7 @@ return code`;
                           runLiveTest(typeBaseMode, snip.code, typeBaseSubtype);
                         }}
                         title={snip.desc}
-                        className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-secondary hover:bg-tertiary border border-border-subtle text-content transition hover:border-accent/40"
+                        className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-secondary hover:bg-tertiary border border-border-subtle text-content transition hover:border-accent/40 cursor-pointer"
                       >
                         {snip.label}
                       </button>
@@ -1388,7 +1423,7 @@ return code`;
                   {isCheatSheetOpen && (
                     <div className="p-3 rounded-lg bg-secondary/80 border border-border-subtle text-xs space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
                       <div className="font-bold text-[11px] text-accent uppercase tracking-wider flex items-center justify-between">
-                        <span>Available Execution Sandbox Context Variables & Functions</span>
+                        <span>{t('customTypeModal.availableContextVars')}</span>
                         <span className="font-mono text-[10px] text-content-muted">
                           {typeBaseMode === 'Script' ? 'JS ES6 Sandbox' : 'Lua 5.3 Global Environment'}
                         </span>
@@ -1495,15 +1530,15 @@ return code`;
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-accent flex items-center gap-1.5">
                     <Sparkles size={13} />
-                    Live Sandbox Generator Preview (4 Simulated Rows)
+                    {t('customTypeModal.testSamplesBenchmark')}
                   </span>
                   <button
                     type="button"
                     onClick={() => runLiveTest(typeBaseMode, typeRule, typeBaseSubtype)}
-                    className="px-2.5 py-1 rounded text-[11px] font-semibold bg-secondary hover:bg-tertiary border border-border-subtle text-content flex items-center gap-1 transition"
+                    className="px-2.5 py-1 rounded text-[11px] font-semibold bg-secondary hover:bg-tertiary border border-border-subtle text-content flex items-center gap-1 transition cursor-pointer"
                   >
                     <RefreshCw size={11} className="text-accent" />
-                    <span>Re-evaluate Samples</span>
+                    <span>Re-evaluate</span>
                   </button>
                 </div>
 
@@ -1515,7 +1550,7 @@ return code`;
                     >
                       <div className="flex items-center justify-between text-[10px] text-content-muted font-mono mb-1">
                         <span>Row #{idx + 1}</span>
-                        <span className="text-[9px] text-accent/80">ctx.row mockup</span>
+                        <span className="text-[9px] text-accent/80">{t('customTypeModal.simulatedRows')}</span>
                       </div>
                       <div className="font-mono text-xs text-content break-all select-all font-semibold">
                         {sample || <span className="text-content-muted italic">empty</span>}
@@ -1531,17 +1566,17 @@ return code`;
               <button
                 type="button"
                 onClick={() => setActiveTab(types.length > 0 ? 'installed' : 'examples')}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-content-muted hover:text-content"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-content-muted hover:text-content cursor-pointer"
               >
-                Cancel
+                {t('customTypeModal.cancel')}
               </button>
 
               <button
                 type="submit"
-                className="px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                className="px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
               >
                 <Check size={13} />
-                <span>{editingId ? 'Update Column Type' : 'Save Column Type'}</span>
+                <span>{editingId ? t('customTypeModal.updateType') : t('customTypeModal.saveType')}</span>
               </button>
             </div>
           </form>
@@ -1556,37 +1591,37 @@ return code`;
                 <div className="p-4 rounded-2xl bg-primary border border-border-subtle text-content-muted">
                   <Layers size={36} className="text-accent" />
                 </div>
-                <h3 className="text-sm font-bold text-content">No Custom Column Types Installed</h3>
+                <h3 className="text-sm font-bold text-content">{t('customTypeModal.tabMyTypes')}</h3>
                 <p className="text-xs text-content-muted max-w-md leading-relaxed">
-                  Your column type selector remains clean and lightweight. You can explore ready-to-use template examples (เช่น เลขบัตรประชาชน, เบอร์โทร, Crypto Wallet) or import a custom JSON schema.
+                  {t('customTypeModal.examplesBanner')}
                 </p>
 
                 <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
                   <button
                     type="button"
                     onClick={() => setActiveTab('examples')}
-                    className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <Sparkles size={13} />
-                    <span>Browse Examples (ตัวอย่าง)</span>
+                    <span>{t('customTypeModal.browsePresetExamples')}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setActiveTab('import')}
-                    className="px-4 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold transition flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <Upload size={13} className="text-accent" />
-                    <span>Import File or JSON (หน้าจัดการ)</span>
+                    <span>{t('customTypeModal.tabImport')}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleStartCreate}
-                    className="px-4 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold transition flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <Plus size={13} className="text-accent" />
-                    <span>Create from Scratch</span>
+                    <span>{t('customTypeModal.createNewType')}</span>
                   </button>
                 </div>
               </div>
@@ -1600,7 +1635,7 @@ return code`;
                       <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
                       <input
                         type="text"
-                        placeholder="Search my types..."
+                        placeholder={t('customTypeModal.searchMyTypesPlaceholder')}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-8 pr-7 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent"
@@ -1627,7 +1662,7 @@ return code`;
                             : 'text-content-muted hover:text-content'
                         }`}
                       >
-                        All ({types.length})
+                        {t('customTypeModal.allFilter')} ({types.length})
                       </button>
                       <button
                         type="button"
@@ -1639,7 +1674,7 @@ return code`;
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span>Active ({types.filter(t => t.isActive !== false).length})</span>
+                        <span>{t('customTypeModal.activeFilter')} ({types.filter(t => t.isActive !== false).length})</span>
                       </button>
                       <button
                         type="button"
@@ -1651,7 +1686,7 @@ return code`;
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
-                        <span>Off ({types.filter(t => t.isActive === false).length})</span>
+                        <span>{t('customTypeModal.offFilter')} ({types.filter(t => t.isActive === false).length})</span>
                       </button>
                     </div>
                   </div>
@@ -1662,22 +1697,22 @@ return code`;
                     className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs shrink-0 transition cursor-pointer"
                   >
                     <Plus size={13} />
-                    <span>Create New Type</span>
+                    <span>{t('customTypeModal.createNewType')}</span>
                   </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {filteredInstalled.map((t) => {
-                      const samples = t.sampleOutputs && t.sampleOutputs.length > 0
-                        ? t.sampleOutputs
-                        : getCustomTypeSamples(t, 2);
+                    {filteredInstalled.map((tItem) => {
+                      const samples = tItem.sampleOutputs && tItem.sampleOutputs.length > 0
+                        ? tItem.sampleOutputs
+                        : getCustomTypeSamples(tItem, 2);
 
                       return (
                         <div
-                          key={t.id}
+                          key={tItem.id}
                           className={`p-3.5 rounded-xl border transition flex flex-col justify-between shadow-2xs group ${
-                            t.isActive !== false
+                            tItem.isActive !== false
                               ? 'bg-primary border-border-subtle hover:border-accent/40'
                               : 'bg-primary/40 border-dashed border-border-subtle/80 opacity-75 hover:opacity-95'
                           }`}
@@ -1685,9 +1720,9 @@ return code`;
                           <div className="space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
-                                <h3 className={`text-xs font-bold truncate ${t.isActive !== false ? 'text-content' : 'text-content-muted'}`}>{t.name}</h3>
+                                <h3 className={`text-xs font-bold truncate ${tItem.isActive !== false ? 'text-content' : 'text-content-muted'}`}>{tItem.name}</h3>
                                 <p className="text-[11px] text-content-muted truncate mt-0.5">
-                                  {t.description || 'Custom generator rule'}
+                                  {tItem.description || 'Custom generator rule'}
                                 </p>
                               </div>
 
@@ -1696,40 +1731,40 @@ return code`;
                                 <button
                                   type="button"
                                   role="switch"
-                                  aria-checked={t.isActive !== false}
-                                  onClick={() => handleToggleActive(t.id, t.name)}
+                                  aria-checked={tItem.isActive !== false}
+                                  onClick={() => handleToggleActive(tItem.id, tItem.name)}
                                   className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium transition cursor-pointer border ${
-                                    t.isActive !== false
+                                    tItem.isActive !== false
                                       ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
                                       : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/25'
                                   }`}
-                                  title={t.isActive !== false ? 'Active: Click to turn off' : 'Turned off: Click to turn on'}
+                                  title={tItem.isActive !== false ? t('customTypeModal.activeClickToOff') : t('customTypeModal.offClickToOn')}
                                 >
-                                  <span className={`w-1.5 h-1.5 rounded-full transition-colors ${t.isActive !== false ? 'bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.6)]' : 'bg-zinc-500'}`} />
-                                  <span>{t.isActive !== false ? 'Active' : 'Off'}</span>
+                                  <span className={`w-1.5 h-1.5 rounded-full transition-colors ${tItem.isActive !== false ? 'bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.6)]' : 'bg-zinc-500'}`} />
+                                  <span>{tItem.isActive !== false ? t('customTypeModal.activeFilter') : t('customTypeModal.offFilter')}</span>
                                 </button>
                                 <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-secondary border border-border-subtle text-accent font-semibold">
-                                  {t.category}
+                                  {getCategoryLabel(tItem.category)}
                                 </span>
                               </div>
                             </div>
 
                             {/* Rule Spec Snippet */}
                             <div className="px-2.5 py-1.5 rounded-lg bg-secondary/80 border border-border-subtle font-mono text-[11px] text-content-muted flex items-center justify-between gap-2">
-                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 ${getModeBadgeClass(t.baseMode)}`}>
-                                {getModeLabel(t)}
+                              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 ${getModeBadgeClass(tItem.baseMode)}`}>
+                                {getModeLabel(tItem)}
                               </span>
-                              <span className="truncate flex-1 text-right text-accent font-mono text-[11px]" title={t.defaultRule}>
-                                {t.baseMode === 'Script' || t.baseMode === 'Lua'
-                                  ? `${t.defaultRule.split('\n').filter(l => l.trim() && !l.trim().startsWith('//') && !l.trim().startsWith('--'))[0] || 'Custom Script'}`
-                                  : t.defaultRule}
+                              <span className="truncate flex-1 text-right text-accent font-mono text-[11px]" title={tItem.defaultRule}>
+                                {tItem.baseMode === 'Script' || tItem.baseMode === 'Lua'
+                                  ? `${tItem.defaultRule.split('\n').filter(l => l.trim() && !l.trim().startsWith('//') && !l.trim().startsWith('--'))[0] || 'Custom Script'}`
+                                  : tItem.defaultRule}
                               </span>
                             </div>
 
                             {/* Live Samples preview */}
                             <div className="flex items-center gap-1.5 overflow-hidden text-[11px]">
                               <span className="text-[10px] uppercase font-semibold tracking-wider text-content-muted shrink-0">
-                                Sample:
+                                {t('customTypeModal.sampleOutput')}
                               </span>
                               <div className="flex items-center gap-1 min-w-0 overflow-hidden">
                                 {samples.slice(0, 2).map((s, idx) => (
@@ -1750,17 +1785,17 @@ return code`;
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
-                                onClick={() => handleStartEdit(t)}
+                                onClick={() => handleStartEdit(tItem)}
                                 className="p-1.5 text-content-muted hover:text-accent hover:bg-tertiary rounded-lg transition cursor-pointer"
-                                title="Edit Type Rule"
+                                title={t('customTypeModal.editTypeRule')}
                               >
                                 <Edit2 size={13} />
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleDelete(t.id, t.name)}
+                                onClick={() => handleDelete(tItem.id, tItem.name)}
                                 className="p-1.5 text-content-muted hover:text-rose-400 hover:bg-tertiary rounded-lg transition cursor-pointer"
-                                title="Delete Type"
+                                title={t('customTypeModal.deleteType')}
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -1768,11 +1803,11 @@ return code`;
 
                             <button
                               type="button"
-                              onClick={() => handleAddInstalledColumn(t)}
+                              onClick={() => handleAddInstalledColumn(tItem)}
                               className="px-2.5 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
                             >
                               <Plus size={12} />
-                              <span>Add Field</span>
+                              <span>{t('customTypeModal.addField')}</span>
                             </button>
                           </div>
                         </div>
@@ -1784,7 +1819,11 @@ return code`;
                 {/* Footer Info */}
                 <div className="px-4 py-2.5 border-t border-border-subtle bg-secondary/60 flex items-center justify-between text-xs text-content-muted flex-shrink-0">
                   <span className="text-[11px] font-mono">
-                    {types.length} custom type{types.length !== 1 ? 's' : ''} • {types.filter(t => t.isActive !== false).length} active • {types.filter(t => t.isActive === false).length} off
+                    {t('customTypeModal.typesSummary', {
+                      total: types.length,
+                      active: types.filter(t => t.isActive !== false).length,
+                      off: types.filter(t => t.isActive === false).length
+                    })}
                   </span>
                   {types.length > 0 && (
                     <button
@@ -1792,7 +1831,7 @@ return code`;
                       onClick={handleClearAll}
                       className="text-[11px] text-rose-400 hover:text-rose-300 transition hover:underline cursor-pointer"
                     >
-                      Clear All
+                      {t('customTypeModal.clearAll')}
                     </button>
                   )}
                 </div>

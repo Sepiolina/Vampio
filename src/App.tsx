@@ -193,33 +193,41 @@ export default function App() {
   } = useWorkspace();
 
   const lastLoadedWorkspaceIdRef = useRef<string>('');
+  const isSwitchingWorkspaceRef = useRef<boolean>(false);
 
   // Sync state when active workspace changes
   useEffect(() => {
-    if (!isWorkspaceInitialized || !activeWorkspace || activeWorkspace.id === lastLoadedWorkspaceIdRef.current) return;
-    lastLoadedWorkspaceIdRef.current = activeWorkspace.id;
-    setColumns(activeWorkspace.columns || []);
-    setTableName(activeWorkspace.tableName || 'synthetic_records');
-    setFormat(activeWorkspace.format || 'csv');
-    setCount(activeWorkspace.count || 1000);
-    setIntervalMs(activeWorkspace.intervalMs || 150);
-    setOutputDestination(activeWorkspace.outputDestination || 'download');
-    setOutputStrategy(activeWorkspace.outputStrategy || 'single');
-    if (activeWorkspace.multiFileConfig) {
-      setMultiFileConfig(activeWorkspace.multiFileConfig);
-    }
-    if (activeWorkspace.appendConfig) {
-      setAppendConfig(activeWorkspace.appendConfig);
-    }
-    setSelectedFolderName(activeWorkspace.selectedFolderName || null);
-    if (activeWorkspace.filename) {
-      setFilename(activeWorkspace.filename);
+    if (!isWorkspaceInitialized || !activeWorkspace) return;
+    if (activeWorkspace.id !== lastLoadedWorkspaceIdRef.current) {
+      lastLoadedWorkspaceIdRef.current = activeWorkspace.id;
+      isSwitchingWorkspaceRef.current = true;
+      setColumns(activeWorkspace.columns || []);
+      setTableName(activeWorkspace.tableName || 'synthetic_records');
+      setFormat(activeWorkspace.format || 'csv');
+      setCount(activeWorkspace.count || 1000);
+      setIntervalMs(activeWorkspace.intervalMs || 150);
+      setOutputDestination(activeWorkspace.outputDestination || 'download');
+      setOutputStrategy(activeWorkspace.outputStrategy || 'single');
+      if (activeWorkspace.multiFileConfig) {
+        setMultiFileConfig(activeWorkspace.multiFileConfig);
+      }
+      if (activeWorkspace.appendConfig) {
+        setAppendConfig(activeWorkspace.appendConfig);
+      }
+      setSelectedFolderName(activeWorkspace.selectedFolderName || null);
+      if (activeWorkspace.filename) {
+        setFilename(activeWorkspace.filename);
+      }
     }
   }, [activeWorkspaceId, activeWorkspace, isWorkspaceInitialized]);
 
   // Sync local changes back to active workspace
   useEffect(() => {
     if (!isWorkspaceInitialized || !activeWorkspaceId || lastLoadedWorkspaceIdRef.current !== activeWorkspaceId) return;
+    if (isSwitchingWorkspaceRef.current) {
+      isSwitchingWorkspaceRef.current = false;
+      return;
+    }
     updateActiveWorkspace({
       columns,
       tableName,
@@ -339,6 +347,60 @@ export default function App() {
   const [restApiModalTab, setRestApiModalTab] = useState<'column' | 'row'>('row');
   const dragCounterRef = useRef<number>(0);
   const schemaFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Global Escape Key Listener: Dismiss context menus, modals, and overlays
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (contextMenu) {
+          setContextMenu(null);
+          return;
+        }
+        if (isPresetsOpen) {
+          setIsPresetsOpen(false);
+          return;
+        }
+        if (isOfflineExtractorOpen) {
+          setIsOfflineExtractorOpen(false);
+          setExtractorInitialFile(null);
+          setExtractorAutoExtract(false);
+          return;
+        }
+        if (isFolderMonitorOpen) {
+          setIsFolderMonitorOpen(false);
+          return;
+        }
+        if (isRestApiModalOpen) {
+          setIsRestApiModalOpen(false);
+          return;
+        }
+        if (isBundleImportModalOpen) {
+          setIsBundleImportModalOpen(false);
+          return;
+        }
+        if (isRoleModalOpen) {
+          setIsRoleModalOpen(false);
+          return;
+        }
+        if (isSidebarOpen && typeof window !== 'undefined' && window.innerWidth < 1024) {
+          setIsSidebarOpen(false);
+          return;
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [
+    contextMenu,
+    isPresetsOpen,
+    isOfflineExtractorOpen,
+    isFolderMonitorOpen,
+    isRestApiModalOpen,
+    isBundleImportModalOpen,
+    isRoleModalOpen,
+    isSidebarOpen,
+    setIsRoleModalOpen
+  ]);
 
   const handleProcessSpreadsheetFile = (file: File) => {
     const name = file.name.toLowerCase();

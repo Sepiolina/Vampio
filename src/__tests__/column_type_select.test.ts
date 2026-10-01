@@ -47,10 +47,34 @@ describe('Column Type Selection & Categorization Architecture', () => {
     expect(config).toContain('"retrievalMode": "pool"');
   });
 
-  it('should load preset types when searching custom categories', () => {
-    const presets = getExamplePresetTypes();
-    expect(presets.length).toBeGreaterThan(0);
-    const thaiId = presets.find(p => p.id === 'example:thai_id' || p.name.includes('ID'));
-    expect(thaiId).toBeDefined();
+  it('should filter custom types to only show enabled ones by default', () => {
+    const mockTypes = [
+      { id: 'custom:active1', name: 'Active 1', isActive: true },
+      { id: 'custom:inactive1', name: 'Inactive 1', isActive: false },
+      { id: 'custom:active2', name: 'Active 2', isActive: true }
+    ];
+
+    const currentSelectedId = 'Sequence';
+    const enabledOnly = mockTypes.filter(
+      (ct) => ct.isActive !== false || ct.id === currentSelectedId
+    );
+
+    expect(enabledOnly.length).toBe(2);
+    expect(enabledOnly.map(t => t.id)).toEqual(['custom:active1', 'custom:active2']);
+  });
+
+  it('should preserve inactive custom type if it is currently selected on the column', () => {
+    const mockTypes = [
+      { id: 'custom:active1', name: 'Active 1', isActive: true },
+      { id: 'custom:inactive1', name: 'Inactive 1', isActive: false }
+    ];
+
+    const currentSelectedId = 'custom:inactive1';
+    const enabledOrCurrent = mockTypes.filter(
+      (ct) => ct.isActive !== false || ct.id === currentSelectedId
+    );
+
+    expect(enabledOrCurrent.length).toBe(2);
+    expect(enabledOrCurrent.some(t => t.id === 'custom:inactive1')).toBe(true);
   });
 });

@@ -293,38 +293,45 @@ export const ColumnTypeSelect: React.FC<Props> = ({
       }
     ];
 
-    // Append custom types & presets
-    const customItems: TypeOptionItem[] = [
-      ...customTypes.map((ct) => ({
-        id: ct.id,
-        name: ct.name,
-        category: 'custom' as const,
-        icon: Sparkles,
-        description: ct.description || `Custom generator (${ct.baseMode || 'Base'})`,
-        previewExample: ct.defaultRule ? (ct.defaultRule.length > 25 ? ct.defaultRule.slice(0, 25) + '...' : ct.defaultRule) : undefined,
-        tags: ['custom', 'plugin', 'user', ct.baseMode?.toLowerCase() || ''],
-        isCustom: true,
-        isActive: ct.isActive !== false,
-        colorClass: 'text-violet-400 bg-violet-500/10 border-violet-500/20',
-        defaultRule: ct.defaultRule
-      })),
-      ...examplePresets.filter((ep) => !customTypes.some((ct) => ct.id === ep.id)).map((ep) => ({
-        id: ep.id,
-        name: ep.name,
+    // Append custom types: show only enabled ones (plus current selection if deactivated)
+    const enabledCustomTypes = customTypes.filter(
+      (ct) => ct.isActive !== false || ct.id === value || ct.id === customTypeId
+    );
+
+    const customItems: TypeOptionItem[] = enabledCustomTypes.map((ct) => ({
+      id: ct.id,
+      name: ct.name,
+      category: 'custom' as const,
+      icon: Sparkles,
+      description: ct.description || `Custom generator (${ct.baseMode || 'Base'})`,
+      previewExample: ct.defaultRule ? (ct.defaultRule.length > 25 ? ct.defaultRule.slice(0, 25) + '...' : ct.defaultRule) : undefined,
+      tags: ['custom', 'plugin', 'user', ct.baseMode?.toLowerCase() || ''],
+      isCustom: true,
+      isActive: ct.isActive !== false,
+      colorClass: 'text-violet-400 bg-violet-500/10 border-violet-500/20',
+      defaultRule: ct.defaultRule
+    }));
+
+    // If current column is using an example preset, keep it visible
+    const matchedPreset = examplePresets.find((ep) => ep.id === value || ep.id === customTypeId);
+    if (matchedPreset && !customItems.some((ci) => ci.id === matchedPreset.id)) {
+      customItems.push({
+        id: matchedPreset.id,
+        name: matchedPreset.name,
         category: 'custom' as const,
         icon: Zap,
-        description: ep.description || `Preset generator (${ep.baseMode || 'Base'})`,
-        previewExample: ep.defaultRule,
-        tags: ['preset', 'example', 'template', 'library', ep.baseMode?.toLowerCase() || ''],
+        description: matchedPreset.description || `Preset generator (${matchedPreset.baseMode || 'Base'})`,
+        previewExample: matchedPreset.defaultRule,
+        tags: ['preset', 'example', matchedPreset.baseMode?.toLowerCase() || ''],
         isCustom: true,
         isActive: true,
         colorClass: 'text-violet-400 bg-violet-500/10 border-violet-500/20',
-        defaultRule: ep.defaultRule
-      }))
-    ];
+        defaultRule: matchedPreset.defaultRule
+      });
+    }
 
     return [...list, ...customItems];
-  }, [t, customTypes, examplePresets]);
+  }, [t, customTypes, examplePresets, value, customTypeId]);
 
   // Current active item lookup
   const currentItem = useMemo(() => {
@@ -544,9 +551,33 @@ export const ColumnTypeSelect: React.FC<Props> = ({
             {filteredOptions.length === 0 ? (
               <div className="py-8 px-4 text-center">
                 <Search size={22} className="mx-auto text-content-muted/40 mb-2" />
-                <p className="text-xs text-content-muted font-medium">No matching column types found</p>
-                <p className="text-[11px] text-content-muted/60 mt-1">Try another keyword or create a custom type</p>
-                {search && (
+                <p className="text-xs text-content-muted font-medium">
+                  {selectedCategory === 'custom'
+                    ? 'No enabled custom types'
+                    : 'No matching column types found'}
+                </p>
+                <p className="text-[11px] text-content-muted/60 mt-1">
+                  {selectedCategory === 'custom'
+                    ? 'Enable custom types in Custom Types Manager'
+                    : 'Try another keyword or create a custom type'}
+                </p>
+                {selectedCategory === 'custom' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      if (onOpenCustomTypeModal) {
+                        onOpenCustomTypeModal();
+                      } else {
+                        window.dispatchEvent(new CustomEvent('vampio-open-custom-types'));
+                      }
+                    }}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-primary hover:bg-card border border-border-subtle rounded-md text-accent cursor-pointer"
+                  >
+                    <Sparkles size={12} />
+                    <span>Open Custom Types Manager</span>
+                  </button>
+                ) : search ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -557,7 +588,7 @@ export const ColumnTypeSelect: React.FC<Props> = ({
                   >
                     Clear Filter
                   </button>
-                )}
+                ) : null}
               </div>
             ) : (
               groupedFilteredOptions.map((group) => (

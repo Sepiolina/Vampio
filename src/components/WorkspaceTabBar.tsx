@@ -100,16 +100,35 @@ export const WorkspaceTabBar: React.FC<Props> = ({
 
   const handleCreateNewBlank = async () => {
     setIsAddMenuOpen(false);
+    const existingNames = new Set(workspaces.map((w) => w.name.toLowerCase()));
+    let nextNum = workspaces.length + 1;
+    while (
+      existingNames.has(`workspace ${nextNum}`.toLowerCase()) || 
+      existingNames.has(`project ${nextNum}`.toLowerCase()) ||
+      existingNames.has(`tab ${nextNum}`.toLowerCase())
+    ) {
+      nextNum++;
+    }
     await createWorkspace({
-      name: `Project ${workspaces.length + 1}`,
-      tableName: `dataset_${workspaces.length + 1}`,
+      name: `Workspace ${nextNum}`,
+      tableName: `dataset_${nextNum}`,
       columns: [],
     });
+    setTimeout(() => {
+      if (tabListRef.current) {
+        tabListRef.current.scrollTo({ left: tabListRef.current.scrollWidth, behavior: 'smooth' });
+      }
+    }, 40);
   };
 
   const handleDuplicateActive = async () => {
     setIsAddMenuOpen(false);
     await duplicateWorkspace(activeWorkspaceId);
+    setTimeout(() => {
+      if (tabListRef.current) {
+        tabListRef.current.scrollTo({ left: tabListRef.current.scrollWidth, behavior: 'smooth' });
+      }
+    }, 40);
   };
 
   const handlePresetSelect = async (presetId: string) => {
@@ -121,6 +140,11 @@ export const WorkspaceTabBar: React.FC<Props> = ({
       tableName: preset.tableName,
       columns: preset.columns,
     });
+    setTimeout(() => {
+      if (tabListRef.current) {
+        tabListRef.current.scrollTo({ left: tabListRef.current.scrollWidth, behavior: 'smooth' });
+      }
+    }, 40);
   };
 
   const getColorDot = (tagId?: string) => {
@@ -133,6 +157,11 @@ export const WorkspaceTabBar: React.FC<Props> = ({
       {/* Left: Scrollable Tabs */}
       <div 
         ref={tabListRef} 
+        onDoubleClick={(e) => {
+          if (e.target === tabListRef.current) {
+            handleCreateNewBlank();
+          }
+        }}
         className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 flex-1 max-w-[calc(100vw-340px)] sm:max-w-none mr-2"
       >
         {workspaces.map((ws) => {
@@ -203,15 +232,23 @@ export const WorkspaceTabBar: React.FC<Props> = ({
           );
         })}
 
-        {/* Plus / New Workspace Dropdown */}
-        <div ref={addMenuRef} className="relative inline-block shrink-0">
+        {/* Plus / New Workspace (Click creates immediately, chevron opens templates) */}
+        <div ref={addMenuRef} className="relative inline-flex items-center shrink-0">
+          <button
+            type="button"
+            onClick={handleCreateNewBlank}
+            className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-card text-content-muted hover:text-accent border border-transparent hover:border-border-subtle transition-all active:scale-95 cursor-pointer"
+            title="New Tab (Click to create new workspace)"
+          >
+            <Plus size={13} strokeWidth={2.5} />
+          </button>
           <button
             type="button"
             onClick={() => setIsAddMenuOpen((prev) => !prev)}
-            className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-card/70 text-content-muted hover:text-content border border-transparent hover:border-border-subtle transition-colors"
-            title="New Project Workspace"
+            className="flex items-center justify-center w-4 h-6 -ml-1 rounded-r-md hover:bg-card text-content-muted hover:text-content border border-transparent hover:border-border-subtle transition-colors cursor-pointer"
+            title="Tab options (Duplicate, Preset...)"
           >
-            <Plus size={13} />
+            <ChevronDown size={10} className={`transition-transform duration-150 ${isAddMenuOpen ? 'rotate-180 text-accent' : ''}`} />
           </button>
 
           {isAddMenuOpen && (

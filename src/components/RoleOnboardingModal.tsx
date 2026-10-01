@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useUserRole, UserRole } from '../context/UserRoleContext';
 import { 
@@ -23,6 +23,20 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const { role, setRole, setIsRoleModalOpen } = useUserRole();
   const [selectedRole, setSelectedRole] = useState<UserRole>(role || 'operator');
 
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsRoleModalOpen(false);
+        if (onClose) onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, setIsRoleModalOpen]);
+
   if (!isOpen) return null;
 
   const handleConfirm = (chosenRole: UserRole) => {
@@ -31,9 +45,19 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
     if (onClose) onClose();
   };
 
+  const handleDismiss = () => {
+    setIsRoleModalOpen(false);
+    if (onClose) onClose();
+  };
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+      <div 
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) handleDismiss();
+        }}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}

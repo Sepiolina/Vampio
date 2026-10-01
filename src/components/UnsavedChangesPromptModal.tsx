@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AlertCircle, Save, Trash2, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 
@@ -13,12 +13,30 @@ export const UnsavedChangesPromptModal: React.FC = () => {
     cancelSwitch
   } = useWorkspace();
 
+  // Close / Cancel on Escape key press
+  useEffect(() => {
+    if (!isUnsavedPromptOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelSwitch();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isUnsavedPromptOpen, cancelSwitch]);
+
   if (!isUnsavedPromptOpen) return null;
 
   const targetWs = workspaces.find((w) => w.id === pendingTargetWorkspaceId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) cancelSwitch();
+      }}
+    >
       <div className="w-full max-w-md bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-content">
         <div className="p-5">
           <div className="flex items-start gap-3">

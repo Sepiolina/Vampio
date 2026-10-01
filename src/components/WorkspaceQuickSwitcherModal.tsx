@@ -36,6 +36,19 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
     }
   }, [isQuickSwitcherOpen]);
 
+  // Global Escape key press
+  useEffect(() => {
+    if (!isQuickSwitcherOpen) return;
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsQuickSwitcherOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [isQuickSwitcherOpen, setIsQuickSwitcherOpen]);
+
   // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -67,7 +80,12 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 sm:pt-28 px-4 bg-black/80 backdrop-blur-md select-none">
+    <div 
+      className="fixed inset-0 z-50 flex items-start justify-center pt-20 sm:pt-28 px-4 bg-black/80 backdrop-blur-md select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setIsQuickSwitcherOpen(false);
+      }}
+    >
       <div 
         className="w-full max-w-lg bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         onKeyDown={handleKeyDown}

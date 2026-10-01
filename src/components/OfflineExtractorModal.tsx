@@ -169,6 +169,19 @@ export const OfflineExtractorModal: React.FC<Props> = ({
     }
   }, [isOpen, initialFile]);
 
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   // Handle Pasted CSV / TSV Text
   const handlePastedTextParse = () => {
     if (!pastedText.trim()) return;
@@ -431,7 +444,12 @@ export const OfflineExtractorModal: React.FC<Props> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+        >
           {/* Animated Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}

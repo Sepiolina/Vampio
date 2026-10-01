@@ -34,6 +34,7 @@ import {
 } from '../utils/folderBehaviorAnalyzer';
 import { requestDirectoryHandle, isFileSystemAccessSupported } from '../utils/fileSystem';
 import { useUserRole } from '../context/UserRoleContext';
+import { useI18n, LanguageSelectDropdown } from '../i18n';
 
 interface Props {
   onOpenInDeveloperStudio?: (bundle: VampioWorkspaceProfileBundle) => void;
@@ -41,6 +42,7 @@ interface Props {
 
 export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }) => {
   const { setRole } = useUserRole();
+  const { t } = useI18n();
   const [directoryHandle, setDirectoryHandle] = useState<any | null>(null);
   const [folderName, setFolderName] = useState<string>('');
   const [folderPath, setFolderPath] = useState<string>('');
@@ -70,7 +72,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
       setAnalysis(result);
     } catch (err: any) {
       console.error('Scan error:', err);
-      notify(`Scan error: ${err?.message || 'Failed reading directory'}`);
+      notify(`${t('operator.scanError')}: ${err?.message || 'Failed reading directory'}`);
     } finally {
       setIsScanning(false);
     }
@@ -89,7 +91,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
       setFolderPath(path);
 
       await performScan(handle, name);
-      notify(`Monitoring folder "${name}"`);
+      notify(`${t('operator.monitoringFolder')} "${name}"`);
     } catch (err: any) {
       console.warn('Native picker failed or cancelled, using fallback input:', err);
       if (fileInputRef.current) {
@@ -230,27 +232,28 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm text-content tracking-tight">Vampio</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30">
-                  Field Operator Mode
+                  {t('operator.modeBadge')}
                 </span>
               </div>
               <p className="text-[10px] text-content-muted leading-none">
-                Industrial Log & File Behavior Profiler
+                {t('operator.modeSubtitle')}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Right switch button */}
+        {/* Right switch button and language selector */}
         <div className="flex items-center gap-2">
+          <LanguageSelectDropdown compact />
           <button
             type="button"
             onClick={handleOpenStudio}
             className="px-3 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs group"
-            title="Switch to full schema designer & generator studio"
+            title={t('operator.switchToDevTooltip')}
           >
             <Code2 size={14} className="text-accent group-hover:rotate-12 transition-transform" />
-            <span className="hidden sm:inline">Switch to Developer Studio</span>
-            <span className="sm:hidden">Dev Studio</span>
+            <span className="hidden sm:inline">{t('operator.switchToDev')}</span>
+            <span className="sm:hidden">{t('operator.devStudio')}</span>
             <ArrowRight size={13} className="text-content-muted" />
           </button>
         </div>
@@ -276,19 +279,19 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 {directoryHandle ? (
                   <>
                     <FolderCheck className="text-emerald-400" size={20} />
-                    <span>Monitored Folder: <span className="text-accent">{folderName}</span></span>
+                    <span>{t('operator.monitoredFolder')}: <span className="text-accent">{folderName}</span></span>
                   </>
                 ) : (
                   <>
                     <FolderSearch className="text-accent" size={20} />
-                    <span>Target Folder Selection</span>
+                    <span>{t('operator.targetFolderSelection')}</span>
                   </>
                 )}
               </h1>
               <p className="text-xs text-content-muted">
                 {directoryHandle
-                  ? (folderPath ? `Path: ${folderPath}` : 'Directory watcher active. Reading real-time log characteristics.')
-                  : 'Select any production directory, PLC log repository, or local folder to inspect.'}
+                  ? (folderPath ? `${t('operator.path')}: ${folderPath}` : t('operator.watcherActiveSubtitle'))
+                  : t('operator.selectFolderPrompt')}
               </p>
             </div>
 
@@ -303,7 +306,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                     className="px-3.5 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <RefreshCw size={13} className={isScanning ? 'animate-spin text-accent' : ''} />
-                    <span>{isScanning ? 'Scanning...' : 'Rescan Folder'}</span>
+                    <span>{isScanning ? t('operator.scanning') : t('operator.rescanFolder')}</span>
                   </button>
                   <button
                     type="button"
@@ -311,7 +314,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                     className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/80 border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <FolderSearch size={13} />
-                    <span>Change Folder</span>
+                    <span>{t('operator.changeFolder')}</span>
                   </button>
                 </>
               ) : (
@@ -322,7 +325,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                   className="px-5 py-3 rounded-xl bg-accent hover:bg-accent-hover text-white text-sm font-bold flex items-center gap-2 transition cursor-pointer shadow-md shadow-accent/20"
                 >
                   <FolderSearch size={16} />
-                  <span>{isScanning ? 'Scanning Directory...' : 'Select Folder to Monitor'}</span>
+                  <span>{isScanning ? t('operator.scanningDirectory') : t('operator.selectFolderToMonitor')}</span>
                 </button>
               )}
             </div>
@@ -336,9 +339,9 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
-                <span className="font-mono text-emerald-400 font-medium">Real-time Watcher Active</span>
+                <span className="font-mono text-emerald-400 font-medium">{t('operator.realtimeWatcherActive')}</span>
                 <span className="text-content-muted/60">·</span>
-                <span>{discoveredFiles.length} files detected</span>
+                <span>{discoveredFiles.length} {t('operator.filesDetected')}</span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -349,7 +352,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                     onChange={(e) => setIsAutoWatch(e.target.checked)}
                     className="rounded text-accent focus:ring-0"
                   />
-                  <span>Auto-refresh every 4s</span>
+                  <span>{t('operator.autoRefresh4s')}</span>
                 </label>
               </div>
             </div>
@@ -364,27 +367,27 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
               {/* Card 1: Files & Volume */}
               <div className="p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-content-muted">
-                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Files & Volume</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono">{t('operator.filesVolume')}</span>
                   <FileSpreadsheet size={15} className="text-accent" />
                 </div>
                 <div>
                   <div className="text-xl font-bold text-content font-mono">
-                    {analysis.metrics.totalFiles} <span className="text-xs font-normal text-content-muted">files</span>
+                    {analysis.metrics.totalFiles} <span className="text-xs font-normal text-content-muted">{t('operator.filesDetected')}</span>
                   </div>
                   <div className="text-xs text-content-muted mt-0.5">
-                    {formatFileSize(analysis.metrics.totalSizeBytes)} total
+                    {formatFileSize(analysis.metrics.totalSizeBytes)}
                   </div>
                 </div>
                 <div className="pt-1.5 border-t border-border-subtle/60 flex items-center gap-1 text-[11px] text-content-muted font-mono">
                   <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-                  <span>Cadence: {analysis.metrics.temporalCadence.replace(/_/g, ' ')}</span>
+                  <span>{t('operator.cadence')}: {analysis.metrics.temporalCadence.replace(/_/g, ' ')}</span>
                 </div>
               </div>
 
               {/* Card 2: Format & Delimiter */}
               <div className="p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-content-muted">
-                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Format & Delimiter</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono">{t('operator.formatDelimiter')}</span>
                   <FileText size={15} className="text-indigo-400" />
                 </div>
                 <div>
@@ -392,19 +395,19 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                     {analysis.forensics.dominantExtension}
                   </div>
                   <div className="text-xs text-content-muted mt-0.5">
-                    Delimiter: <span className="text-accent font-semibold">{analysis.forensics.delimiterName || 'N/A'}</span>
+                    {t('operator.delimiter')}: <span className="text-accent font-semibold">{analysis.forensics.delimiterName || 'N/A'}</span>
                   </div>
                 </div>
                 <div className="pt-1.5 border-t border-border-subtle/60 flex items-center gap-1 text-[11px] text-content-muted font-mono">
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                  <span>Newline: {analysis.forensics.newlineType}</span>
+                  <span>{t('operator.newline')}: {analysis.forensics.newlineType}</span>
                 </div>
               </div>
 
               {/* Card 3: Encoding & Language */}
               <div className="p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-content-muted">
-                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Encoding & Script</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono">{t('operator.encodingScript')}</span>
                   <Languages size={15} className="text-amber-400" />
                 </div>
                 <div>
@@ -418,7 +421,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 </div>
                 <div className="pt-1.5 border-t border-border-subtle/60 flex items-center gap-1 text-[11px] text-content-muted font-mono">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  <span>Confidence: {analysis.forensics.encodingConfidence}%</span>
+                  <span>{t('operator.confidence')}: {analysis.forensics.encodingConfidence}%</span>
                 </div>
               </div>
 
@@ -431,7 +434,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                     : 'bg-secondary border-border-subtle text-content'
               }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono text-content-muted">Lock Status</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono text-content-muted">{t('operator.lockStatus')}</span>
                   {analysis.forensics.fileLockStatus === 'no_lock_detected' ? (
                     <ShieldCheck size={16} className="text-emerald-400" />
                   ) : (
@@ -441,10 +444,10 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 <div>
                   <div className="text-sm font-bold truncate">
                     {analysis.forensics.fileLockStatus === 'no_lock_detected'
-                      ? 'Clean (No Locks)'
+                      ? t('operator.cleanNoLocks')
                       : analysis.forensics.fileLockStatus === 'active_lock_suspected'
-                        ? 'Active Stream Append'
-                        : 'File In Use Conflict'}
+                        ? t('operator.activeStreamAppend')
+                        : t('operator.fileInUseConflict')}
                   </div>
                   <div className="text-[11px] text-content-muted line-clamp-1 mt-0.5">
                     {analysis.forensics.lockDetails || 'Files accessible'}
@@ -452,9 +455,9 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 </div>
                 <div className="pt-1.5 border-t border-border-subtle/60 text-[11px] font-mono">
                   {analysis.forensics.hasContinuousAppend ? (
-                    <span className="text-amber-400">Stream append mode</span>
+                    <span className="text-amber-400">{t('operator.streamAppendMode')}</span>
                   ) : (
-                    <span className="text-emerald-400">Static / batch ready</span>
+                    <span className="text-emerald-400">{t('operator.staticBatchReady')}</span>
                   )}
                 </div>
               </div>
@@ -465,10 +468,10 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-content flex items-center gap-1.5">
                   <Sparkles size={13} className="text-accent" />
-                  <span>Detected Schema Fields ({analysis.extractedColumns.length} columns)</span>
+                  <span>{t('operator.detectedSchemaFields')} ({analysis.extractedColumns.length} {t('operator.columnsCount')})</span>
                 </span>
                 <span className="text-[11px] text-content-muted font-mono">
-                  Target: {analysis.suggestedTemplate.tableName}
+                  {t('operator.target')}: {analysis.suggestedTemplate.tableName}
                 </span>
               </div>
 
@@ -498,9 +501,9 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-content-muted flex items-center gap-1.5 font-mono">
                     <FileText size={13} />
-                    <span>Raw Sample Preview ({analysis.sampleFileUsed || 'Log file'})</span>
+                    <span>{t('operator.rawSamplePreview')} ({analysis.sampleFileUsed || 'Log file'})</span>
                   </span>
-                  <span className="text-[10px] font-mono text-content-muted">First 1,000 characters</span>
+                  <span className="text-[10px] font-mono text-content-muted">{t('operator.first1000Chars')}</span>
                 </div>
                 <pre className="p-3 rounded-lg bg-primary border border-border-subtle text-[11px] font-mono text-content-muted overflow-x-auto max-h-36 whitespace-pre-wrap leading-relaxed">
                   {analysis.sampleSnippet}
@@ -513,10 +516,10 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
               <div className="space-y-1 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <h3 className="font-bold text-base text-content">Profile Bundle Ready for Developer</h3>
+                  <h3 className="font-bold text-base text-content">{t('operator.profileBundleReady')}</h3>
                 </div>
                 <p className="text-xs text-content-muted max-w-lg">
-                  Contains all detected columns, file lock heuristics, encodings, and simulation configs. When DEV imports this file, their Vampio workspace will replicate this folder exactly.
+                  {t('operator.profileBundleDesc')}
                 </p>
               </div>
 
@@ -528,7 +531,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                   title="Copy a clean text summary to paste into chat or email"
                 >
                   {copiedSummary ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                  <span>{copiedSummary ? 'Copied!' : 'Copy Summary'}</span>
+                  <span>{copiedSummary ? t('operator.copied') : t('operator.copySummary')}</span>
                 </button>
 
                 <button
@@ -537,7 +540,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                   className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-md shadow-emerald-500/20"
                 >
                   <Download size={15} />
-                  <span>Export Profile Bundle (.vampio.profile.json)</span>
+                  <span>{t('operator.exportProfileBundle')}</span>
                 </button>
               </div>
             </div>
