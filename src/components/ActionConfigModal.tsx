@@ -16,7 +16,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Zap,
-  Clock
+  Clock,
+  Filter,
+  Sparkles
 } from 'lucide-react';
 
 interface Props {
@@ -212,6 +214,37 @@ export const ActionConfigModal: React.FC<Props> = ({
           {/* TAB 1: ENDPOINT & CADENCE */}
           {activeTab === 'endpoint' && (
             <div className="space-y-4">
+              {/* Master Enable/Disable Switch */}
+              <div className="p-3 rounded-xl bg-secondary/60 border border-border-subtle flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-3 h-3 rounded-full ${localConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-content-muted/40'}`} />
+                  <div>
+                    <h4 className="text-xs font-bold text-content flex items-center gap-2">
+                      <span>Action Egress Pipeline</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                        localConfig.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-primary text-content-muted'
+                      }`}>
+                        {localConfig.enabled ? 'ENABLED' : 'DISABLED (OFF BY DEFAULT)'}
+                      </span>
+                    </h4>
+                    <p className="text-[10px] text-content-muted">
+                      Action is off by default to protect file synthesis performance with zero network calls.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLocalConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    localConfig.enabled
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                      : 'bg-primary border border-border-subtle text-content-muted hover:text-content'
+                  }`}
+                >
+                  <span>{localConfig.enabled ? 'Enabled (ON)' : 'Disabled (OFF)'}</span>
+                </button>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-content uppercase tracking-wider block">
                   Target Endpoint URL
@@ -242,7 +275,7 @@ export const ActionConfigModal: React.FC<Props> = ({
               {/* Cadence Selection */}
               <div className="space-y-2 pt-2 border-t border-border-subtle/60">
                 <label className="text-[11px] font-bold text-content uppercase tracking-wider block">
-                  Dispatch Cadence
+                  Trigger Cadence
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -255,7 +288,7 @@ export const ActionConfigModal: React.FC<Props> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs">Per Entry (Streaming)</span>
+                      <span className="font-bold text-xs">Every Row Complete</span>
                       <Zap size={14} />
                     </div>
                     <span className="text-[10px] text-content-muted">
@@ -273,7 +306,7 @@ export const ActionConfigModal: React.FC<Props> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs">Batch (Chunked)</span>
+                      <span className="font-bold text-xs">Every X Rows (Batch Chunk)</span>
                       <Clock size={14} />
                     </div>
                     <span className="text-[10px] text-content-muted">
@@ -285,11 +318,11 @@ export const ActionConfigModal: React.FC<Props> = ({
 
               {/* Batch Settings */}
               {localConfig.mode === 'batch' && (
-                <div className="p-3 bg-secondary/40 rounded-xl border border-border-subtle space-y-3">
+                <div className="p-3 bg-secondary/40 rounded-xl border border-border-subtle space-y-2.5">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-content-muted uppercase tracking-wider block">
-                        Batch Size (Rows per Request)
+                        Batch Size (X rows per request)
                       </label>
                       <input
                         type="number"
@@ -313,6 +346,26 @@ export const ActionConfigModal: React.FC<Props> = ({
                       />
                     </div>
                   </div>
+
+                  {/* Quick Chunk Size Chips */}
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <span className="text-content-muted">Quick chunk presets:</span>
+                    {[10, 50, 100, 500].map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setLocalConfig({ ...localConfig, batchSize: size })}
+                        className={`px-2 py-0.5 rounded border transition cursor-pointer ${
+                          localConfig.batchSize === size
+                            ? 'bg-accent/20 border-accent text-accent font-bold'
+                            : 'bg-primary border-border-subtle text-content-muted hover:text-content'
+                        }`}
+                      >
+                        {size} rows
+                      </button>
+                    ))}
+                  </div>
+
                   <p className="text-[10px] text-content-muted">
                     {localConfig.batchPayloadKey.trim()
                       ? `Payload sent as { "${localConfig.batchPayloadKey.trim()}": [...rows], meta: {...} }`
@@ -320,6 +373,153 @@ export const ActionConfigModal: React.FC<Props> = ({
                   </p>
                 </div>
               )}
+
+              {/* Conditional Trigger Filter Rules (e.g. only when column error = 1) */}
+              <div className="p-3 bg-secondary/40 rounded-xl border border-border-subtle space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={14} className="text-accent" />
+                    <div>
+                      <h4 className="text-xs font-bold text-content">Conditional Trigger Filter</h4>
+                      <p className="text-[10px] text-content-muted">Only dispatch rows matching a specific column value (e.g. error = 1)</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLocalConfig((prev) => ({
+                      ...prev,
+                      triggerCondition: {
+                        ...prev.triggerCondition,
+                        enabled: !prev.triggerCondition?.enabled,
+                        column: prev.triggerCondition?.column || (sampleColumns[0]?.name || 'error'),
+                        operator: prev.triggerCondition?.operator || 'equals',
+                        value: prev.triggerCondition?.value || '1'
+                      }
+                    }))}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-bold border transition cursor-pointer ${
+                      localConfig.triggerCondition?.enabled
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                        : 'bg-primary border border-border-subtle text-content-muted hover:text-content'
+                    }`}
+                  >
+                    {localConfig.triggerCondition?.enabled ? 'FILTER ACTIVE' : 'ENABLE FILTER'}
+                  </button>
+                </div>
+
+                {localConfig.triggerCondition?.enabled && (
+                  <div className="p-2.5 rounded-lg bg-primary border border-accent/30 space-y-2">
+                    <div className="grid grid-cols-12 gap-2 items-center">
+                      <div className="col-span-5 space-y-1">
+                        <label className="text-[9px] uppercase font-bold text-content-muted block">Column</label>
+                        <select
+                          value={localConfig.triggerCondition.column}
+                          onChange={(e) => setLocalConfig((prev) => ({
+                            ...prev,
+                            triggerCondition: { ...prev.triggerCondition, column: e.target.value }
+                          }))}
+                          className="w-full h-8 px-2 bg-secondary rounded-lg border border-border-subtle font-mono text-xs text-content focus:outline-none focus:border-accent"
+                        >
+                          {sampleColumns.length > 0 ? (
+                            sampleColumns.map((c) => (
+                              <option key={c.id || c.name} value={c.name}>
+                                {c.name} ({c.type})
+                              </option>
+                            ))
+                          ) : (
+                            <option value="error">error</option>
+                          )}
+                        </select>
+                      </div>
+
+                      <div className="col-span-3 space-y-1">
+                        <label className="text-[9px] uppercase font-bold text-content-muted block">Condition</label>
+                        <select
+                          value={localConfig.triggerCondition.operator}
+                          onChange={(e) => setLocalConfig((prev) => ({
+                            ...prev,
+                            triggerCondition: { ...prev.triggerCondition, operator: e.target.value as any }
+                          }))}
+                          className="w-full h-8 px-2 bg-secondary rounded-lg border border-border-subtle font-mono text-xs text-accent font-bold focus:outline-none"
+                        >
+                          <option value="equals">= (Equals)</option>
+                          <option value="not_equals">!= (Not Equals)</option>
+                          <option value="greater_than">&gt; (Greater Than)</option>
+                          <option value="less_than">&lt; (Less Than)</option>
+                          <option value="contains">contains</option>
+                        </select>
+                      </div>
+
+                      <div className="col-span-4 space-y-1">
+                        <label className="text-[9px] uppercase font-bold text-content-muted block">Target Value</label>
+                        <input
+                          type="text"
+                          placeholder='e.g. 1, "active", true'
+                          value={localConfig.triggerCondition.value}
+                          onChange={(e) => setLocalConfig((prev) => ({
+                            ...prev,
+                            triggerCondition: { ...prev.triggerCondition, value: e.target.value }
+                          }))}
+                          className="w-full h-8 px-2.5 bg-secondary rounded-lg border border-border-subtle font-mono text-xs text-content focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-border-subtle/50 text-[10px]">
+                      <span className="text-content-muted">Quick presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => setLocalConfig((prev) => ({
+                          ...prev,
+                          triggerCondition: {
+                            enabled: true,
+                            column: sampleColumns.some(c => c.name === 'error') ? 'error' : (sampleColumns[0]?.name || 'error'),
+                            operator: 'equals',
+                            value: '1'
+                          }
+                        }))}
+                        className="px-2 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle font-mono text-accent transition cursor-pointer"
+                      >
+                        error = 1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLocalConfig((prev) => ({
+                          ...prev,
+                          triggerCondition: {
+                            enabled: true,
+                            column: sampleColumns.some(c => c.name === 'status') ? 'status' : (sampleColumns[0]?.name || 'status'),
+                            operator: 'equals',
+                            value: 'failed'
+                          }
+                        }))}
+                        className="px-2 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle font-mono text-accent transition cursor-pointer"
+                      >
+                        status = &quot;failed&quot;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLocalConfig((prev) => ({
+                          ...prev,
+                          triggerCondition: {
+                            enabled: true,
+                            column: sampleColumns.some(c => c.name === 'error') ? 'error' : (sampleColumns[0]?.name || 'error'),
+                            operator: 'equals',
+                            value: 'true'
+                          }
+                        }))}
+                        className="px-2 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle font-mono text-accent transition cursor-pointer"
+                      >
+                        error = true
+                      </button>
+                    </div>
+
+                    <p className="text-[10px] text-accent/90 font-mono">
+                      🎯 Example: Dispatches only records where <strong>{localConfig.triggerCondition.column || 'column'}</strong> {localConfig.triggerCondition.operator === 'equals' ? '=' : localConfig.triggerCondition.operator} <strong>&quot;{localConfig.triggerCondition.value || '1'}&quot;</strong>. Other rows are skipped.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -672,7 +872,7 @@ export const ActionConfigModal: React.FC<Props> = ({
         <div className="px-5 py-3 border-t border-border-subtle bg-secondary/50 flex items-center justify-between flex-shrink-0">
           <div className="text-[11px] text-content-muted flex items-center gap-1.5">
             <ShieldCheck size={14} className="text-emerald-400" />
-            <span>100% Client-Side Dispatch · Zero Cloud Intermediary</span>
+            <span>Direct In-Browser Dispatch · Zero Cloud Intermediary</span>
           </div>
           <div className="flex items-center gap-2">
             <button

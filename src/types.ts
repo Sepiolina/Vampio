@@ -76,6 +76,15 @@ export interface ActionHeaderItem {
   enabled: boolean;
 }
 
+export type ActionFilterOperator = 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains';
+
+export interface ActionTriggerCondition {
+  enabled: boolean;
+  column: string; // e.g. "error"
+  operator: ActionFilterOperator; // e.g. "equals"
+  value: string; // e.g. "1"
+}
+
 export interface ActionConfig {
   enabled: boolean;
   endpointUrl: string;
@@ -97,6 +106,7 @@ export interface ActionConfig {
   timeoutMs: number;
   stopOnError: boolean;
   throttleMs: number;
+  triggerCondition: ActionTriggerCondition;
 }
 
 export interface ActionDispatchLog {

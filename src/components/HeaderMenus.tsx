@@ -1527,7 +1527,7 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
               <div className="text-xs text-content-muted bg-primary p-3 rounded-lg border border-border-subtle space-y-1.5 text-left">
                 <div className="flex items-center justify-between">
                   <span>Engine Mode:</span>
-                  <span className="font-mono text-emerald-500 font-bold">100% Client-Side</span>
+                  <span className="font-mono text-emerald-500 font-bold">Local In-Memory Engine</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Data Privacy:</span>

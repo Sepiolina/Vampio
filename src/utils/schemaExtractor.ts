@@ -53,7 +53,7 @@ export interface ParsedWorkbook {
 }
 
 /**
- * 100% Client-Side Offline Universal Data File Parser.
+ * Offline In-Memory Universal Data File Parser.
  * Supports: XLSX, XLS (Excel), CSV, TSV, JSON, JSONL (NDJSON), XML, and TXT.
  * Uses SheetJS and browser native parsers in-memory with zero network requests.
  */

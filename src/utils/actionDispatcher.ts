@@ -1,11 +1,11 @@
-import { ActionConfig, ActionDispatchLog } from '../types';
+import { ActionConfig, ActionDispatchLog, ActionTriggerCondition } from '../types';
 
 export const defaultActionConfig: ActionConfig = {
-  enabled: true,
+  enabled: false, // Off by default to avoid unexpected network calls & preserve maximum performance
   endpointUrl: '',
   method: 'POST',
   protocol: 'rest_json',
-  mode: 'batch',
+  mode: 'batch', // 'per_entry' (Every row complete) or 'batch' (Every X rows complete)
   batchSize: 50,
   batchPayloadKey: 'records',
   customHeaders: [
@@ -19,7 +19,81 @@ export const defaultActionConfig: ActionConfig = {
   timeoutMs: 10000,
   stopOnError: false,
   throttleMs: 50,
+  triggerCondition: {
+    enabled: false,
+    column: '',
+    operator: 'equals',
+    value: ''
+  }
 };
+
+/**
+ * Checks if a generated row matches the configured trigger condition
+ */
+export function matchesTriggerCondition(
+  row: Record<string, unknown>,
+  condition?: ActionTriggerCondition
+): boolean {
+  if (!condition || !condition.enabled || !condition.column?.trim()) {
+    return true; // No conditional filter active -> all rows match
+  }
+
+  const rawVal = row[condition.column.trim()];
+  const rowStr = rawVal === null || rawVal === undefined ? '' : String(rawVal);
+  let cleanTarget = (condition.value ?? '').trim();
+
+  // Strip surrounding quotes if entered by user (e.g. "value y" or '1')
+  if (
+    (cleanTarget.startsWith('"') && cleanTarget.endsWith('"')) ||
+    (cleanTarget.startsWith("'") && cleanTarget.endsWith("'"))
+  ) {
+    cleanTarget = cleanTarget.slice(1, -1).trim();
+  }
+
+  const rowLower = rowStr.toLowerCase();
+  const targetLower = cleanTarget.toLowerCase();
+
+  switch (condition.operator) {
+    case 'equals':
+      if (rowLower === targetLower) return true;
+      // Handle boolean vs numeric (e.g. error = 1 when column is boolean true)
+      if ((targetLower === '1' || targetLower === 'true') && (rowLower === '1' || rowLower === 'true')) return true;
+      if ((targetLower === '0' || targetLower === 'false') && (rowLower === '0' || rowLower === 'false')) return true;
+      return false;
+    case 'not_equals':
+      if (rowLower === targetLower) return false;
+      if ((targetLower === '1' || targetLower === 'true') && (rowLower === '1' || rowLower === 'true')) return false;
+      if ((targetLower === '0' || targetLower === 'false') && (rowLower === '0' || rowLower === 'false')) return false;
+      return true;
+    case 'greater_than': {
+      const numRow = Number(rawVal);
+      const numTarget = Number(cleanTarget);
+      return !isNaN(numRow) && !isNaN(numTarget) && numRow > numTarget;
+    }
+    case 'less_than': {
+      const numRow = Number(rawVal);
+      const numTarget = Number(cleanTarget);
+      return !isNaN(numRow) && !isNaN(numTarget) && numRow < numTarget;
+    }
+    case 'contains':
+      return rowLower.includes(targetLower);
+    default:
+      return true;
+  }
+}
+
+/**
+ * Filters rows based on trigger condition if enabled
+ */
+export function filterRowsForAction(
+  rows: Record<string, unknown>[],
+  condition?: ActionTriggerCondition
+): Record<string, unknown>[] {
+  if (!condition || !condition.enabled || !condition.column?.trim()) {
+    return rows;
+  }
+  return rows.filter((r) => matchesTriggerCondition(r, condition));
+}
 
 /**
  * Builds HTTP Headers object from ActionConfig

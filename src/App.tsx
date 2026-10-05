@@ -50,7 +50,7 @@ import { FolderMonitorModal } from './components/FolderMonitorModal';
 import { RestApiConfigModal } from './components/RestApiConfigModal';
 import { ActionConfigModal } from './components/ActionConfigModal';
 import { ActionLogModal } from './components/ActionLogModal';
-import { dispatchActionRequest, defaultActionConfig } from './utils/actionDispatcher';
+import { dispatchActionRequest, defaultActionConfig, matchesTriggerCondition } from './utils/actionDispatcher';
 import { WorkspaceBundleImportModal } from './components/WorkspaceBundleImportModal';
 import { OperatorMonitorView } from './components/OperatorMonitorView';
 import { RoleOnboardingModal } from './components/RoleOnboardingModal';
@@ -942,10 +942,16 @@ export default function App() {
       return;
     }
 
-    if (outputDestination === 'action' && !actionConfig.endpointUrl.trim()) {
-      setStatusMessage('Please enter an Endpoint URL in Action / API settings before dispatching.');
-      setIsActionConfigModalOpen(true);
-      return;
+    if (outputDestination === 'action') {
+      if (!actionConfig.enabled) {
+        setStatusMessage('Action Egress is OFF by default. Please toggle "Action Egress" ON in the sidebar or settings to dispatch.');
+        return;
+      }
+      if (!actionConfig.endpointUrl.trim()) {
+        setStatusMessage('Please enter an Endpoint URL in Action / API settings before dispatching.');
+        setIsActionConfigModalOpen(true);
+        return;
+      }
     }
 
     let activeDir = directoryHandle;
@@ -1023,16 +1029,47 @@ export default function App() {
 
         // Output Branch 0: Action Destination (REST API / Webhook Egress)
         if (outputDestination === 'action') {
-          setStatusMessage(`Synthesized ${allRows.length.toLocaleString()} records. Starting dispatch to ${actionConfig.endpointUrl}...`);
+          if (!actionConfig.enabled) {
+            setStatusMessage('Action Egress is OFF by default. Enable it to dispatch synthesized records.');
+            setStats((prev) => ({ ...prev, isGenerating: false }));
+            setIsGeneratingBatch(false);
+            return;
+          }
+
+          // Apply trigger conditional filtering (e.g. only when column error = 1)
+          const candidateRows = actionConfig.triggerCondition?.enabled && actionConfig.triggerCondition.column
+            ? allRows.filter((r) => matchesTriggerCondition(r, actionConfig.triggerCondition))
+            : allRows;
+
+          if (candidateRows.length === 0) {
+            setStatusMessage(
+              `Synthesized ${allRows.length.toLocaleString()} records, but 0 matched trigger condition (${actionConfig.triggerCondition?.column} ${actionConfig.triggerCondition?.operator} "${actionConfig.triggerCondition?.value}"). No Action requests sent.`
+            );
+            setStats({
+              rowsGenerated: allRows.length,
+              rowsPerSec,
+              elapsedSeconds: parseFloat(elapsedSec.toFixed(3)),
+              fileSizeBytes: allRows.length * 128,
+              isGenerating: false,
+            });
+            setIsGeneratingBatch(false);
+            return;
+          }
+
+          const filterNotice = candidateRows.length !== allRows.length
+            ? ` (${candidateRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} matched trigger filter)`
+            : '';
+
+          setStatusMessage(`Synthesized ${allRows.length.toLocaleString()} records${filterNotice}. Starting dispatch to ${actionConfig.endpointUrl}...`);
 
           const batchSize = actionConfig.mode === 'per_entry' ? 1 : Math.max(1, actionConfig.batchSize || 50);
-          const totalBatches = Math.ceil(allRows.length / batchSize);
+          const totalBatches = Math.ceil(candidateRows.length / batchSize);
           let dispatchedCount = 0;
           let failedCount = 0;
           let successCount = 0;
 
           for (let b = 0; b < totalBatches; b++) {
-            const chunk = allRows.slice(b * batchSize, (b + 1) * batchSize);
+            const chunk = candidateRows.slice(b * batchSize, (b + 1) * batchSize);
             setBatchProgress(Math.floor(((b + 1) / totalBatches) * 100));
             setStatusMessage(`Dispatching Action batch ${b + 1}/${totalBatches} (${chunk.length} records) to ${actionConfig.endpointUrl}...`);
 
@@ -1293,10 +1330,16 @@ export default function App() {
       return;
     }
 
-    if (outputDestination === 'action' && !actionConfig.endpointUrl.trim()) {
-      setStatusMessage('Please enter an Endpoint URL in Action / API settings before streaming.');
-      setIsActionConfigModalOpen(true);
-      return;
+    if (outputDestination === 'action') {
+      if (!actionConfig.enabled) {
+        setStatusMessage('Action Egress is OFF by default. Please toggle "Action Egress" ON in the sidebar before streaming.');
+        return;
+      }
+      if (!actionConfig.endpointUrl.trim()) {
+        setStatusMessage('Please enter an Endpoint URL in Action / API settings before streaming.');
+        setIsActionConfigModalOpen(true);
+        return;
+      }
     }
 
     let activeDir = directoryHandle;
@@ -1378,19 +1421,26 @@ export default function App() {
       continuousBufferRef.current.push(newRow);
 
       if (outputDestination === 'action') {
-        if (actionConfig.mode === 'per_entry') {
-          dispatchActionRequest(actionConfig, [newRow], rowIndex, addActionLog).catch((err) => {
-            console.error('Action streaming dispatch error:', err);
-          });
-        } else {
-          actionContinuousBufferRef.current.push(newRow);
-          if (actionContinuousBufferRef.current.length >= (actionConfig.batchSize || 50)) {
-            const chunk = [...actionContinuousBufferRef.current];
-            actionContinuousBufferRef.current = [];
-            const bIdx = actionBatchIndexRef.current++;
-            dispatchActionRequest(actionConfig, chunk, bIdx, addActionLog).catch((err) => {
-              console.error('Action streaming batch dispatch error:', err);
+        if (!actionConfig.enabled) return;
+
+        // Check conditional trigger filter (e.g. only when column error = 1)
+        const passesCondition = matchesTriggerCondition(newRow, actionConfig.triggerCondition);
+        if (passesCondition) {
+          if (actionConfig.mode === 'per_entry') {
+            dispatchActionRequest(actionConfig, [newRow], rowIndex, addActionLog).catch((err) => {
+              console.error('Action streaming dispatch error:', err);
             });
+          } else {
+            actionContinuousBufferRef.current.push(newRow);
+            const targetBatchSize = Math.max(1, actionConfig.batchSize || 50);
+            if (actionContinuousBufferRef.current.length >= targetBatchSize) {
+              const chunk = [...actionContinuousBufferRef.current];
+              actionContinuousBufferRef.current = [];
+              const bIdx = actionBatchIndexRef.current++;
+              dispatchActionRequest(actionConfig, chunk, bIdx, addActionLog).catch((err) => {
+                console.error('Action streaming batch dispatch error:', err);
+              });
+            }
           }
         }
       } else if (activeMultiWriter) {
@@ -1932,9 +1982,6 @@ export default function App() {
               Instant offline extraction of field types, categorical enums, regex patterns, and null distributions.
             </p>
             <div className="mt-3 flex items-center gap-2">
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                100% Client-Side
-              </span>
               <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30">
                 Zero Cloud Uploads
               </span>
