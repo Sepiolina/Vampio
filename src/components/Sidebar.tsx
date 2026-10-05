@@ -6,8 +6,12 @@ import {
   OutputStrategy, 
   MultiFileConfig, 
   ImportedFileContext,
-  AppendConfig 
+  AppendConfig,
+  ActionConfig,
+  ActionStats,
+  ColumnSpec
 } from '../types';
+import { testActionEndpoint } from '../utils/actionDispatcher';
 import { formatBytes } from '../utils/export';
 import { AnimatedTabs } from './AnimatedTabs';
 import { useI18n } from '../i18n';
@@ -40,7 +44,10 @@ import {
   FilePlus,
   HelpCircle,
   Sparkles,
-  Info
+  Info,
+  Key,
+  Send,
+  AlertTriangle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -50,6 +57,12 @@ interface SidebarProps {
   setMode: (mode: 'Batch' | 'Continuous') => void;
   outputDestination: OutputDestination;
   setOutputDestination: (dest: OutputDestination) => void;
+  actionConfig: ActionConfig;
+  setActionConfig: React.Dispatch<React.SetStateAction<ActionConfig>>;
+  onOpenActionConfig: () => void;
+  onOpenActionLogs: () => void;
+  actionStats: ActionStats;
+  sampleColumns: ColumnSpec[];
   outputStrategy: OutputStrategy;
   setOutputStrategy: (strat: OutputStrategy) => void;
   multiFileConfig: MultiFileConfig;
@@ -92,6 +105,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setMode,
   outputDestination,
   setOutputDestination,
+  actionConfig,
+  setActionConfig,
+  onOpenActionConfig,
+  onOpenActionLogs,
+  actionStats,
+  sampleColumns,
   outputStrategy,
   setOutputStrategy,
   multiFileConfig,
@@ -135,6 +154,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [manualTargetFormat, setManualTargetFormat] = React.useState<ExportFormat>('csv');
   const [manualExistingRows, setManualExistingRows] = React.useState<number>(5000);
 
+  // Action Destination Test Ping State
+  const [isPinging, setIsPinging] = React.useState(false);
+  const [pingResult, setPingResult] = React.useState<{
+    success: boolean;
+    message: string;
+    durationMs?: number;
+    statusCode?: number;
+  } | null>(null);
+
+  const handleTestPing = async () => {
+    if (!actionConfig.endpointUrl.trim()) {
+      setPingResult({
+        success: false,
+        message: 'Please provide an Endpoint URL first'
+      });
+      return;
+    }
+    setIsPinging(true);
+    setPingResult(null);
+
+    const mockRow: Record<string, unknown> = {};
+    if (sampleColumns && sampleColumns.length > 0) {
+      sampleColumns.forEach((c) => {
+        if (c.type === 'Int') mockRow[c.name] = 1042;
+        else if (c.type === 'Float') mockRow[c.name] = 99.5;
+        else if (c.type === 'Boolean') mockRow[c.name] = true;
+        else if (c.type === 'UUID') mockRow[c.name] = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+        else if (c.type === 'DateTime') mockRow[c.name] = new Date().toISOString();
+        else mockRow[c.name] = `sample_${c.name.toLowerCase()}`;
+      });
+    } else {
+      mockRow['id'] = 1;
+      mockRow['name'] = 'Test Ping';
+      mockRow['status'] = 'active';
+    }
+
+    const res = await testActionEndpoint(actionConfig, mockRow);
+    setIsPinging(false);
+    setPingResult({
+      success: res.success,
+      message: res.message,
+      durationMs: res.durationMs,
+      statusCode: res.statusCode
+    });
+  };
+
   const handleAppendFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       onAttachAppendFile(e.target.files[0]);
@@ -153,19 +218,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   if (!isOpen) {
     return (
-      <aside className="w-12 border-l border-border-subtle bg-secondary flex flex-col items-center py-4 gap-4 flex-shrink-0 transition-all z-20">
+      <aside className="w-14 border-l border-border-subtle bg-secondary flex flex-col items-center py-3 gap-3 flex-shrink-0 transition-all z-20 select-none">
+        {/* Toggle / Expand Sidebar Button */}
         <button
           type="button"
           onClick={onToggle}
-          className="p-2 rounded-lg bg-primary hover:bg-tertiary border border-border-subtle text-content-muted hover:text-accent transition shadow-xs"
-          title={t('sidebar.title')}
+          className="p-2 rounded-xl bg-primary hover:bg-tertiary border border-border-subtle text-content-muted hover:text-accent transition shadow-xs cursor-pointer group"
+          title="Expand Generation Deck (Sidebar)"
         >
-          <Sliders size={16} />
+          <Sliders size={16} className="group-hover:rotate-45 transition-transform duration-200" />
         </button>
 
+        <div className="w-8 h-px bg-border-subtle/80 my-0.5" />
+
+        {/* Quick Destination Selectors */}
+        <div className="flex flex-col items-center gap-1.5 w-full px-1.5">
+          {/* Download Quick Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setOutputDestination('download');
+              onToggle();
+            }}
+            className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition cursor-pointer group ${
+              outputDestination === 'download'
+                ? 'bg-accent/15 border border-accent/40 text-accent shadow-xs'
+                : 'bg-primary/60 hover:bg-primary border border-border-subtle/70 text-content-muted hover:text-content'
+            }`}
+            title="Download Destination: Save to browser files"
+          >
+            <Download size={14} />
+            <span className="text-[8px] font-mono font-bold mt-0.5 opacity-80 leading-none">DL</span>
+          </button>
+
+          {/* Folder Quick Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setOutputDestination('folder');
+              if (!selectedFolderName) {
+                onSelectFolder();
+              }
+              onToggle();
+            }}
+            className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition cursor-pointer group ${
+              outputDestination === 'folder'
+                ? 'bg-accent/15 border border-accent/40 text-accent shadow-xs'
+                : 'bg-primary/60 hover:bg-primary border border-border-subtle/70 text-content-muted hover:text-content'
+            }`}
+            title={selectedFolderName ? `Local Folder: /${selectedFolderName}` : 'Choose Local Folder'}
+          >
+            <FolderCheck size={14} />
+            <span className="text-[8px] font-mono font-bold mt-0.5 opacity-80 leading-none">DIR</span>
+          </button>
+
+          {/* Action / API Quick Launcher Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setOutputDestination('action');
+              onToggle();
+            }}
+            className={`w-10 h-11 rounded-xl flex flex-col items-center justify-center transition cursor-pointer relative group ${
+              outputDestination === 'action'
+                ? 'bg-accent text-white shadow-md shadow-accent/25 ring-2 ring-accent/30'
+                : 'bg-accent/15 hover:bg-accent/25 border border-accent/40 text-accent shadow-xs'
+            }`}
+            title="Action / API Egress: Stream or batch to REST API & Webhooks"
+          >
+            <Zap size={15} className={`transition-transform group-hover:scale-110 ${outputDestination === 'action' ? 'fill-current animate-pulse' : ''}`} />
+            <span className="text-[8px] font-mono font-black mt-0.5 tracking-tighter leading-none">
+              ACT
+            </span>
+            {actionStats.totalDispatched > 0 && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-secondary animate-pulse" />
+            )}
+          </button>
+        </div>
+
+        <div className="w-8 h-px bg-border-subtle/80 my-0.5" />
+
         {/* Vertical mode badge */}
-        <div className="flex flex-col items-center gap-2 mt-2">
-          <span className="text-[10px] font-mono font-bold text-accent uppercase tracking-wider -rotate-90 origin-center py-3">
+        <div className="flex flex-col items-center gap-1.5 my-1">
+          <span className="text-[9px] font-mono font-bold text-accent uppercase tracking-wider -rotate-90 origin-center py-2">
             {mode}
           </span>
           {isStreaming && (
@@ -179,7 +314,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={onStop}
-              className="p-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-md transition"
+              className="p-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white shadow-md transition cursor-pointer"
               title={t('sidebar.stopContinuousStream')}
             >
               <Square size={14} fill="currentColor" />
@@ -189,11 +324,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               disabled={isGeneratingBatch || totalColumns === 0}
               onClick={onStart}
-              className="p-2.5 rounded-lg bg-accent hover:bg-accent-hover text-white shadow-md disabled:opacity-40 transition"
-              title={t('sidebar.generateBatch')}
+              className={`p-2.5 rounded-xl text-white shadow-md disabled:opacity-40 transition cursor-pointer ${
+                outputDestination === 'action'
+                  ? 'bg-accent hover:bg-accent-hover ring-2 ring-accent/30'
+                  : 'bg-accent hover:bg-accent-hover'
+              }`}
+              title={
+                outputDestination === 'action'
+                  ? `Dispatch ${count.toLocaleString()} rows to Action API`
+                  : t('sidebar.generateBatch')
+              }
             >
               {isGeneratingBatch ? (
                 <RefreshCw size={14} className="animate-spin" />
+              ) : outputDestination === 'action' ? (
+                <Send size={14} className="fill-current" />
               ) : (
                 <Zap size={14} className="fill-current" />
               )}
@@ -252,13 +397,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <label className="text-[11px] font-bold text-content uppercase tracking-wider flex items-center justify-between">
             <span>{t('sidebar.destination')}</span>
             <span className="text-[10px] text-content-muted lowercase font-normal">
-              {outputDestination === 'folder' ? t('sidebar.directDiskWrite') : t('sidebar.browserDownload')}
+              {outputDestination === 'folder' 
+                ? t('sidebar.directDiskWrite') 
+                : outputDestination === 'action'
+                ? 'REST API / Webhook Egress'
+                : t('sidebar.browserDownload')}
             </span>
           </label>
           <AnimatedTabs
             tabs={[
               { id: 'download', label: t('sidebar.download'), icon: <Download size={11} /> },
-              { id: 'folder', label: t('sidebar.localFolder'), icon: <FolderCheck size={11} /> }
+              { id: 'folder', label: t('sidebar.localFolder'), icon: <FolderCheck size={11} /> },
+              { id: 'action', label: 'Action / API', icon: <Zap size={11} /> }
             ]}
             activeTab={outputDestination}
             onChange={(dest) => {
@@ -318,10 +468,197 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
             </div>
           )}
+
+          {/* Action Destination Card */}
+          {outputDestination === 'action' && (
+            <div className="p-3 rounded-xl bg-primary border border-accent/40 space-y-3 text-xs shadow-xs animate-in fade-in duration-150">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] text-content-muted uppercase font-bold flex items-center gap-1.5">
+                  <Zap size={12} className="text-accent" />
+                  REST API &amp; Webhook Egress
+                </span>
+                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                  actionConfig.mode === 'per_entry' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-accent/20 text-accent'
+                }`}>
+                  {actionConfig.mode === 'per_entry' ? 'Streaming' : `Batched (${actionConfig.batchSize}/req)`}
+                </span>
+              </div>
+
+              {/* Method + URL Input */}
+              <div className="space-y-1">
+                <label className="text-[10px] text-content-muted font-medium flex items-center justify-between">
+                  <span>Target Endpoint</span>
+                  {actionConfig.authType !== 'none' && (
+                    <span className="text-[9px] text-amber-400 font-mono flex items-center gap-1">
+                      <Key size={9} />
+                      {actionConfig.authType.toUpperCase()}
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={actionConfig.method}
+                    onChange={(e) => setActionConfig((prev) => ({ ...prev, method: e.target.value as any }))}
+                    className="bg-secondary px-2 py-1.5 text-xs text-accent font-mono font-bold rounded-lg border border-border-subtle focus:outline-none cursor-pointer"
+                  >
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                  </select>
+                  <input
+                    type="url"
+                    value={actionConfig.endpointUrl}
+                    onChange={(e) => setActionConfig((prev) => ({ ...prev, endpointUrl: e.target.value }))}
+                    placeholder="https://api.example.com/v1/records"
+                    className="flex-1 px-2.5 py-1.5 bg-secondary border border-border-subtle rounded-lg text-xs font-mono text-content focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              {/* Cadence Switcher */}
+              <div className="space-y-1">
+                <span className="text-[10px] text-content-muted font-medium">Delivery Mode</span>
+                <div className="grid grid-cols-2 gap-1 bg-secondary/80 p-1 rounded-lg border border-border-subtle">
+                  <button
+                    type="button"
+                    onClick={() => setActionConfig((prev) => ({ ...prev, mode: 'batch' }))}
+                    className={`py-1 px-1.5 rounded text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                      actionConfig.mode === 'batch'
+                        ? 'bg-primary text-accent shadow-xs border border-border-subtle'
+                        : 'text-content-muted hover:text-content'
+                    }`}
+                  >
+                    <Layers size={11} />
+                    <span>Batch Chunk</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActionConfig((prev) => ({ ...prev, mode: 'per_entry' }))}
+                    className={`py-1 px-1.5 rounded text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                      actionConfig.mode === 'per_entry'
+                        ? 'bg-primary text-accent shadow-xs border border-border-subtle'
+                        : 'text-content-muted hover:text-content'
+                    }`}
+                  >
+                    <Radio size={11} />
+                    <span>Per Entry</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Batch Size & Payload Key when Batch mode */}
+              {actionConfig.mode === 'batch' && (
+                <div className="grid grid-cols-2 gap-2 p-2 rounded-lg bg-secondary/50 border border-border-subtle/60">
+                  <div>
+                    <label className="text-[9px] uppercase font-bold tracking-wider text-content-muted block mb-1">
+                      Rows / Batch
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10000}
+                      value={actionConfig.batchSize}
+                      onChange={(e) => setActionConfig((prev) => ({ ...prev, batchSize: Math.max(1, parseInt(e.target.value) || 1) }))}
+                      className="w-full px-2 py-1 bg-primary border border-border-subtle rounded text-xs font-mono font-bold text-content focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase font-bold tracking-wider text-content-muted block mb-1">
+                      Payload Key
+                    </label>
+                    <input
+                      type="text"
+                      value={actionConfig.batchPayloadKey}
+                      onChange={(e) => setActionConfig((prev) => ({ ...prev, batchPayloadKey: e.target.value }))}
+                      placeholder="(Root array)"
+                      className="w-full px-2 py-1 bg-primary border border-border-subtle rounded text-xs font-mono text-content focus:outline-none focus:border-accent"
+                      title="Wrap in { [key]: [...] } or leave empty for root array"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Actions: Auth/Headers & Test Ping */}
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={onOpenActionConfig}
+                  className="py-1.5 px-2 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-semibold text-content flex items-center justify-center gap-1.5 transition"
+                >
+                  <Key size={12} className="text-accent" />
+                  <span>Auth &amp; Headers</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestPing}
+                  disabled={isPinging || !actionConfig.endpointUrl.trim()}
+                  className="py-1.5 px-2 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-semibold text-content flex items-center justify-center gap-1.5 transition disabled:opacity-40"
+                >
+                  <Play size={12} className={isPinging ? 'animate-spin text-accent' : 'text-emerald-400'} />
+                  <span>{isPinging ? 'Pinging...' : 'Test Ping'}</span>
+                </button>
+              </div>
+
+              {/* Test Ping Result */}
+              {pingResult && (
+                <div className={`p-2 rounded-lg border text-[11px] flex items-start gap-1.5 ${
+                  pingResult.success 
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}>
+                  {pingResult.success ? <CheckCircle2 size={13} className="shrink-0 mt-0.5 text-emerald-400" /> : <AlertTriangle size={13} className="shrink-0 mt-0.5 text-rose-400" />}
+                  <div className="flex-1 truncate">
+                    <span className="font-bold">{pingResult.statusCode ? `HTTP ${pingResult.statusCode}: ` : ''}</span>
+                    <span>{pingResult.message}</span>
+                    {pingResult.durationMs !== undefined && <span className="font-mono ml-1 opacity-80">({pingResult.durationMs}ms)</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Delivery Logs & Dead Letter Queue Button */}
+              <button
+                type="button"
+                onClick={onOpenActionLogs}
+                className="w-full py-2 px-3 rounded-lg bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent font-semibold text-[11px] flex items-center justify-between transition cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Send size={12} />
+                  <span>Delivery Logs &amp; Dead Letter</span>
+                </div>
+                <div className="flex items-center gap-1 font-mono text-[10px]">
+                  {actionStats.failedRecords.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded bg-rose-500/30 text-rose-300 font-bold">
+                      {actionStats.failedRecords.length} failed
+                    </span>
+                  )}
+                  <span className="opacity-75">{actionStats.totalDispatched} sent</span>
+                </div>
+              </button>
+
+              {/* Live Metric Badges */}
+              <div className="grid grid-cols-3 gap-1 pt-0.5 text-center font-mono text-[10px]">
+                <div className="p-1.5 rounded bg-secondary/80 border border-border-subtle">
+                  <span className="text-content-muted block text-[9px] uppercase">Delivered</span>
+                  <span className="font-bold text-emerald-400">{actionStats.successCount}</span>
+                </div>
+                <div className="p-1.5 rounded bg-secondary/80 border border-border-subtle">
+                  <span className="text-content-muted block text-[9px] uppercase">Retries</span>
+                  <span className="font-bold text-amber-400">{actionStats.retryCount}</span>
+                </div>
+                <div className="p-1.5 rounded bg-secondary/80 border border-border-subtle">
+                  <span className="text-content-muted block text-[9px] uppercase">Latency</span>
+                  <span className="font-bold text-accent">{actionStats.avgLatencyMs ? `${actionStats.avgLatencyMs}ms` : '--'}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Section 2.5: Output Strategy (Single File vs Multi-File vs In-Place Append) */}
-        <div className="space-y-2 p-3 bg-primary rounded-xl border border-border-subtle">
+        {/* Section 2.5 & 3: File Strategies (Only shown for file outputs) */}
+        {outputDestination !== 'action' && (
+          <>
+            {/* Section 2.5: Output Strategy (Single File vs Multi-File vs In-Place Append) */}
+            <div className="space-y-2 p-3 bg-primary rounded-xl border border-border-subtle">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-bold text-content uppercase tracking-wider block">
               Output Strategy
@@ -954,6 +1291,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         )}
+          </>
+        )}
 
         {/* Section 4: Parameters (Count or Interval) */}
         <div className="space-y-2 p-3 bg-primary rounded-xl border border-border-subtle">
@@ -1055,7 +1394,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>{t('sidebar.generating')} {batchProgress}%...</span>
                 </>
               ) : mode === 'Batch' ? (
-                outputStrategy === 'append_existing' && importedContext ? (
+                outputDestination === 'action' ? (
+                  <>
+                    <Send size={13} className="fill-current flex-shrink-0" />
+                    <span>
+                      Dispatch {count.toLocaleString()} Records to API
+                    </span>
+                  </>
+                ) : outputStrategy === 'append_existing' && importedContext ? (
                   <>
                     <ArrowDownCircle size={14} className="text-emerald-300 flex-shrink-0" />
                     <span className="truncate">
@@ -1082,7 +1428,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ) : (
                 <>
                   <Play size={13} fill="currentColor" />
-                  <span>{t('sidebar.startStreamingLive')}</span>
+                  <span>
+                    {outputDestination === 'action' ? 'Start Live API Stream' : t('sidebar.startStreamingLive')}
+                  </span>
                 </>
               )}
             </button>

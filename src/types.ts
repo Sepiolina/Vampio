@@ -67,7 +67,61 @@ export type ThemeId =
 
 export type ExportFormat = 'csv' | 'json' | 'jsonl' | 'sql' | 'tsv' | 'xlsx' | 'xls' | 'xml' | 'txt';
 
-export type OutputDestination = 'download' | 'folder';
+export type OutputDestination = 'download' | 'folder' | 'action';
+
+export interface ActionHeaderItem {
+  id: string;
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
+export interface ActionConfig {
+  enabled: boolean;
+  endpointUrl: string;
+  method: 'POST' | 'PUT' | 'PATCH';
+  protocol: 'rest_json' | 'webhook_custom' | 'graphql';
+  mode: 'per_entry' | 'batch';
+  batchSize: number; // e.g. 50
+  batchPayloadKey: string; // e.g. 'records' or empty for root array
+  customHeaders: ActionHeaderItem[];
+  authType: 'none' | 'bearer' | 'basic' | 'api_key';
+  authToken?: string;
+  apiKeyHeader?: string;
+  apiKeyValue?: string;
+  basicUser?: string;
+  basicPass?: string;
+  retryOnError: boolean;
+  maxRetries: number;
+  retryDelayMs: number;
+  timeoutMs: number;
+  stopOnError: boolean;
+  throttleMs: number;
+}
+
+export interface ActionDispatchLog {
+  id: string;
+  timestamp: string;
+  batchIndex: number;
+  rowCount: number;
+  status: 'success' | 'error' | 'retrying';
+  statusCode?: number;
+  durationMs: number;
+  errorMessage?: string;
+  payloadPreview: string;
+  responsePreview?: string;
+  retryAttempt?: number;
+  records?: Record<string, unknown>[];
+}
+
+export interface ActionStats {
+  totalDispatched: number;
+  successCount: number;
+  errorCount: number;
+  retryCount: number;
+  avgLatencyMs: number;
+  failedRecords: Record<string, unknown>[];
+}
 
 export type OutputStrategy = 'single' | 'multi_file' | 'append_existing';
 

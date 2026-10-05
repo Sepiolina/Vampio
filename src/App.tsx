@@ -10,7 +10,10 @@ import {
   OutputStrategy,
   MultiFileConfig,
   AppendConfig,
-  ImportedFileContext
+  ImportedFileContext,
+  ActionConfig,
+  ActionDispatchLog,
+  ActionStats
 } from './types';
 import { GeneratorEngine } from './utils/generator';
 import { 
@@ -45,6 +48,9 @@ import { PresetSelector } from './components/PresetSelector';
 import { OfflineExtractorModal } from './components/OfflineExtractorModal';
 import { FolderMonitorModal } from './components/FolderMonitorModal';
 import { RestApiConfigModal } from './components/RestApiConfigModal';
+import { ActionConfigModal } from './components/ActionConfigModal';
+import { ActionLogModal } from './components/ActionLogModal';
+import { dispatchActionRequest, defaultActionConfig } from './utils/actionDispatcher';
 import { WorkspaceBundleImportModal } from './components/WorkspaceBundleImportModal';
 import { OperatorMonitorView } from './components/OperatorMonitorView';
 import { RoleOnboardingModal } from './components/RoleOnboardingModal';
@@ -125,6 +131,101 @@ export default function App() {
     fileSizeBytes: 0,
     isGenerating: false,
   });
+
+  // Action / API Destination State
+  const [actionConfig, setActionConfig] = useState<ActionConfig>(() => {
+    const saved = localStorage.getItem('vampio-action-config');
+    if (saved) {
+      try {
+        return { ...defaultActionConfig, ...JSON.parse(saved) };
+      } catch {}
+    }
+    return defaultActionConfig;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vampio-action-config', JSON.stringify(actionConfig));
+    } catch {}
+  }, [actionConfig]);
+
+  const [actionLogs, setActionLogs] = useState<ActionDispatchLog[]>([]);
+  const [actionStats, setActionStats] = useState<ActionStats>({
+    totalDispatched: 0,
+    successCount: 0,
+    errorCount: 0,
+    retryCount: 0,
+    avgLatencyMs: 0,
+    failedRecords: []
+  });
+
+  const [isActionConfigModalOpen, setIsActionConfigModalOpen] = useState<boolean>(false);
+  const [isActionLogModalOpen, setIsActionLogModalOpen] = useState<boolean>(false);
+  const actionContinuousBufferRef = useRef<Record<string, unknown>[]>([]);
+  const actionBatchIndexRef = useRef<number>(0);
+
+  const addActionLog = (log: ActionDispatchLog) => {
+    setActionLogs((prev) => [log, ...prev.slice(0, 199)]);
+    setActionStats((prev) => {
+      const isSuccess = log.status === 'success';
+      const isError = log.status === 'error';
+      const isRetry = log.status === 'retrying';
+
+      const newTotal = isRetry ? prev.totalDispatched : prev.totalDispatched + log.rowCount;
+      const newSuccess = isSuccess ? prev.successCount + log.rowCount : prev.successCount;
+      const newError = isError ? prev.errorCount + log.rowCount : prev.errorCount;
+      const newRetry = isRetry ? prev.retryCount + 1 : prev.retryCount;
+      const newLatency = prev.avgLatencyMs === 0
+        ? log.durationMs
+        : Math.round((prev.avgLatencyMs * 0.7) + (log.durationMs * 0.3));
+
+      let newFailed = prev.failedRecords;
+      if (isError && log.records && log.records.length > 0) {
+        newFailed = [...prev.failedRecords, ...log.records];
+      }
+
+      return {
+        totalDispatched: newTotal,
+        successCount: newSuccess,
+        errorCount: newError,
+        retryCount: newRetry,
+        avgLatencyMs: newLatency,
+        failedRecords: newFailed
+      };
+    });
+  };
+
+  const handleClearActionLogs = () => {
+    setActionLogs([]);
+    setActionStats({
+      totalDispatched: 0,
+      successCount: 0,
+      errorCount: 0,
+      retryCount: 0,
+      avgLatencyMs: 0,
+      failedRecords: []
+    });
+  };
+
+  const handleRetryFailedRecords = async (records: Record<string, unknown>[]) => {
+    if (!records || records.length === 0) return;
+    setStatusMessage(`Re-dispatching ${records.length.toLocaleString()} dead-letter records to ${actionConfig.endpointUrl}...`);
+
+    const batchSize = actionConfig.mode === 'per_entry' ? 1 : Math.max(1, actionConfig.batchSize || 50);
+    const totalBatches = Math.ceil(records.length / batchSize);
+
+    for (let b = 0; b < totalBatches; b++) {
+      const chunk = records.slice(b * batchSize, (b + 1) * batchSize);
+      await dispatchActionRequest(actionConfig, chunk, b, (log) => {
+        addActionLog(log);
+      });
+      if (actionConfig.throttleMs > 0) {
+        await new Promise((r) => setTimeout(r, actionConfig.throttleMs));
+      }
+    }
+
+    setStatusMessage(`Finished re-dispatching dead-letter records.`);
+  };
 
   // Layout View Tabs & Sidebar State
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
@@ -446,6 +547,14 @@ export default function App() {
           setIsRestApiModalOpen(false);
           return;
         }
+        if (isActionConfigModalOpen) {
+          setIsActionConfigModalOpen(false);
+          return;
+        }
+        if (isActionLogModalOpen) {
+          setIsActionLogModalOpen(false);
+          return;
+        }
         if (isBundleImportModalOpen) {
           setIsBundleImportModalOpen(false);
           return;
@@ -468,6 +577,8 @@ export default function App() {
     isOfflineExtractorOpen,
     isFolderMonitorOpen,
     isRestApiModalOpen,
+    isActionConfigModalOpen,
+    isActionLogModalOpen,
     isBundleImportModalOpen,
     isRoleModalOpen,
     isSidebarOpen,
@@ -831,6 +942,12 @@ export default function App() {
       return;
     }
 
+    if (outputDestination === 'action' && !actionConfig.endpointUrl.trim()) {
+      setStatusMessage('Please enter an Endpoint URL in Action / API settings before dispatching.');
+      setIsActionConfigModalOpen(true);
+      return;
+    }
+
     let activeDir = directoryHandle;
     if (outputDestination === 'folder' && !activeDir) {
       try {
@@ -862,7 +979,9 @@ export default function App() {
     const isContinuation = outputStrategy === 'append_existing' && importedContext;
     const isMultiFile = outputStrategy === 'multi_file';
 
-    const actionDescription = isContinuation
+    const actionDescription = outputDestination === 'action'
+      ? `Synthesizing ${count.toLocaleString()} records for Action dispatch to ${actionConfig.endpointUrl}...`
+      : isContinuation
       ? `Continuing "${importedContext.filename}" (adding ${count.toLocaleString()} rows from row #${importedContext.startingRowNumber})...`
       : isMultiFile
       ? `Synthesizing ${count.toLocaleString()} rows split across individual files (${multiFileConfig.rowsPerFile} per file)...`
@@ -902,8 +1021,61 @@ export default function App() {
         const elapsedSec = elapsed / 1000;
         const rowsPerSec = Math.round(count / (elapsedSec || 0.001));
 
+        // Output Branch 0: Action Destination (REST API / Webhook Egress)
+        if (outputDestination === 'action') {
+          setStatusMessage(`Synthesized ${allRows.length.toLocaleString()} records. Starting dispatch to ${actionConfig.endpointUrl}...`);
+
+          const batchSize = actionConfig.mode === 'per_entry' ? 1 : Math.max(1, actionConfig.batchSize || 50);
+          const totalBatches = Math.ceil(allRows.length / batchSize);
+          let dispatchedCount = 0;
+          let failedCount = 0;
+          let successCount = 0;
+
+          for (let b = 0; b < totalBatches; b++) {
+            const chunk = allRows.slice(b * batchSize, (b + 1) * batchSize);
+            setBatchProgress(Math.floor(((b + 1) / totalBatches) * 100));
+            setStatusMessage(`Dispatching Action batch ${b + 1}/${totalBatches} (${chunk.length} records) to ${actionConfig.endpointUrl}...`);
+
+            const res = await dispatchActionRequest(actionConfig, chunk, b, (log) => {
+              addActionLog(log);
+            });
+
+            dispatchedCount += chunk.length;
+            if (res.success) {
+              successCount += chunk.length;
+            } else {
+              failedCount += chunk.length;
+              if (actionConfig.stopOnError) {
+                setStatusMessage(`Action dispatch paused due to error: ${res.error || 'Request failed'}`);
+                break;
+              }
+            }
+
+            if (actionConfig.throttleMs > 0) {
+              await new Promise((r) => setTimeout(r, actionConfig.throttleMs));
+            } else if (b % 5 === 0) {
+              await new Promise((r) => setTimeout(r, 0));
+            }
+          }
+
+          const actionElapsed = performance.now() - startTime;
+          const actionElapsedSec = actionElapsed / 1000;
+          const actionRowsPerSec = Math.round(dispatchedCount / (actionElapsedSec || 0.001));
+
+          setStats({
+            rowsGenerated: dispatchedCount,
+            rowsPerSec: actionRowsPerSec,
+            elapsedSeconds: parseFloat(actionElapsedSec.toFixed(3)),
+            fileSizeBytes: dispatchedCount * 128,
+            isGenerating: false,
+          });
+
+          setStatusMessage(
+            `Action dispatch complete! Sent ${dispatchedCount.toLocaleString()} rows in ${actionElapsedSec.toFixed(2)}s (${successCount.toLocaleString()} delivered, ${failedCount.toLocaleString()} failed).`
+          );
+
         // Output Branch 1: Multi-file Generation (1 file per row/chunk)
-        if (isMultiFile) {
+        } else if (isMultiFile) {
           const rowsPerFile = Math.max(1, multiFileConfig.rowsPerFile || 1);
           const pattern = multiFileConfig.filenamePattern || '{filename}_{index}.{ext}';
           const baseName = filename || 'record';
@@ -1121,6 +1293,12 @@ export default function App() {
       return;
     }
 
+    if (outputDestination === 'action' && !actionConfig.endpointUrl.trim()) {
+      setStatusMessage('Please enter an Endpoint URL in Action / API settings before streaming.');
+      setIsActionConfigModalOpen(true);
+      return;
+    }
+
     let activeDir = directoryHandle;
     if (outputDestination === 'folder' && !activeDir) {
       try {
@@ -1179,9 +1357,13 @@ export default function App() {
     streamingStartTimeRef.current = performance.now();
     streamingRowCountRef.current = 0;
     continuousBufferRef.current = [];
+    actionContinuousBufferRef.current = [];
+    actionBatchIndexRef.current = 0;
     const streamEngine = new GeneratorEngine();
 
-    const destLabel = activeMultiWriter && activeDir
+    const destLabel = outputDestination === 'action'
+      ? `Action Stream: ${actionConfig.endpointUrl}`
+      : activeMultiWriter && activeDir
       ? `Live Multi-File Writer: /${activeDir.name}/`
       : activeStreamWriter && activeDir
       ? `Live Disk Writer: /${activeDir.name}/${fullFilename}`
@@ -1195,7 +1377,23 @@ export default function App() {
       streamingRowCountRef.current += 1;
       continuousBufferRef.current.push(newRow);
 
-      if (activeMultiWriter) {
+      if (outputDestination === 'action') {
+        if (actionConfig.mode === 'per_entry') {
+          dispatchActionRequest(actionConfig, [newRow], rowIndex, addActionLog).catch((err) => {
+            console.error('Action streaming dispatch error:', err);
+          });
+        } else {
+          actionContinuousBufferRef.current.push(newRow);
+          if (actionContinuousBufferRef.current.length >= (actionConfig.batchSize || 50)) {
+            const chunk = [...actionContinuousBufferRef.current];
+            actionContinuousBufferRef.current = [];
+            const bIdx = actionBatchIndexRef.current++;
+            dispatchActionRequest(actionConfig, chunk, bIdx, addActionLog).catch((err) => {
+              console.error('Action streaming batch dispatch error:', err);
+            });
+          }
+        }
+      } else if (activeMultiWriter) {
         try {
           await activeMultiWriter.writeRow(newRow, rowIndex);
         } catch (err) {
@@ -1227,7 +1425,9 @@ export default function App() {
         isGenerating: true,
       });
 
-      const targetIndicator = activeMultiWriter && activeDir
+      const targetIndicator = outputDestination === 'action'
+        ? `Action Egress (${actionConfig.method} ${actionConfig.mode === 'per_entry' ? 'Per-Entry' : `Batch ${actionConfig.batchSize}`})`
+        : activeMultiWriter && activeDir
         ? `Multi-File (${activeMultiWriter.getFilesCount()} files in /${activeDir.name})`
         : activeStreamWriter && activeDir
         ? `Direct Disk: /${activeDir.name}/${fullFilename}`
@@ -1245,6 +1445,23 @@ export default function App() {
       streamingTimerRef.current = null;
     }
     setIsStreaming(false);
+
+    if (outputDestination === 'action') {
+      if (actionConfig.mode === 'batch' && actionContinuousBufferRef.current.length > 0) {
+        const remaining = [...actionContinuousBufferRef.current];
+        actionContinuousBufferRef.current = [];
+        const bIdx = actionBatchIndexRef.current++;
+        try {
+          await dispatchActionRequest(actionConfig, remaining, bIdx, addActionLog);
+        } catch (err) {
+          console.error('Error flushing final continuous action batch:', err);
+        }
+      }
+      setStatusMessage(
+        `Action stream stopped. Total generated: ${streamingRowCountRef.current.toLocaleString()} rows.`
+      );
+      return;
+    }
 
     if (multiStreamWriterRef.current) {
       try {
@@ -1954,6 +2171,12 @@ export default function App() {
           setMode={setMode}
           outputDestination={outputDestination}
           setOutputDestination={setOutputDestination}
+          actionConfig={actionConfig}
+          setActionConfig={setActionConfig}
+          onOpenActionConfig={() => setIsActionConfigModalOpen(true)}
+          onOpenActionLogs={() => setIsActionLogModalOpen(true)}
+          actionStats={actionStats}
+          sampleColumns={columns}
           outputStrategy={outputStrategy}
           setOutputStrategy={setOutputStrategy}
           multiFileConfig={multiFileConfig}
@@ -2077,6 +2300,30 @@ export default function App() {
           }
         }}
         setStatusMessage={setStatusMessage}
+      />
+
+      {/* Action Destination Config Modal */}
+      <ActionConfigModal
+        isOpen={isActionConfigModalOpen}
+        onClose={() => setIsActionConfigModalOpen(false)}
+        config={actionConfig}
+        onSaveConfig={(updated) => {
+          setActionConfig(updated);
+          setStatusMessage('Updated Action Destination settings.');
+        }}
+        sampleColumns={columns}
+      />
+
+      {/* Action Delivery Logs & Dead-Letter Modal */}
+      <ActionLogModal
+        isOpen={isActionLogModalOpen}
+        onClose={() => setIsActionLogModalOpen(false)}
+        logs={actionLogs}
+        stats={actionStats}
+        config={actionConfig}
+        columns={columns}
+        onClearLogs={handleClearActionLogs}
+        onRetryFailedRecords={handleRetryFailedRecords}
       />
 
       {/* Developer Workspace Bundle Importer Modal */}

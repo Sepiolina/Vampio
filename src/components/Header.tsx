@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Zap, 
   Layers, 
   ChevronDown, 
   Check, 
@@ -244,6 +243,7 @@ export const Header: React.FC<Props> = ({
             <span className="hidden sm:inline">Synthesizing</span>
           </div>
         )}
+
 
         {/* Language Switcher */}
         <LanguageSelectDropdown compact />
