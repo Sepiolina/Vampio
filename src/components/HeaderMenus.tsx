@@ -294,7 +294,7 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
         <button
           type="button"
           onClick={() => setActiveMenu(activeMenu === 'files' ? null : 'files')}
-          className={`h-7 px-2.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${
+          className={`h-7 px-1.5 sm:px-2 md:px-2.5 rounded-md text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-colors cursor-pointer ${
             activeMenu === 'files'
               ? 'bg-accent text-white shadow-xs'
               : 'text-content hover:bg-tertiary/70 border border-transparent hover:border-border-subtle'
@@ -302,10 +302,11 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
           aria-expanded={activeMenu === 'files'}
           title={t('header.fileMenu')}
         >
-          <span>{t('header.fileMenu')}</span>
+          <Folder size={12} className={activeMenu === 'files' ? 'text-white' : 'text-accent flex-shrink-0'} />
+          <span className="hidden md:inline truncate">{t('header.fileMenu')}</span>
           <ChevronDown
-            size={11}
-            className={`transition-transform duration-150 ${activeMenu === 'files' ? 'rotate-180 text-white' : 'text-content-muted'}`}
+            size={10}
+            className={`transition-transform duration-150 flex-shrink-0 ${activeMenu === 'files' ? 'rotate-180 text-white' : 'text-content-muted'}`}
           />
         </button>
 
@@ -318,7 +319,7 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 2, scale: 0.98 }}
               transition={{ duration: 0.12 }}
-              className="absolute left-0 top-full mt-1.5 w-80 min-w-[320px] max-w-[90vw] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-2 backdrop-blur-md max-h-[85vh] overflow-y-auto space-y-2.5 text-xs select-none"
+              className="absolute left-0 top-full mt-1.5 w-80 min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-1rem)] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-2 backdrop-blur-md max-h-[85vh] overflow-y-auto space-y-2.5 text-xs select-none"
             >
               {/* Target Folder Action Section */}
               <div className="bg-primary/70 p-2.5 rounded-lg border border-border-subtle space-y-2">
@@ -667,7 +668,7 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
         <button
           type="button"
           onClick={() => setActiveMenu(activeMenu === 'settings' ? null : 'settings')}
-          className={`h-7 px-2.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${
+          className={`h-7 px-1.5 sm:px-2 md:px-2.5 rounded-md text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-colors cursor-pointer ${
             activeMenu === 'settings'
               ? 'bg-accent text-white shadow-xs'
               : 'text-content hover:bg-tertiary/70 border border-transparent hover:border-border-subtle'
@@ -675,10 +676,11 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
           aria-expanded={activeMenu === 'settings'}
           title={t('header.settingsMenu')}
         >
-          <span>{t('header.settingsMenu')}</span>
+          <Sliders size={12} className={activeMenu === 'settings' ? 'text-white' : 'text-accent flex-shrink-0'} />
+          <span className="hidden md:inline truncate">{t('header.settingsMenu')}</span>
           <ChevronDown
-            size={11}
-            className={`transition-transform duration-150 ${activeMenu === 'settings' ? 'rotate-180 text-white' : 'text-content-muted'}`}
+            size={10}
+            className={`transition-transform duration-150 flex-shrink-0 ${activeMenu === 'settings' ? 'rotate-180 text-white' : 'text-content-muted'}`}
           />
         </button>
 
@@ -691,7 +693,7 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 2, scale: 0.98 }}
               transition={{ duration: 0.12 }}
-              className="absolute left-0 top-full mt-1.5 w-80 min-w-[320px] max-w-[90vw] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-3 backdrop-blur-md space-y-3 text-xs select-none"
+              className="absolute left-0 top-full mt-1.5 w-80 min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-1rem)] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-3 backdrop-blur-md space-y-3 text-xs select-none"
             >
               <div className="flex items-center justify-between border-b border-border-subtle/60 pb-2">
                 <span className="font-bold uppercase tracking-wider text-[11px] text-content flex items-center gap-1.5">
@@ -1043,7 +1045,7 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
         <button
           type="button"
           onClick={() => setActiveMenu(activeMenu === 'advance' ? null : 'advance')}
-          className={`h-7 px-2.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${
+          className={`h-7 px-1.5 sm:px-2 md:px-2.5 rounded-md text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-colors cursor-pointer ${
             activeMenu === 'advance'
               ? 'bg-accent text-white shadow-xs'
               : 'text-content hover:bg-tertiary/70 border border-transparent hover:border-border-subtle'
@@ -1051,11 +1053,11 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
           aria-expanded={activeMenu === 'advance'}
           title={t('header.advanceMenu')}
         >
-          <Sparkles size={11} className={activeMenu === 'advance' ? 'text-white' : 'text-accent'} />
-          <span>{t('header.advanceMenu')}</span>
+          <Sparkles size={11} className={activeMenu === 'advance' ? 'text-white' : 'text-accent flex-shrink-0'} />
+          <span className="hidden lg:inline truncate">{t('header.advanceMenu')}</span>
           <ChevronDown
-            size={11}
-            className={`transition-transform duration-150 ${activeMenu === 'advance' ? 'rotate-180 text-white' : 'text-content-muted'}`}
+            size={10}
+            className={`transition-transform duration-150 flex-shrink-0 ${activeMenu === 'advance' ? 'rotate-180 text-white' : 'text-content-muted'}`}
           />
         </button>
 
@@ -1068,7 +1070,7 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 2, scale: 0.98 }}
               transition={{ duration: 0.12 }}
-              className="absolute left-0 top-full mt-1.5 w-84 min-w-[330px] max-w-[94vw] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-2.5 backdrop-blur-md space-y-2.5 text-xs select-none max-h-[85vh] overflow-y-auto"
+              className="absolute left-0 top-full mt-1.5 w-84 min-w-[280px] sm:min-w-[330px] max-w-[calc(100vw-1rem)] bg-secondary border border-border-subtle rounded-xl shadow-2xl z-50 p-2.5 backdrop-blur-md space-y-2.5 text-xs select-none max-h-[85vh] overflow-y-auto"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-1 pb-1.5 border-b border-border-subtle/60">

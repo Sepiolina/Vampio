@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Plus, 
   X, 
@@ -9,9 +10,9 @@ import {
   Check, 
   Save, 
   FolderInput, 
-  Edit3,
-  ChevronDown,
-  Layers
+  Edit3, 
+  ChevronDown, 
+  Layers 
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { WorkspaceSession } from '../types';
@@ -47,22 +48,71 @@ export const WorkspaceTabBar: React.FC<Props> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [menuCoords, setMenuCoords] = useState<{ top: number; left: number } | null>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const dropdownPortalRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const tabListRef = useRef<HTMLDivElement>(null);
 
-  // Close Add Menu on outside click
+  // Close Add Menu on outside click or Escape key
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        addMenuRef.current &&
+        !addMenuRef.current.contains(target) &&
+        dropdownPortalRef.current &&
+        !dropdownPortalRef.current.contains(target)
+      ) {
+        setIsAddMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
         setIsAddMenuOpen(false);
       }
     };
     if (isAddMenuOpen) {
       document.addEventListener('mousedown', handleClick);
+      document.addEventListener('keydown', handleKeyDown);
     }
-    return () => document.removeEventListener('mousedown', handleClick);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isAddMenuOpen]);
+
+  // Keep menu position anchored when scrolling tab bar or resizing window
+  useEffect(() => {
+    if (!isAddMenuOpen) return;
+    const updatePosition = () => {
+      if (addMenuRef.current) {
+        const rect = addMenuRef.current.getBoundingClientRect();
+        setMenuCoords({
+          top: rect.bottom + 4,
+          left: Math.min(Math.max(8, rect.left), window.innerWidth - 220),
+        });
+      }
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isAddMenuOpen]);
+
+  const handleToggleAddMenu = () => {
+    if (!isAddMenuOpen && addMenuRef.current) {
+      const rect = addMenuRef.current.getBoundingClientRect();
+      setMenuCoords({
+        top: rect.bottom + 4,
+        left: Math.min(Math.max(8, rect.left), window.innerWidth - 220),
+      });
+    }
+    setIsAddMenuOpen((prev) => !prev);
+  };
 
   // Focus rename input
   useEffect(() => {
@@ -244,78 +294,96 @@ export const WorkspaceTabBar: React.FC<Props> = ({
           </button>
           <button
             type="button"
-            onClick={() => setIsAddMenuOpen((prev) => !prev)}
-            className="flex items-center justify-center w-4 h-6 -ml-1 rounded-r-md hover:bg-card text-content-muted hover:text-content border border-transparent hover:border-border-subtle transition-colors cursor-pointer"
+            onClick={handleToggleAddMenu}
+            className={`flex items-center justify-center w-4 h-6 -ml-1 rounded-r-md hover:bg-card text-content-muted hover:text-content border border-transparent hover:border-border-subtle transition-colors cursor-pointer ${
+              isAddMenuOpen ? 'bg-card text-accent' : ''
+            }`}
             title="Tab options (Duplicate, Preset...)"
+            aria-expanded={isAddMenuOpen}
           >
             <ChevronDown size={10} className={`transition-transform duration-150 ${isAddMenuOpen ? 'rotate-180 text-accent' : ''}`} />
           </button>
-
-          {isAddMenuOpen && (
-            <div className="absolute top-full left-0 mt-1 w-52 bg-card border border-border rounded-lg shadow-xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-              <button
-                type="button"
-                onClick={handleCreateNewBlank}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
-              >
-                <Plus size={13} className="text-emerald-400" />
-                <span>Blank Workspace</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleDuplicateActive}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
-              >
-                <Copy size={13} className="text-indigo-400" />
-                <span>Duplicate Active</span>
-              </button>
-              {onOpenPresets && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAddMenuOpen(false);
-                    onOpenPresets();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
-                >
-                  <Sparkles size={13} className="text-amber-400" />
-                  <span>From Preset Template...</span>
-                </button>
-              )}
-              {onOpenImportBundle && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAddMenuOpen(false);
-                    onOpenImportBundle();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors"
-                >
-                  <FolderInput size={13} className="text-sky-400" />
-                  <span>Import Profile Bundle...</span>
-                </button>
-              )}
-
-              <div className="h-px bg-border-subtle my-1" />
-
-              <div className="px-2 py-1 text-[10px] uppercase font-mono tracking-wider text-content-muted">
-                Popular Presets
-              </div>
-              {PRESET_SCHEMAS.slice(0, 3).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handlePresetSelect(p.id)}
-                  className="w-full flex items-center justify-between px-2.5 py-1 rounded-md text-xs text-content-muted hover:text-content hover:bg-secondary text-left transition-colors"
-                >
-                  <span className="truncate">{p.name}</span>
-                  <span className="text-[10px] font-mono text-content-muted/60">{p.columns.length}c</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Render Dropdown Menu via Portal so it is never clipped by tabList overflow or tab bar height */}
+      {isAddMenuOpen && menuCoords && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={dropdownPortalRef}
+          className="fixed z-50 w-52 bg-card border border-border rounded-lg shadow-2xl p-1 animate-in fade-in zoom-in-95 duration-100 text-content select-none"
+          style={{ top: menuCoords.top, left: menuCoords.left }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setIsAddMenuOpen(false);
+              handleCreateNewBlank();
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors cursor-pointer"
+          >
+            <Plus size={13} className="text-emerald-400" />
+            <span>Blank Workspace</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsAddMenuOpen(false);
+              handleDuplicateActive();
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors cursor-pointer"
+          >
+            <Copy size={13} className="text-indigo-400" />
+            <span>Duplicate Active</span>
+          </button>
+          {onOpenPresets && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddMenuOpen(false);
+                onOpenPresets();
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors cursor-pointer"
+            >
+              <Sparkles size={13} className="text-amber-400" />
+              <span>From Preset Template...</span>
+            </button>
+          )}
+          {onOpenImportBundle && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddMenuOpen(false);
+                onOpenImportBundle();
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-content hover:bg-secondary text-left transition-colors cursor-pointer"
+            >
+              <FolderInput size={13} className="text-sky-400" />
+              <span>Import Profile Bundle...</span>
+            </button>
+          )}
+
+          <div className="h-px bg-border-subtle my-1" />
+
+          <div className="px-2 py-1 text-[10px] uppercase font-mono tracking-wider text-content-muted">
+            Popular Presets
+          </div>
+          {PRESET_SCHEMAS.slice(0, 3).map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                setIsAddMenuOpen(false);
+                handlePresetSelect(p.id);
+              }}
+              className="w-full flex items-center justify-between px-2.5 py-1 rounded-md text-xs text-content-muted hover:text-content hover:bg-secondary text-left transition-colors cursor-pointer"
+            >
+              <span className="truncate">{p.name}</span>
+              <span className="text-[10px] font-mono text-content-muted/60">{p.columns.length}c</span>
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
 
       {/* Right Controls: Quick Switcher, Save Indicator & Layout Toggles */}
       <div className="flex items-center gap-1.5 shrink-0 pl-1 border-l border-border-subtle/80">

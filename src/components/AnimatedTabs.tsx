@@ -4,7 +4,7 @@ import { cn } from '../lib/utils';
 
 export interface TabItem<T extends string = string> {
   id: T;
-  label: string;
+  label: React.ReactNode;
   icon?: React.ReactNode;
   badge?: string | number;
   disabled?: boolean;
