@@ -254,7 +254,7 @@ export const Header: React.FC<Props> = ({
             type="button"
             whileTap={{ scale: 0.97 }}
             onClick={() => setIsThemeOpen(!isThemeOpen)}
-            className={`h-7 flex items-center gap-1.5 px-2 rounded-md border text-xs font-medium transition-colors ${
+            className={`group/theme h-7 flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 rounded-md border text-xs font-medium transition-all duration-200 cursor-pointer ${
               isThemeOpen
                 ? 'bg-tertiary border-accent text-content ring-1 ring-accent/30'
                 : 'bg-primary/70 hover:bg-tertiary border-border-subtle text-content'
@@ -282,10 +282,16 @@ export const Header: React.FC<Props> = ({
               className="w-2 h-2 rounded-full border border-black/20 flex-shrink-0"
               style={{ backgroundColor: currentThemeMeta.accent }}
             />
-            <span className="hidden md:inline text-[11px] max-w-[75px] truncate text-content-muted">
+            <span
+              className={`overflow-hidden transition-all duration-200 ease-out text-[11px] text-content-muted whitespace-nowrap ${
+                isThemeOpen
+                  ? 'max-w-[100px] opacity-100'
+                  : 'max-w-0 opacity-0 group-hover/theme:max-w-[100px] group-hover/theme:opacity-100 2xl:max-w-[100px] 2xl:opacity-100'
+              }`}
+            >
               {currentThemeMeta.label}
             </span>
-            <ChevronDown size={11} className={`text-content-muted transition-transform duration-200 ${isThemeOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={11} className={`text-content-muted transition-transform duration-200 flex-shrink-0 ${isThemeOpen ? 'rotate-180' : ''}`} />
           </motion.button>
 
           <AnimatePresence>

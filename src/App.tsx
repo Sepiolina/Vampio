@@ -75,7 +75,9 @@ import {
   CopyPlus,
   Trash2,
   Upload,
-  Globe
+  Globe,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 const INITIAL_DEMO: ColumnSpec[] = PRESET_SCHEMAS[0].columns;
@@ -194,6 +196,76 @@ export default function App() {
 
   const lastLoadedWorkspaceIdRef = useRef<string>('');
   const isSwitchingWorkspaceRef = useRef<boolean>(false);
+
+  // Quick Insert Chips Scroll & Drag State
+  const quickChipsRef = useRef<HTMLDivElement>(null);
+  const chipsDragState = useRef({ isDown: false, startX: 0, scrollLeft: 0, hasDragged: false });
+  const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
+  const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
+
+  const updateChipsScrollStatus = () => {
+    if (quickChipsRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = quickChipsRef.current;
+      setCanScrollChipsLeft(scrollLeft > 4);
+      setCanScrollChipsRight(scrollLeft + clientWidth < scrollWidth - 4);
+    }
+  };
+
+  useEffect(() => {
+    updateChipsScrollStatus();
+    const handleResize = () => updateChipsScrollStatus();
+    window.addEventListener('resize', handleResize);
+    const frameId = requestAnimationFrame(updateChipsScrollStatus);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(frameId);
+    };
+  }, [activeTab, displayMode, columns.length]);
+
+  const handleChipsWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.deltaY !== 0 && !e.shiftKey) {
+      e.currentTarget.scrollLeft += e.deltaY;
+      updateChipsScrollStatus();
+    }
+  };
+
+  const handleChipsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    if (!quickChipsRef.current) return;
+    chipsDragState.current.isDown = true;
+    chipsDragState.current.startX = e.pageX - quickChipsRef.current.offsetLeft;
+    chipsDragState.current.scrollLeft = quickChipsRef.current.scrollLeft;
+    chipsDragState.current.hasDragged = false;
+  };
+
+  const handleChipsMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!chipsDragState.current.isDown || !quickChipsRef.current) return;
+    const x = e.pageX - quickChipsRef.current.offsetLeft;
+    const walk = (x - chipsDragState.current.startX);
+    if (Math.abs(walk) > 3) {
+      chipsDragState.current.hasDragged = true;
+      quickChipsRef.current.scrollLeft = chipsDragState.current.scrollLeft - walk;
+      updateChipsScrollStatus();
+    }
+  };
+
+  const handleChipsMouseUp = () => {
+    chipsDragState.current.isDown = false;
+    updateChipsScrollStatus();
+    setTimeout(() => {
+      chipsDragState.current.hasDragged = false;
+    }, 50);
+  };
+
+  const scrollQuickChips = (direction: 'left' | 'right') => {
+    if (quickChipsRef.current) {
+      quickChipsRef.current.scrollBy({
+        left: direction === 'left' ? -220 : 220,
+        behavior: 'smooth'
+      });
+      setTimeout(updateChipsScrollStatus, 250);
+    }
+  };
 
   // Sync state when active workspace changes
   useEffect(() => {
@@ -1397,117 +1469,205 @@ export default function App() {
       </div>
 
       {/* Quick Insert Category Strip */}
-      <div className="px-3 sm:px-4 h-8 min-h-[32px] max-h-[32px] bg-secondary/50 border-b border-border-subtle flex items-center justify-between gap-2 overflow-x-auto text-[11px] flex-shrink-0 scrollbar-none [&::-webkit-scrollbar]:hidden select-none w-full">
-        {/* Left: Quick Type Chips */}
-        <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden">
-          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-content-muted/80 mr-1 flex-shrink-0">
-            <Sparkles size={11} className="text-accent" />
-            <span>{t('schema.quickLabel')}</span>
+      <div className="px-2 sm:px-3 h-8 min-h-[32px] max-h-[32px] bg-secondary/50 border-b border-border-subtle flex items-center justify-between gap-1.5 text-[11px] flex-shrink-0 select-none w-full min-w-0 relative">
+        {/* Fixed Prefix: Permanent label outside the scrolling container */}
+        <div className="flex items-center gap-1.5 pr-2.5 mr-0.5 border-r border-border-subtle/80 flex-shrink-0 select-none">
+          <Sparkles size={11} className="text-accent shrink-0" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">
+            {t('schema.quickLabel')}
+          </span>
+        </div>
+
+        {/* Scrollable Chips Track Wrapper with Dynamic Gradient Edge Masks */}
+        <div className="relative flex-1 flex items-center min-w-0 overflow-hidden h-full">
+          {/* Left Gradient Fade Mask */}
+          <div 
+            className={`pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-secondary to-transparent z-10 transition-opacity duration-200 ${
+              canScrollChipsLeft ? 'opacity-100' : 'opacity-0'
+            }`} 
+          />
+
+          {/* Left Scroll Arrow */}
+          {canScrollChipsLeft && (
+            <button
+              type="button"
+              onClick={() => scrollQuickChips('left')}
+              className="absolute left-0 z-20 h-5 w-5 rounded bg-primary/90 hover:bg-tertiary text-content-muted hover:text-content flex items-center justify-center border border-border-subtle/70 shadow-xs cursor-pointer transition-all"
+              title="Scroll left (or use mouse wheel)"
+              aria-label="Scroll left"
+            >
+              <ChevronLeft size={11} />
+            </button>
+          )}
+
+          {/* Scrollable Track */}
+          <div 
+            ref={quickChipsRef}
+            onScroll={updateChipsScrollStatus}
+            onWheel={handleChipsWheel}
+            onMouseDown={handleChipsMouseDown}
+            onMouseMove={handleChipsMouseMove}
+            onMouseUp={handleChipsMouseUp}
+            onMouseLeave={handleChipsMouseUp}
+            className={`flex items-center gap-1.5 flex-nowrap overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden scroll-smooth flex-1 min-w-0 py-0.5 cursor-grab active:cursor-grabbing select-none ${
+              canScrollChipsLeft ? 'pl-6' : 'pl-0.5'
+            } ${canScrollChipsRight ? 'pr-6' : 'pr-0.5'}`}
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('Sequence', '1000');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Auto-incrementing Sequence ID"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+              <span>{t('schema.quickId')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('Entity', 'full_name');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Full Name Entity"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span>{t('schema.quickName')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('Entity', 'email');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Email Address Entity"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
+              <span>{t('schema.quickEmail')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('Float', '10.0, 500.0, 2');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Price / Amount Currency Field"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+              <span>{t('schema.quickPrice')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('DateTime', 'YYYY-MM-DD HH:mm:ss');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Timestamp / Date-Time Field"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+              <span>{t('schema.quickTimestamp')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('UUID', '');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add UUID v4 GUID Field"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
+              <span>{t('schema.quickUuid')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('Set/Enum', 'Active:70, Pending:20, Inactive:10');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Weighted Enum / Status Set"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0" />
+              <span>{t('schema.quickEnum')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('Boolean', '0.5');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Boolean True/False Flag"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+              <span>{t('schema.quickBool')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('Calculation', '');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add Formula / Expression Column"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+              <span>{t('schema.quickFormula')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (chipsDragState.current.hasDragged) return;
+                handleAddColumn('REST_API');
+              }}
+              className="h-6 px-2 rounded-md bg-primary/60 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/70 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer shrink-0"
+              title="Add REST API Column"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+              <span>{t('schema.quickRestApi')}</span>
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => handleAddColumn('Sequence', '1000')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Auto-incrementing Sequence ID"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-            <span>{t('schema.quickId')}</span>
-          </button>
+          {/* Right Gradient Fade Mask */}
+          <div 
+            className={`pointer-events-none absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-secondary to-transparent z-10 transition-opacity duration-200 ${
+              canScrollChipsRight ? 'opacity-100' : 'opacity-0'
+            }`} 
+          />
 
-          <button
-            type="button"
-            onClick={() => handleAddColumn('Entity', 'full_name')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Full Name Entity"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>{t('schema.quickName')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('Entity', 'email')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Email Address Entity"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-            <span>{t('schema.quickEmail')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('Float', '10.0, 500.0, 2')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Price / Amount Currency Field"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            <span>{t('schema.quickPrice')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('DateTime', 'YYYY-MM-DD HH:mm:ss')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Timestamp / Date-Time Field"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-            <span>{t('schema.quickTimestamp')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('UUID', '')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add UUID v4 GUID Field"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-            <span>{t('schema.quickUuid')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('Set/Enum', 'Active:70, Pending:20, Inactive:10')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Weighted Enum / Status Set"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-pink-400" />
-            <span>{t('schema.quickEnum')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('Boolean', '0.5')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Boolean True/False Flag"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-            <span>{t('schema.quickBool')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('Calculation', '')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add Formula / Expression Column"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-            <span>{t('schema.quickFormula')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAddColumn('REST_API')}
-            className="h-6 px-2 rounded-md bg-primary/80 hover:bg-tertiary text-content-muted hover:text-content border border-border-subtle/80 hover:border-accent/40 transition-all whitespace-nowrap text-[11px] font-medium flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-            title="Add REST API Column"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-            <span>{t('schema.quickRestApi')}</span>
-          </button>
+          {/* Right Scroll Arrow */}
+          {canScrollChipsRight && (
+            <button
+              type="button"
+              onClick={() => scrollQuickChips('right')}
+              className="absolute right-0 z-20 h-5 w-5 rounded bg-primary/90 hover:bg-tertiary text-content-muted hover:text-content flex items-center justify-center border border-border-subtle/70 shadow-xs cursor-pointer transition-all"
+              title="Scroll right (or use mouse wheel)"
+              aria-label="Scroll right"
+            >
+              <ChevronRight size={11} />
+            </button>
+          )}
         </div>
 
         {/* Right: Quick Tools & Actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto pl-2 border-l border-border-subtle/60">
+        <div className="flex items-center gap-1.5 flex-shrink-0 pl-2 border-l border-border-subtle/70">
           <button
             type="button"
             onClick={() => setIsPresetsOpen(true)}

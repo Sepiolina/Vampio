@@ -207,12 +207,17 @@ export const WorkspaceTabBar: React.FC<Props> = ({
       {/* Left: Scrollable Tabs */}
       <div 
         ref={tabListRef} 
+        onWheel={(e) => {
+          if (e.deltaY !== 0 && !e.shiftKey) {
+            e.currentTarget.scrollLeft += e.deltaY;
+          }
+        }}
         onDoubleClick={(e) => {
           if (e.target === tabListRef.current) {
             handleCreateNewBlank();
           }
         }}
-        className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 flex-1 max-w-[calc(100vw-340px)] sm:max-w-none mr-2"
+        className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 flex-1 max-w-[calc(100vw-340px)] sm:max-w-none mr-2 scroll-smooth"
       >
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId;

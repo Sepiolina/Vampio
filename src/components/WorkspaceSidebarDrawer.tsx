@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   X, 
   Plus, 
@@ -14,7 +14,8 @@ import {
   Settings2,
   Clock,
   Sparkles,
-  PanelLeftClose
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { WorkspaceSession } from '../types';
@@ -31,9 +32,41 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
     duplicateWorkspace,
     renameWorkspace,
     deleteWorkspace,
-    setDisplayMode,
     setIsSettingsModalOpen
   } = useWorkspace();
+
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('vampio_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('vampio_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar collapse
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b' && !e.shiftKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea') {
+          e.preventDefault();
+          toggleCollapsed();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCollapsed]);
 
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -75,8 +108,85 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Render Collapsed Sidebar Rail (Browser vertical tabs style)
+  if (isCollapsed) {
+    return (
+      <aside className="w-12 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20 transition-all duration-200">
+        {/* Collapsed Header / Toggle */}
+        <div className="p-2 flex flex-col items-center border-b border-border-subtle bg-card/40 gap-1.5">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="w-8 h-8 rounded-md flex items-center justify-center text-content-muted hover:text-content hover:bg-card border border-transparent hover:border-border-subtle transition-all cursor-pointer shadow-2xs"
+            title="Expand Sidebar (Ctrl+B)"
+            aria-label="Expand Sidebar"
+          >
+            <PanelLeftOpen size={14} className="text-accent" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              createWorkspace({
+                name: `Project ${workspaces.length + 1}`,
+                tableName: `dataset_${workspaces.length + 1}`,
+                columns: [],
+              })
+            }
+            className="w-8 h-8 rounded-md flex items-center justify-center text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 hover:border-accent/40 transition-all cursor-pointer shadow-2xs"
+            title="New Workspace"
+            aria-label="New Workspace"
+          >
+            <Plus size={13} />
+          </button>
+        </div>
+
+        {/* Collapsed Workspace List */}
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-1.5 no-scrollbar flex flex-col items-center">
+          {workspaces.map((ws, idx) => {
+            const isActive = ws.id === activeWorkspaceId;
+            const initial = ws.name ? ws.name.trim().charAt(0).toUpperCase() : `${idx + 1}`;
+
+            return (
+              <button
+                key={ws.id}
+                type="button"
+                onClick={() => switchWorkspace(ws.id)}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center relative transition-all cursor-pointer group ${
+                  isActive
+                    ? 'bg-card border border-accent/50 text-accent font-bold shadow-xs ring-1 ring-accent/20'
+                    : 'bg-card/40 hover:bg-card border border-border-subtle hover:border-border text-content-muted hover:text-content'
+                }`}
+                title={`${ws.name} (${ws.tableName || 'table'}) · ${ws.columns?.length || 0} cols`}
+              >
+                <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${getColorDot(ws.colorTag)}`} />
+                <span className="text-[11px] font-mono leading-none">
+                  {initial}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Collapsed Footer: Settings */}
+        <div className="p-2 border-t border-border-subtle flex flex-col items-center bg-card/20">
+          <button
+            type="button"
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="w-8 h-8 rounded-md flex items-center justify-center text-content-muted hover:text-content hover:bg-card transition-colors cursor-pointer"
+            title="Workspace Settings"
+            aria-label="Workspace Settings"
+          >
+            <Settings2 size={13} />
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
+  // Render Expanded Sidebar Drawer
   return (
-    <aside className="w-72 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20">
+    <aside className="w-72 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20 transition-all duration-200">
       {/* Drawer Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle bg-card/40">
         <div className="flex items-center gap-2">
@@ -90,16 +200,17 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsSettingsModalOpen(true)}
-            className="p-1 rounded-md text-content-muted hover:text-content hover:bg-card transition-colors"
+            className="p-1 rounded-md text-content-muted hover:text-content hover:bg-card transition-colors cursor-pointer"
             title="Workspace Settings"
           >
             <Settings2 size={13} />
           </button>
           <button
             type="button"
-            onClick={() => setDisplayMode('top-bar')}
+            onClick={toggleCollapsed}
             className="p-1 rounded-md text-content-muted hover:text-content hover:bg-card transition-colors flex items-center gap-1 cursor-pointer"
-            title="Collapse Sidebar & switch to Top Tab Bar"
+            title="Collapse Sidebar (Ctrl+B)"
+            aria-label="Collapse Sidebar"
           >
             <PanelLeftClose size={13} />
           </button>
