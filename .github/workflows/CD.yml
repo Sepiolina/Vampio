@@ -59,9 +59,10 @@ jobs:
           node-version: 20.x
 
       - name: Install dependencies
+        shell: bash
         run: |
           npm ci || npm install
-          npm install --no-save @rollup/rollup-win32-x64-msvc
+          npm install --no-save @rollup/rollup-win32-x64-msvc lightningcss-win32-x64-msvc @tailwindcss/oxide-win32-x64-msvc @esbuild/win32-x64
 
       - name: Build Web Application
         run: npm run build
