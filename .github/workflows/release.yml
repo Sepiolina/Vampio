@@ -114,7 +114,11 @@ jobs:
         run: |
           npm ci || npm install
           if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            npm install --no-save @rollup/rollup-win32-x64-msvc lightningcss-win32-x64-msvc @tailwindcss/oxide-win32-x64-msvc @esbuild/win32-x64
+            npm install --no-save @tauri-apps/cli-win32-x64-msvc @rollup/rollup-win32-x64-msvc lightningcss-win32-x64-msvc @tailwindcss/oxide-win32-x64-msvc @esbuild/win32-x64
+          elif [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            npm install --no-save @tauri-apps/cli-darwin-arm64 @tauri-apps/cli-darwin-x64 @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 @tailwindcss/oxide-darwin-arm64 @esbuild/darwin-arm64
+          elif [ "${{ matrix.platform }}" = "ubuntu-22.04" ]; then
+            npm install --no-save @tauri-apps/cli-linux-x64-gnu
           fi
 
       - name: Build Tauri Desktop Application & Release
