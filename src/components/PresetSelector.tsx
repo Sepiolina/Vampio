@@ -25,6 +25,7 @@ export const PresetSelector: React.FC<Props> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Close on Escape key press
   useEffect(() => {
@@ -75,6 +76,7 @@ export const PresetSelector: React.FC<Props> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setErrorMsg(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -85,9 +87,11 @@ export const PresetSelector: React.FC<Props> = ({
         } else if (parsed.columns && Array.isArray(parsed.columns)) {
           onImportSchema(parsed.columns, parsed.tableName);
           onClose();
+        } else {
+          setErrorMsg('Invalid schema format. Expected array of columns or { columns: [...] }');
         }
-      } catch (err) {
-        alert('Invalid JSON schema file: ' + err);
+      } catch (err: any) {
+        setErrorMsg('Invalid JSON schema file: ' + (err?.message || err));
       }
     };
     reader.readAsText(file);
@@ -174,6 +178,18 @@ export const PresetSelector: React.FC<Props> = ({
                 </button>
               </div>
             </div>
+
+            {errorMsg && (
+              <div className="px-6 py-2 bg-red-500/10 border-b border-red-500/20 text-xs text-red-400 flex items-center justify-between">
+                <span>{errorMsg}</span>
+                <button 
+                  onClick={() => setErrorMsg(null)}
+                  className="text-red-400 hover:text-red-300 ml-2"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
 
             {/* Search and Category Filter */}
             <div className="p-4 border-b border-border-subtle flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-primary/20 flex-shrink-0">

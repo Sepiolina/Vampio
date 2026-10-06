@@ -231,7 +231,7 @@ export const RestApiConfigModal: React.FC<RestApiConfigModalProps> = ({
     if (!onImportRowColumns) return;
     const selected = discoveredFields.filter((f) => f.selected);
     if (selected.length === 0) {
-      alert('Please select at least one field to import.');
+      setRowDiscoveryError('Please select at least one field to import.');
       return;
     }
 

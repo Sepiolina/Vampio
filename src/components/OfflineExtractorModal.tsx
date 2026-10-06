@@ -12,6 +12,13 @@ import {
   ExtractionMode,
   PatternPreference,
   ParsedWorkbook,
+  validateCsvHeaders,
+  applySanitizedHeadersToWorkbook,
+  HeaderValidationReport,
+  HeaderIssue,
+  HeaderColumnMapping,
+  ExpectedNamingConvention,
+  HeaderSeverity,
 } from '../utils/schemaExtractor';
 import {
   X,
@@ -26,6 +33,7 @@ import {
   Lock,
   Unlock,
   AlertCircle,
+  AlertTriangle,
   FileText,
   HelpCircle,
   Plus,
@@ -35,6 +43,10 @@ import {
   Code2,
   ListOrdered,
   Sparkles,
+  Wand2,
+  ShieldAlert,
+  Info,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface Props {
@@ -47,6 +59,7 @@ interface Props {
     importContext?: ImportedFileContext
   ) => void;
   currentColumnsCount: number;
+  existingColumns?: ColumnSpec[];
   initialFile?: File | null;
   onClearInitialFile?: () => void;
   autoExtract?: boolean;
@@ -72,6 +85,7 @@ export const OfflineExtractorModal: React.FC<Props> = ({
   onClose,
   onApplySchema,
   currentColumnsCount,
+  existingColumns,
   initialFile,
   onClearInitialFile,
   autoExtract,
@@ -83,6 +97,17 @@ export const OfflineExtractorModal: React.FC<Props> = ({
   const [activeSheetName, setActiveSheetName] = useState<string>('');
   const [isLoadingFile, setIsLoadingFile] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Header Pre-Validation State
+  const [headerValidationReport, setHeaderValidationReport] = useState<HeaderValidationReport | null>(null);
+  const [isHeaderWarningModalOpen, setIsHeaderWarningModalOpen] = useState<boolean>(false);
+  const [pendingWorkbookForWarning, setPendingWorkbookForWarning] = useState<ParsedWorkbook | null>(null);
+  const [pendingAutoExtractForWarning, setPendingAutoExtractForWarning] = useState<boolean>(false);
+  const [expectedConvention, setExpectedConvention] = useState<ExpectedNamingConvention>('auto');
+  const [matchWorkspaceSchema, setMatchWorkspaceSchema] = useState<boolean>(true);
+  const [customExpectedHeadersInput, setCustomExpectedHeadersInput] = useState<string>('');
+  const [activeAuditTab, setActiveAuditTab] = useState<'issues' | 'mapping' | 'schema_match'>('issues');
+  const [filterIssueSeverity, setFilterIssueSeverity] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
 
   // Pasted text alternative
   const [isPastingText, setIsPastingText] = useState<boolean>(false);
@@ -111,6 +136,163 @@ export const OfflineExtractorModal: React.FC<Props> = ({
 
   const currentSheet = workbook && activeSheetName ? workbook.sheets[activeSheetName] : null;
 
+  // Run header validation against expected formats and schemas
+  const runValidation = (
+    rawHeaders: string[],
+    format?: string,
+    convOverride?: ExpectedNamingConvention,
+    matchWsOverride?: boolean,
+    customOverride?: string
+  ): HeaderValidationReport => {
+    const conv = convOverride !== undefined ? convOverride : expectedConvention;
+    const matchWs = matchWsOverride !== undefined ? matchWsOverride : matchWorkspaceSchema;
+    const customH = customOverride !== undefined ? customOverride : customExpectedHeadersInput;
+
+    const expectedList: string[] = [];
+    if (matchWs && existingColumns && existingColumns.length > 0) {
+      existingColumns.forEach((c) => expectedList.push(c.name));
+    }
+    if (customH.trim()) {
+      customH
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((s) => expectedList.push(s));
+    }
+
+    return validateCsvHeaders(rawHeaders, {
+      expectedConvention: conv,
+      expectedHeaders: expectedList,
+      fileFormat: format,
+    });
+  };
+
+  const currentRawHeaders = useMemo(() => {
+    const wb = pendingWorkbookForWarning || workbook;
+    if (!wb) return [];
+    const sheet = wb.sheets[activeSheetName || wb.sheetNames[0]];
+    return sheet?.rawHeaders || sheet?.headers || [];
+  }, [pendingWorkbookForWarning, workbook, activeSheetName]);
+
+  const handleConventionChange = (newConv: ExpectedNamingConvention) => {
+    setExpectedConvention(newConv);
+    if (currentRawHeaders.length > 0) {
+      const format = (pendingWorkbookForWarning || workbook)?.fileFormat;
+      const newReport = runValidation(currentRawHeaders, format, newConv);
+      setHeaderValidationReport(newReport);
+    }
+  };
+
+  const handleMatchWorkspaceToggle = () => {
+    const nextVal = !matchWorkspaceSchema;
+    setMatchWorkspaceSchema(nextVal);
+    if (currentRawHeaders.length > 0) {
+      const format = (pendingWorkbookForWarning || workbook)?.fileFormat;
+      const newReport = runValidation(currentRawHeaders, format, undefined, nextVal);
+      setHeaderValidationReport(newReport);
+    }
+  };
+
+  const handleCustomExpectedHeadersChange = (val: string) => {
+    setCustomExpectedHeadersInput(val);
+    if (currentRawHeaders.length > 0) {
+      const format = (pendingWorkbookForWarning || workbook)?.fileFormat;
+      const newReport = runValidation(currentRawHeaders, format, undefined, undefined, val);
+      setHeaderValidationReport(newReport);
+    }
+  };
+
+  const commitLoadedWorkbook = (
+    loadedWb: ParsedWorkbook,
+    report?: HeaderValidationReport,
+    shouldAutoExtract = false
+  ) => {
+    setWorkbook(loadedWb);
+    const firstSheet = loadedWb.sheetNames[0];
+    setActiveSheetName(firstSheet);
+    const sheetHeaders = loadedWb.sheets[firstSheet]?.headers || [];
+    setSelectedColumnNames(sheetHeaders);
+    setColumnFocusInput('*');
+    const rowFocus =
+      loadedWb.sheets[firstSheet]?.totalRows && loadedWb.sheets[firstSheet].totalRows > 500
+        ? '1-500'
+        : 'all';
+    setRowFocusInput(rowFocus);
+    const inferredTableName =
+      loadedWb.filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() ||
+      'imported_dataset';
+    setTargetTableName(inferredTableName);
+
+    if (report) {
+      setHeaderValidationReport(report);
+    }
+
+    if (shouldAutoExtract && loadedWb.sheets[firstSheet] && sheetHeaders.length > 0) {
+      const sheet = loadedWb.sheets[firstSheet];
+      const range = parseRowRangeInput(rowFocus, sheet.totalRows);
+      const sampleRows = sheet.rows.slice(range.startIndex, range.endIndex);
+      if (sampleRows.length > 0) {
+        const extracted = extractFieldArchitecture(sheetHeaders, sampleRows, {
+          mode: extractionMode,
+          patternPreference,
+          maxEnumUnique,
+          ignoreAlphanumericInEnum,
+          selectedColumnNames: sheetHeaders,
+        });
+        setExtractedColumns(extracted);
+        setStep(2);
+        setIsLoadingFile(false);
+        return;
+      }
+    }
+
+    setExtractedColumns([]);
+    setStep(1);
+    setIsLoadingFile(false);
+  };
+
+  const handleApplySanitizedAndProceed = () => {
+    const wb = pendingWorkbookForWarning || workbook;
+    if (!wb || !headerValidationReport) return;
+    const sheetName = activeSheetName || wb.sheetNames[0];
+    const sanitizedWb = applySanitizedHeadersToWorkbook(
+      wb,
+      sheetName,
+      headerValidationReport.sanitizedHeaders
+    );
+
+    if (pendingWorkbookForWarning) {
+      commitLoadedWorkbook(sanitizedWb, headerValidationReport, pendingAutoExtractForWarning);
+      setPendingWorkbookForWarning(null);
+    } else {
+      setWorkbook(sanitizedWb);
+      setSelectedColumnNames(headerValidationReport.sanitizedHeaders);
+      setColumnFocusInput('*');
+    }
+    setIsHeaderWarningModalOpen(false);
+  };
+
+  const handleProceedWithRawHeaders = () => {
+    if (pendingWorkbookForWarning) {
+      commitLoadedWorkbook(
+        pendingWorkbookForWarning,
+        headerValidationReport || undefined,
+        pendingAutoExtractForWarning
+      );
+      setPendingWorkbookForWarning(null);
+    }
+    setIsHeaderWarningModalOpen(false);
+  };
+
+  const handleCancelWarning = () => {
+    setIsHeaderWarningModalOpen(false);
+    setPendingWorkbookForWarning(null);
+    if (!workbook) {
+      setWorkbook(null);
+      setExtractedColumns([]);
+    }
+  };
+
   // Handle File Upload
   const handleFileUpload = async (file: File, shouldAutoExtract = false) => {
     setIsLoadingFile(true);
@@ -120,41 +302,22 @@ export const OfflineExtractorModal: React.FC<Props> = ({
       if (parsed.sheetNames.length === 0) {
         throw new Error('No readable sheets found in this file.');
       }
-      setWorkbook(parsed);
       const firstSheet = parsed.sheetNames[0];
-      setActiveSheetName(firstSheet);
-      const headers = parsed.sheets[firstSheet]?.headers || [];
-      setSelectedColumnNames(headers);
-      setColumnFocusInput('*');
-      const rowFocus = parsed.sheets[firstSheet]?.totalRows && parsed.sheets[firstSheet].totalRows > 500
-        ? '1-500'
-        : 'all';
-      setRowFocusInput(rowFocus);
-      const inferredTableName =
-        file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'imported_dataset';
-      setTargetTableName(inferredTableName);
+      const rawHeaders =
+        parsed.sheets[firstSheet]?.rawHeaders || parsed.sheets[firstSheet]?.headers || [];
+      const report = runValidation(rawHeaders, parsed.fileFormat);
 
-      if (shouldAutoExtract && parsed.sheets[firstSheet] && headers.length > 0) {
-        const sheet = parsed.sheets[firstSheet];
-        const range = parseRowRangeInput(rowFocus, sheet.totalRows);
-        const sampleRows = sheet.rows.slice(range.startIndex, range.endIndex);
-        if (sampleRows.length > 0) {
-          const extracted = extractFieldArchitecture(headers, sampleRows, {
-            mode: extractionMode,
-            patternPreference,
-            maxEnumUnique,
-            ignoreAlphanumericInEnum,
-            selectedColumnNames: headers,
-          });
-          setExtractedColumns(extracted);
-          setStep(2);
-          setIsLoadingFile(false);
-          return;
-        }
+      // Validate imported CSV headers before parsing rows or advancing
+      if (report.hasWarnings || report.hasErrors) {
+        setPendingWorkbookForWarning(parsed);
+        setPendingAutoExtractForWarning(shouldAutoExtract);
+        setHeaderValidationReport(report);
+        setIsHeaderWarningModalOpen(true);
+        setIsLoadingFile(false);
+        return;
       }
 
-      setExtractedColumns([]);
-      setStep(1);
+      commitLoadedWorkbook(parsed, report, shouldAutoExtract);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to parse file.');
     } finally {
@@ -175,28 +338,38 @@ export const OfflineExtractorModal: React.FC<Props> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        if (isHeaderWarningModalOpen) {
+          setIsHeaderWarningModalOpen(false);
+        } else {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isHeaderWarningModalOpen, onClose]);
 
   // Handle Pasted CSV / TSV Text
   const handlePastedTextParse = () => {
     if (!pastedText.trim()) return;
     try {
       const parsed = parsePastedDelimitedText(pastedText, 'pasted_dataset.csv');
-      setWorkbook(parsed);
       const firstSheet = parsed.sheetNames[0];
-      setActiveSheetName(firstSheet);
-      setSelectedColumnNames(parsed.sheets[firstSheet]?.headers || []);
-      setColumnFocusInput('*');
-      setRowFocusInput('all');
-      setTargetTableName('pasted_dataset');
-      setExtractedColumns([]);
+      const rawHeaders =
+        parsed.sheets[firstSheet]?.rawHeaders || parsed.sheets[firstSheet]?.headers || [];
+      const report = runValidation(rawHeaders, 'csv');
+
+      if (report.hasWarnings || report.hasErrors) {
+        setPendingWorkbookForWarning(parsed);
+        setPendingAutoExtractForWarning(false);
+        setHeaderValidationReport(report);
+        setIsHeaderWarningModalOpen(true);
+        setIsPastingText(false);
+        return;
+      }
+
+      commitLoadedWorkbook(parsed, report, false);
       setIsPastingText(false);
-      setStep(1);
     } catch (err: any) {
       setErrorMessage('Failed to parse pasted text: ' + err.message);
     }
@@ -211,6 +384,9 @@ export const OfflineExtractorModal: React.FC<Props> = ({
       setColumnFocusInput('*');
       setRowFocusInput(sheet.totalRows > 500 ? '1-500' : 'all');
       setTargetTableName(sheetName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'imported_dataset');
+      const rawH = sheet.rawHeaders || sheet.headers;
+      const report = runValidation(rawH, workbook.fileFormat);
+      setHeaderValidationReport(report);
     }
   };
 
@@ -673,13 +849,41 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {headerValidationReport && (
+                      <button
+                        type="button"
+                        onClick={() => setIsHeaderWarningModalOpen(true)}
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                          headerValidationReport.hasErrors
+                            ? 'bg-rose-500/15 border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
+                            : headerValidationReport.hasWarnings
+                            ? 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25'
+                            : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25'
+                        }`}
+                        title="Inspect CSV header format and validation health"
+                      >
+                        {headerValidationReport.hasErrors ? (
+                          <ShieldAlert size={13} className="text-rose-400" />
+                        ) : headerValidationReport.hasWarnings ? (
+                          <AlertTriangle size={13} className="text-amber-400" />
+                        ) : (
+                          <ShieldCheck size={13} className="text-emerald-400" />
+                        )}
+                        <span>
+                          {headerValidationReport.hasErrors || headerValidationReport.hasWarnings
+                            ? `Header Audit (${headerValidationReport.criticalCount + headerValidationReport.warningCount} Issues)`
+                            : 'Headers Valid'}
+                        </span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
                         setWorkbook(null);
                         setExtractedColumns([]);
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-xs font-medium text-content transition"
+                      className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-xs font-medium text-content transition cursor-pointer"
                     >
                       Change File
                     </button>
@@ -1424,6 +1628,468 @@ export const OfflineExtractorModal: React.FC<Props> = ({
           )}
         </div>
       </motion.div>
+
+      {/* Header Format Pre-Validation Warning Dialog */}
+      <AnimatePresence>
+        {isHeaderWarningModalOpen && headerValidationReport && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) handleCancelWarning();
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.2 }}
+              className="bg-secondary border border-border-subtle rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden text-content"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle bg-primary/60">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl border flex items-center justify-center ${
+                    headerValidationReport.hasErrors
+                      ? 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                      : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                  }`}>
+                    {headerValidationReport.hasErrors ? (
+                      <ShieldAlert size={20} />
+                    ) : (
+                      <AlertTriangle size={20} />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-content flex items-center gap-2">
+                      <span>CSV Header Format Pre-Validation Warning</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                        headerValidationReport.hasErrors
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {headerValidationReport.hasErrors ? 'Action Required' : 'Review Recommended'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-content-muted">
+                      Pre-parsing inspection for "{pendingWorkbookForWarning?.filename || workbook?.filename || 'imported CSV'}"
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelWarning}
+                  className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-tertiary transition cursor-pointer"
+                  title="Close warning"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Banner Summary */}
+              <div className="px-6 py-3 border-b border-border-subtle/80 bg-primary/30">
+                <div className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                  headerValidationReport.hasErrors
+                    ? 'bg-rose-500/10 border-rose-500/25 text-rose-300'
+                    : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+                }`}>
+                  {headerValidationReport.hasErrors ? (
+                    <ShieldAlert size={16} className="text-rose-400 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-1">
+                    <div className="font-semibold text-content">
+                      {headerValidationReport.hasErrors
+                        ? `Found ${headerValidationReport.criticalCount} critical header issue(s) that may cause parsing collisions or missing columns.`
+                        : `Found ${headerValidationReport.warningCount} format warning(s) that do not match standard database identifier conventions.`}
+                    </div>
+                    <p className="text-[11px] text-content-muted">
+                      Review the detected issues below. You can auto-sanitize all headers into clean unique identifiers, customize the expected naming convention, or proceed with the original headers.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Metrics */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-6 py-3 border-b border-border-subtle bg-secondary/80 text-xs">
+                <div className="p-2.5 rounded-xl bg-primary/40 border border-border-subtle">
+                  <span className="text-[10px] text-content-muted block font-semibold uppercase">Total Columns</span>
+                  <span className="text-base font-bold font-mono text-content">{headerValidationReport.totalHeaders}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-primary/40 border border-border-subtle">
+                  <span className="text-[10px] text-content-muted block font-semibold uppercase">Critical Issues</span>
+                  <span className={`text-base font-bold font-mono ${headerValidationReport.criticalCount > 0 ? 'text-rose-400' : 'text-content-muted'}`}>
+                    {headerValidationReport.criticalCount}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-primary/40 border border-border-subtle">
+                  <span className="text-[10px] text-content-muted block font-semibold uppercase">Format Warnings</span>
+                  <span className={`text-base font-bold font-mono ${headerValidationReport.warningCount > 0 ? 'text-amber-400' : 'text-content-muted'}`}>
+                    {headerValidationReport.warningCount}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-primary/40 border border-border-subtle">
+                  <span className="text-[10px] text-content-muted block font-semibold uppercase">Target Schema Match</span>
+                  <span className="text-base font-bold font-mono text-accent">
+                    {existingColumns && existingColumns.length > 0 && matchWorkspaceSchema
+                      ? `${headerValidationReport.matchedExpected.length} / ${existingColumns.length}`
+                      : 'N/A'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Validation Controls Bar */}
+              <div className="px-6 py-3 border-b border-border-subtle bg-primary/20 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-content-muted font-medium">Expected Format:</span>
+                    <select
+                      value={expectedConvention}
+                      onChange={(e) => handleConventionChange(e.target.value as ExpectedNamingConvention)}
+                      className="bg-secondary px-2.5 py-1 rounded-lg border border-border-subtle text-xs text-content font-semibold focus:outline-none focus:border-accent cursor-pointer"
+                    >
+                      <option value="auto">Auto-Detect / Relaxed</option>
+                      <option value="snake_case">snake_case (e.g. user_id) [Recommended]</option>
+                      <option value="camelCase">camelCase (e.g. userId)</option>
+                      <option value="PascalCase">PascalCase (e.g. UserId)</option>
+                      <option value="UPPER_CASE">UPPER_SNAKE (e.g. USER_ID)</option>
+                      <option value="kebab-case">kebab-case (e.g. user-id)</option>
+                      <option value="alphanumeric">Alphanumeric Only</option>
+                      <option value="any">None / Allow Any</option>
+                    </select>
+                  </div>
+
+                  {existingColumns && existingColumns.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMatchWorkspaceToggle}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                        matchWorkspaceSchema
+                          ? 'bg-accent/20 border-accent/40 text-accent'
+                          : 'bg-secondary border-border-subtle text-content-muted hover:text-content'
+                      }`}
+                    >
+                      <Database size={12} />
+                      <span>Compare with Active Workspace ({existingColumns.length} cols)</span>
+                      {matchWorkspaceSchema && <Check size={12} />}
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 text-xs">
+                  <input
+                    type="text"
+                    value={customExpectedHeadersInput}
+                    onChange={(e) => handleCustomExpectedHeadersChange(e.target.value)}
+                    placeholder="Optional required headers: id, email, status..."
+                    className="px-2.5 py-1 rounded-lg bg-secondary border border-border-subtle text-xs font-mono text-content placeholder:text-content-muted/60 focus:outline-none focus:border-accent w-64"
+                  />
+                </div>
+              </div>
+
+              {/* Sub-Tabs: Issues, Column Mapping, Schema Alignment */}
+              <div className="px-6 border-b border-border-subtle bg-secondary flex items-center gap-4 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveAuditTab('issues')}
+                  className={`py-2.5 font-semibold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+                    activeAuditTab === 'issues'
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-content-muted hover:text-content'
+                  }`}
+                >
+                  <AlertTriangle size={13} />
+                  <span>Detected Issues ({headerValidationReport.issues.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveAuditTab('mapping')}
+                  className={`py-2.5 font-semibold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+                    activeAuditTab === 'mapping'
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-content-muted hover:text-content'
+                  }`}
+                >
+                  <ListOrdered size={13} />
+                  <span>Header Mapping &amp; Sanitizer ({headerValidationReport.headerMapping.length})</span>
+                </button>
+
+                {(headerValidationReport.matchedExpected.length > 0 || headerValidationReport.missingExpected.length > 0 || headerValidationReport.unexpectedExtra.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveAuditTab('schema_match')}
+                    className={`py-2.5 font-semibold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+                      activeAuditTab === 'schema_match'
+                        ? 'border-accent text-accent'
+                        : 'border-transparent text-content-muted hover:text-content'
+                    }`}
+                  >
+                    <Database size={13} />
+                    <span>Schema Alignment</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Body Content */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {/* TAB 1: ISSUES LIST */}
+                {activeAuditTab === 'issues' && (
+                  <div className="space-y-3">
+                    {/* Filter by severity */}
+                    <div className="flex items-center gap-2 text-xs mb-2">
+                      <span className="text-content-muted font-medium">Filter:</span>
+                      {(['all', 'critical', 'warning', 'info'] as const).map((sev) => {
+                        const count = sev === 'all'
+                          ? headerValidationReport.issues.length
+                          : headerValidationReport.issues.filter(i => i.severity === sev).length;
+                        return (
+                          <button
+                            key={sev}
+                            type="button"
+                            onClick={() => setFilterIssueSeverity(sev)}
+                            className={`px-2.5 py-0.5 rounded-lg border text-xs font-semibold capitalize transition cursor-pointer ${
+                              filterIssueSeverity === sev
+                                ? 'bg-accent/20 border-accent/40 text-accent'
+                                : 'bg-primary border-border-subtle text-content-muted hover:text-content'
+                            }`}
+                          >
+                            {sev} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {headerValidationReport.issues
+                      .filter(i => filterIssueSeverity === 'all' || i.severity === filterIssueSeverity)
+                      .map((issue) => (
+                        <div
+                          key={issue.id}
+                          className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 ${
+                            issue.severity === 'critical'
+                              ? 'bg-rose-500/10 border-rose-500/25'
+                              : issue.severity === 'warning'
+                              ? 'bg-amber-500/10 border-amber-500/25'
+                              : 'bg-blue-500/10 border-blue-500/25'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`p-1.5 rounded-lg mt-0.5 ${
+                              issue.severity === 'critical'
+                                ? 'bg-rose-500/20 text-rose-400'
+                                : issue.severity === 'warning'
+                                ? 'bg-amber-500/20 text-amber-400'
+                                : 'bg-blue-500/20 text-blue-400'
+                            }`}>
+                              {issue.severity === 'critical' ? (
+                                <ShieldAlert size={14} />
+                              ) : issue.severity === 'warning' ? (
+                                <AlertTriangle size={14} />
+                              ) : (
+                                <Info size={14} />
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                  issue.severity === 'critical'
+                                    ? 'bg-rose-500/20 text-rose-300'
+                                    : issue.severity === 'warning'
+                                    ? 'bg-amber-500/20 text-amber-300'
+                                    : 'bg-blue-500/20 text-blue-300'
+                                }`}>
+                                  {issue.severity}
+                                </span>
+                                {issue.columnIndex !== undefined && (
+                                  <span className="text-xs font-mono text-content-muted">
+                                    Column {issue.columnIndex + 1}
+                                    {issue.column ? ` ("${issue.column}")` : ''}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-content font-medium">{issue.message}</p>
+                              {issue.suggestion && (
+                                <p className="text-[11px] text-content-muted flex items-center gap-1.5">
+                                  <Sparkles size={11} className="text-accent" />
+                                  <span>{issue.suggestion}</span>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+                {/* TAB 2: COLUMN MAPPING & SANITIZER */}
+                {activeAuditTab === 'mapping' && (
+                  <div className="space-y-2">
+                    <div className="overflow-x-auto rounded-xl border border-border-subtle bg-primary/40">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-border-subtle bg-secondary/80 text-content-muted font-mono text-[11px]">
+                            <th className="py-2.5 px-3 w-12 text-center">#</th>
+                            <th className="py-2.5 px-3">Original Raw Header</th>
+                            <th className="py-2.5 px-3">Status</th>
+                            <th className="py-2.5 px-3">Detected Issues</th>
+                            <th className="py-2.5 px-3">Proposed Sanitized Name</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-subtle/60 font-mono">
+                          {headerValidationReport.headerMapping.map((col) => (
+                            <tr key={col.index} className="hover:bg-secondary/40 transition">
+                              <td className="py-2 px-3 text-center text-content-muted text-[11px]">
+                                {col.index + 1}
+                              </td>
+                              <td className="py-2 px-3 font-semibold text-content">
+                                {col.original ? (
+                                  <span>{col.original}</span>
+                                ) : (
+                                  <span className="text-rose-400 italic">&lt;empty&gt;</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3">
+                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                  col.status === 'critical'
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    : col.status === 'warning'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                }`}>
+                                  {col.status}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 font-sans text-xs text-content-muted">
+                                {col.issues.length > 0 ? (
+                                  <span className={col.status === 'critical' ? 'text-rose-300' : 'text-amber-300'}>
+                                    {col.issues.map(i => i.message).join('; ')}
+                                  </span>
+                                ) : (
+                                  <span className="text-emerald-400 flex items-center gap-1 font-sans">
+                                    <Check size={12} /> Valid format
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3">
+                                <span className="px-2 py-0.5 rounded bg-secondary border border-border-subtle text-accent font-bold">
+                                  {col.sanitized}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: SCHEMA ALIGNMENT */}
+                {activeAuditTab === 'schema_match' && (
+                  <div className="space-y-4">
+                    {/* Matched */}
+                    <div className="p-4 rounded-xl bg-primary/40 border border-border-subtle space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                          <CheckCircle2 size={14} />
+                          <span>Matched Schema Columns ({headerValidationReport.matchedExpected.length})</span>
+                        </span>
+                        <span className="text-content-muted font-mono text-[11px]">Found in both CSV &amp; target schema</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {headerValidationReport.matchedExpected.length > 0 ? (
+                          headerValidationReport.matchedExpected.map((c) => (
+                            <span key={c} className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
+                              {c}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-content-muted italic">No matching columns found.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Missing */}
+                    <div className="p-4 rounded-xl bg-primary/40 border border-border-subtle space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-rose-400 flex items-center gap-1.5">
+                          <ShieldAlert size={14} />
+                          <span>Missing Expected Columns ({headerValidationReport.missingExpected.length})</span>
+                        </span>
+                        <span className="text-content-muted font-mono text-[11px]">Expected by target schema but absent in CSV</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {headerValidationReport.missingExpected.length > 0 ? (
+                          headerValidationReport.missingExpected.map((c) => (
+                            <span key={c} className="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-mono">
+                              {c}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-emerald-400 flex items-center gap-1">
+                            <Check size={12} /> None! All expected columns are present.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Extra */}
+                    <div className="p-4 rounded-xl bg-primary/40 border border-border-subtle space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-blue-400 flex items-center gap-1.5">
+                          <Info size={14} />
+                          <span>Unexpected Extra Columns in CSV ({headerValidationReport.unexpectedExtra.length})</span>
+                        </span>
+                        <span className="text-content-muted font-mono text-[11px]">Present in CSV but not defined in target schema</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {headerValidationReport.unexpectedExtra.length > 0 ? (
+                          headerValidationReport.unexpectedExtra.map((c) => (
+                            <span key={c} className="px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs font-mono">
+                              {c}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-content-muted italic">No extra columns found.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex items-center justify-between px-6 py-4 border-t border-border-subtle bg-primary/60">
+                <button
+                  type="button"
+                  onClick={handleCancelWarning}
+                  className="px-3.5 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-xs font-semibold text-content transition cursor-pointer"
+                >
+                  Cancel &amp; Change File
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleProceedWithRawHeaders}
+                    className="px-4 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <span>Proceed with Original Headers</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleApplySanitizedAndProceed}
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-md shadow-accent/20 transition cursor-pointer"
+                  >
+                    <Wand2 size={14} />
+                    <span>Auto-Sanitize Headers &amp; Continue</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )}
 </AnimatePresence>

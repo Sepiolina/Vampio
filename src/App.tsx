@@ -2285,6 +2285,7 @@ export default function App() {
           }}
           onApplySchema={handleApplyExtractedSchema}
           currentColumnsCount={columns.length}
+          existingColumns={columns}
           initialFile={extractorInitialFile}
           onClearInitialFile={() => setExtractorInitialFile(null)}
           autoExtract={extractorAutoExtract}

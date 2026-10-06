@@ -267,10 +267,10 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
           onImportSchema(parsed, file.name.replace(/\.[^/.]+$/, ''));
           setStatusMessage(`Loaded schema array (${parsed.length} columns)`);
         } else {
-          alert('Invalid blueprint JSON format. Expected { columns: [...] }');
+          setStatusMessage('Error: Invalid blueprint JSON format. Expected { columns: [...] }');
         }
       } catch (err: any) {
-        alert(`Failed to parse blueprint JSON: ${err.message}`);
+        setStatusMessage(`Error: Failed to parse blueprint JSON: ${err.message}`);
       }
     };
     reader.readAsText(file);
@@ -1010,10 +1010,10 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                                 setStatusMessage(`Restored ${parsed.workspaces.length} projects successfully.`);
                                 setActiveMenu(null);
                               } else {
-                                alert('Invalid workspaces backup file.');
+                                setStatusMessage('Error: Invalid workspaces backup file.');
                               }
                             } catch (err: any) {
-                              alert(`Failed to import workspaces: ${err.message}`);
+                              setStatusMessage(`Error: Failed to import workspaces: ${err.message}`);
                             }
                           };
                           reader.readAsText(file);

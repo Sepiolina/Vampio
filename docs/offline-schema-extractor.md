@@ -57,6 +57,21 @@ When a file is loaded or dropped onto VAMPIO, the engine performs the following 
 
 ---
 
+## 🛡️ CSV Header Pre-Validation & Quality Audit
+
+Before full file parsing and row profiling begins, the Offline Extractor performs an immediate validation pass on the imported header row against expected identifier formats and schemas:
+
+1. **Delimiter & Squashing Detection**: Detects when separator mismatches (e.g. semicolons `;` or tabs `\t`) squash all fields into a single column.
+2. **Duplicate & Empty Header Identification**: Flags duplicate column names (exact and case-insensitive) and empty column names that would cause downstream data collisions.
+3. **Data-in-Header Detection**: Identifies whether row 1 contains data records (numbers, ISO dates, emails, UUIDs, booleans) instead of column labels.
+4. **Naming Convention Compliance**: Checks headers against standard conventions (`snake_case`, `camelCase`, `PascalCase`, `UPPER_SNAKE`, `kebab-case`, or `alphanumeric`).
+5. **Target Schema Matching**: Compares imported headers with the active workspace schema to detect missing required columns and unexpected extra fields.
+6. **Detailed Pre-Parsing Warning & Auto-Sanitization**:
+   - If warnings are detected, an interactive dialog is shown **before parsing**.
+   - Users can review the issue list, inspect the proposed column mapping, or click **Auto-Sanitize Headers** to automatically resolve whitespace, remove illegal characters, deduplicate names, and enforce clean naming conventions.
+
+---
+
 ## 🕹️ User Controls in the Extractor
 
 - **Sheet Selection**: For multi-tab workbooks, choose any individual worksheet to extract.

@@ -136,7 +136,7 @@ export const CustomEntityModal: React.FC<CustomEntityModalProps> = ({
   const handleSaveAndUse = () => {
     const name = entityName.trim() || 'Custom Entity';
     if (parsedItems.length === 0) {
-      alert('Please upload a file or paste at least one entity item.');
+      setStatusMessage('Please upload a file or paste at least one entity item.');
       return;
     }
 

@@ -33,9 +33,83 @@ export interface ExtractionOptions {
   selectedColumnNames?: string[];
 }
 
+export type HeaderSeverity = 'critical' | 'warning' | 'info';
+
+export type HeaderIssueType =
+  | 'delimiter_anomaly'
+  | 'duplicate_header'
+  | 'case_conflict'
+  | 'empty_header'
+  | 'data_in_header'
+  | 'whitespace_padding'
+  | 'invalid_characters'
+  | 'leading_number'
+  | 'naming_convention'
+  | 'missing_expected'
+  | 'unexpected_extra'
+  | 'reserved_keyword';
+
+export interface HeaderIssue {
+  id: string;
+  type: HeaderIssueType;
+  severity: HeaderSeverity;
+  column?: string;
+  columnIndex?: number;
+  message: string;
+  suggestion?: string;
+  fixable?: boolean;
+}
+
+export type ExpectedNamingConvention =
+  | 'auto'
+  | 'snake_case'
+  | 'camelCase'
+  | 'PascalCase'
+  | 'UPPER_CASE'
+  | 'kebab-case'
+  | 'alphanumeric'
+  | 'any';
+
+export interface HeaderValidationOptions {
+  expectedConvention?: ExpectedNamingConvention;
+  expectedHeaders?: string[];
+  strictCase?: boolean;
+  allowSpaces?: boolean;
+  fileFormat?: string;
+}
+
+export interface HeaderColumnMapping {
+  original: string;
+  sanitized: string;
+  index: number;
+  issues: HeaderIssue[];
+  status: 'valid' | 'warning' | 'critical';
+}
+
+export interface HeaderValidationReport {
+  isValid: boolean;
+  hasWarnings: boolean;
+  hasErrors: boolean;
+  criticalCount: number;
+  warningCount: number;
+  infoCount: number;
+  totalHeaders: number;
+  detectedDelimiter?: string;
+  detectedConvention?: string;
+  issues: HeaderIssue[];
+  rawHeaders: string[];
+  sanitizedHeaders: string[];
+  headerMapping: HeaderColumnMapping[];
+  matchedExpected: string[];
+  missingExpected: string[];
+  unexpectedExtra: string[];
+}
+
 export interface SheetData {
   sheetName: string;
   headers: string[];
+  rawHeaders?: string[];
+  validationReport?: HeaderValidationReport;
   rows: (string | number | boolean | null)[][];
   totalRows: number;
   totalCols: number;
@@ -50,6 +124,468 @@ export interface ParsedWorkbook {
   rawFile?: File;
   rawContent?: string;
   rawJson?: any[];
+}
+
+const SQL_RESERVED_KEYWORDS = new Set([
+  'select', 'from', 'where', 'table', 'order', 'group', 'by', 'having',
+  'insert', 'update', 'delete', 'create', 'alter', 'drop', 'index',
+  'primary', 'key', 'foreign', 'join', 'inner', 'left', 'right', 'outer',
+  'full', 'union', 'all', 'as', 'distinct', 'case', 'when', 'then', 'else',
+  'end', 'limit', 'offset', 'view', 'trigger', 'procedure', 'database',
+  'schema', 'user', 'role', 'grant', 'revoke', 'desc', 'asc', 'check',
+  'default', 'values', 'unique', 'column', 'rows', 'count', 'null', 'true', 'false'
+]);
+
+/**
+ * Detect probable CSV delimiter by analyzing character frequency on header lines
+ */
+export function detectCsvDelimiter(sampleText: string): string {
+  const firstLine = sampleText.split(/\r?\n/)[0] || '';
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  const pipeCount = (firstLine.match(/\|/g) || []).length;
+
+  if (tabCount > commaCount && tabCount > semicolonCount && tabCount > pipeCount) return '\t';
+  if (semicolonCount > commaCount && semicolonCount > tabCount && semicolonCount > pipeCount) return ';';
+  if (pipeCount > commaCount && pipeCount > tabCount && pipeCount > semicolonCount) return '|';
+  return ',';
+}
+
+/**
+ * Convert an arbitrary header string to a specified naming convention
+ */
+export function toNamingConvention(name: string, convention: ExpectedNamingConvention): string {
+  const trimmed = name.trim();
+  if (!trimmed) return 'field';
+
+  // Break apart words by spaces, underscores, hyphens, and camelCase transitions
+  const words = trimmed
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) return 'field';
+
+  switch (convention) {
+    case 'snake_case':
+      return words.map((w) => w.toLowerCase()).join('_');
+
+    case 'camelCase':
+      return words
+        .map((w, idx) =>
+          idx === 0
+            ? w.toLowerCase()
+            : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+        )
+        .join('');
+
+    case 'PascalCase':
+      return words
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join('');
+
+    case 'UPPER_CASE':
+      return words.map((w) => w.toUpperCase()).join('_');
+
+    case 'kebab-case':
+      return words.map((w) => w.toLowerCase()).join('-');
+
+    case 'alphanumeric':
+    case 'auto':
+    case 'any':
+    default: {
+      let res = trimmed.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_');
+      if (/^\d/.test(res)) res = `col_${res}`;
+      return res || 'field';
+    }
+  }
+}
+
+/**
+ * Sanitize a single header, ensuring valid identifier syntax and uniqueness
+ */
+export function sanitizeHeaderName(
+  original: any,
+  index: number,
+  convention: ExpectedNamingConvention = 'snake_case',
+  existingNames: Set<string> = new Set()
+): string {
+  const str = original !== null && original !== undefined ? String(original).trim() : '';
+  let base: string;
+
+  if (!str) {
+    base = `field_${index + 1}`;
+  } else {
+    base = toNamingConvention(str, convention);
+  }
+
+  // Ensure does not start with a digit
+  if (/^\d/.test(base)) {
+    base = `col_${base}`;
+  }
+
+  // Ensure unique within set (case-insensitive deduplication)
+  let candidate = base;
+  let counter = 2;
+  while (existingNames.has(candidate.toLowerCase())) {
+    candidate = `${base}_${counter++}`;
+  }
+
+  existingNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+/**
+ * Sanitize an entire array of raw headers
+ */
+export function sanitizeAllHeaders(
+  rawHeaders: any[],
+  convention: ExpectedNamingConvention = 'snake_case'
+): string[] {
+  const existingNames = new Set<string>();
+  return (rawHeaders || []).map((h, idx) => sanitizeHeaderName(h, idx, convention, existingNames));
+}
+
+/**
+ * Comprehensive Offline Header Format Validator.
+ * Evaluates duplicate headers, empty fields, data rows mistaken as headers,
+ * delimiter squashing, naming conventions, and alignment with target schema.
+ */
+export function validateCsvHeaders(
+  rawHeaders: any[],
+  options: HeaderValidationOptions = {}
+): HeaderValidationReport {
+  const convention = options.expectedConvention || 'auto';
+  const expectedHeaders = options.expectedHeaders || [];
+  const issues: HeaderIssue[] = [];
+
+  const rawHeadersList: string[] = (rawHeaders || []).map((h) =>
+    h !== null && h !== undefined ? String(h) : ''
+  );
+
+  // 1. Delimiter / Squashed column anomaly
+  if (rawHeadersList.length === 1 && rawHeadersList[0]) {
+    const single = rawHeadersList[0];
+    if (single.includes(';') || single.includes('\t') || single.includes('|') || single.includes(',')) {
+      const sep = single.includes(';') ? ';' : single.includes('\t') ? 'tab' : single.includes('|') ? '|' : ',';
+      issues.push({
+        id: 'delimiter_anomaly',
+        type: 'delimiter_anomaly',
+        severity: 'critical',
+        column: single,
+        columnIndex: 0,
+        message: `Possible delimiter mismatch: Only 1 column detected, but it contains separator characters (${sep}). All fields appear squashed into a single header.`,
+        suggestion: `Verify your CSV delimiter or export with standard comma separators.`,
+        fixable: false,
+      });
+    }
+  }
+
+  // Track occurrences for duplicate detection
+  const seenLower = new Map<string, number[]>();
+  const exactCount = new Map<string, number>();
+
+  rawHeadersList.forEach((h, idx) => {
+    exactCount.set(h, (exactCount.get(h) || 0) + 1);
+    const lower = h.trim().toLowerCase();
+    if (lower) {
+      if (!seenLower.has(lower)) seenLower.set(lower, []);
+      seenLower.get(lower)!.push(idx);
+    }
+  });
+
+  // Evaluate each individual column header
+  rawHeadersList.forEach((raw, idx) => {
+    const trimmed = raw.trim();
+
+    // 2. Empty or missing header
+    if (!trimmed) {
+      issues.push({
+        id: `empty_${idx}`,
+        type: 'empty_header',
+        severity: 'critical',
+        columnIndex: idx,
+        message: `Column ${idx + 1} has an empty or blank header name.`,
+        suggestion: `Assign a descriptive title. Auto-sanitizer will assign "field_${idx + 1}".`,
+        fixable: true,
+      });
+      return;
+    }
+
+    // 3. Whitespace padding
+    if (raw !== trimmed) {
+      issues.push({
+        id: `ws_${idx}`,
+        type: 'whitespace_padding',
+        severity: 'warning',
+        column: raw,
+        columnIndex: idx,
+        message: `Header "${raw}" contains leading or trailing whitespace.`,
+        suggestion: `Trim whitespace to "${trimmed}".`,
+        fixable: true,
+      });
+    }
+
+    // 4. Duplicate headers
+    if ((exactCount.get(raw) || 0) > 1) {
+      issues.push({
+        id: `dup_${idx}`,
+        type: 'duplicate_header',
+        severity: 'critical',
+        column: raw,
+        columnIndex: idx,
+        message: `Duplicate header name "${raw}" detected at column ${idx + 1}.`,
+        suggestion: `Rename to "${raw}_${idx + 1}" to avoid data loss.`,
+        fixable: true,
+      });
+    } else {
+      const lower = trimmed.toLowerCase();
+      const occurrences = seenLower.get(lower) || [];
+      if (occurrences.length > 1 && occurrences[0] !== idx) {
+        issues.push({
+          id: `case_${idx}`,
+          type: 'case_conflict',
+          severity: 'warning',
+          column: raw,
+          columnIndex: idx,
+          message: `Case-insensitive conflict: "${raw}" conflicts with column ${occurrences[0] + 1} ("${rawHeadersList[occurrences[0]]}").`,
+          suggestion: `Ensure distinct names for cross-database compatibility.`,
+          fixable: true,
+        });
+      }
+    }
+
+    // 5. Data row mistaken as header heuristics
+    const numMatch = /^-?\d+(?:\.\d+)?$/.test(trimmed);
+    const dateMatch = /^\d{4}[-/]\d{2}[-/]\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(trimmed);
+    const emailMatch = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmed);
+    const uuidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+    const boolMatch = /^(?:true|false|yes|no)$/i.test(trimmed);
+    const ipMatch = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(trimmed);
+
+    if (numMatch || dateMatch || emailMatch || uuidMatch || boolMatch || ipMatch) {
+      const typeLabel = numMatch
+        ? 'numeric value'
+        : dateMatch
+        ? 'date/time'
+        : emailMatch
+        ? 'email address'
+        : uuidMatch
+        ? 'UUID'
+        : boolMatch
+        ? 'boolean flag'
+        : 'IP address';
+
+      issues.push({
+        id: `data_${idx}`,
+        type: 'data_in_header',
+        severity: 'warning',
+        column: raw,
+        columnIndex: idx,
+        message: `Header "${raw}" appears to be a data value (${typeLabel}) rather than a column title.`,
+        suggestion: `Check if your CSV lacks a header row (first line is a data record).`,
+        fixable: false,
+      });
+    }
+
+    // 6. Leading number
+    if (/^\d/.test(trimmed)) {
+      issues.push({
+        id: `lead_num_${idx}`,
+        type: 'leading_number',
+        severity: 'warning',
+        column: raw,
+        columnIndex: idx,
+        message: `Header "${raw}" starts with a number. In database engines, identifiers must begin with a letter or underscore.`,
+        suggestion: `Prefix with "col_${trimmed}".`,
+        fixable: true,
+      });
+    }
+
+    // 7. Invalid characters & punctuation
+    const hasInvalidChars = /[^a-zA-Z0-9_]/.test(trimmed);
+    if (hasInvalidChars) {
+      const containsSpace = /\s/.test(trimmed);
+      issues.push({
+        id: `chars_${idx}`,
+        type: 'invalid_characters',
+        severity: 'warning',
+        column: raw,
+        columnIndex: idx,
+        message: `Header "${raw}" contains ${containsSpace ? 'spaces or ' : ''}non-standard characters.`,
+        suggestion: `Sanitize to "${toNamingConvention(trimmed, 'snake_case')}".`,
+        fixable: true,
+      });
+    }
+
+    // 8. Reserved keywords
+    if (SQL_RESERVED_KEYWORDS.has(trimmed.toLowerCase())) {
+      issues.push({
+        id: `keyword_${idx}`,
+        type: 'reserved_keyword',
+        severity: 'info',
+        column: raw,
+        columnIndex: idx,
+        message: `"${raw}" is an SQL reserved keyword and may require escaping in queries.`,
+        suggestion: `Consider appending a suffix, e.g. "${trimmed}_col".`,
+        fixable: true,
+      });
+    }
+
+    // 9. Naming convention compliance
+    if (convention !== 'any' && convention !== 'auto') {
+      let matches = false;
+      switch (convention) {
+        case 'snake_case':
+          matches = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(trimmed);
+          break;
+        case 'camelCase':
+          matches = /^[a-z][a-zA-Z0-9]*$/.test(trimmed) && !trimmed.includes('_');
+          break;
+        case 'PascalCase':
+          matches = /^[A-Z][a-zA-Z0-9]*$/.test(trimmed) && !trimmed.includes('_');
+          break;
+        case 'UPPER_CASE':
+          matches = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/.test(trimmed);
+          break;
+        case 'kebab-case':
+          matches = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(trimmed);
+          break;
+        case 'alphanumeric':
+          matches = /^[a-zA-Z0-9_]+$/.test(trimmed) && !/^\d/.test(trimmed);
+          break;
+      }
+      if (!matches) {
+        issues.push({
+          id: `conv_${idx}`,
+          type: 'naming_convention',
+          severity: 'warning',
+          column: raw,
+          columnIndex: idx,
+          message: `Header "${raw}" does not adhere to the requested ${convention} naming convention.`,
+          suggestion: `Convert to "${toNamingConvention(trimmed, convention)}".`,
+          fixable: true,
+        });
+      }
+    }
+  });
+
+  // 10. Alignment with expected schema columns
+  const matchedExpected: string[] = [];
+  const missingExpected: string[] = [];
+  const unexpectedExtra: string[] = [];
+
+  if (expectedHeaders.length > 0) {
+    const rawSet = new Set(rawHeadersList.map((h) => h.trim().toLowerCase()));
+    const expectedSet = new Set(expectedHeaders.map((h) => h.trim().toLowerCase()));
+
+    expectedHeaders.forEach((exp) => {
+      const expNorm = exp.trim().toLowerCase();
+      if (rawSet.has(expNorm)) {
+        matchedExpected.push(exp);
+      } else {
+        missingExpected.push(exp);
+      }
+    });
+
+    rawHeadersList.forEach((raw) => {
+      const rawNorm = raw.trim().toLowerCase();
+      if (rawNorm && !expectedSet.has(rawNorm)) {
+        unexpectedExtra.push(raw.trim());
+      }
+    });
+
+    if (missingExpected.length > 0) {
+      issues.push({
+        id: 'missing_expected',
+        type: 'missing_expected',
+        severity: 'warning',
+        message: `Missing ${missingExpected.length} expected column(s) from target schema: [${missingExpected.slice(0, 4).join(', ')}${missingExpected.length > 4 ? ` +${missingExpected.length - 4} more` : ''}].`,
+        suggestion: `Verify whether this file matches your expected schema design.`,
+        fixable: false,
+      });
+    }
+
+    if (unexpectedExtra.length > 0) {
+      issues.push({
+        id: 'unexpected_extra',
+        type: 'unexpected_extra',
+        severity: 'info',
+        message: `File contains ${unexpectedExtra.length} unexpected extra column(s): [${unexpectedExtra.slice(0, 4).join(', ')}${unexpectedExtra.length > 4 ? ` +${unexpectedExtra.length - 4} more` : ''}].`,
+        suggestion: `These extra columns will be added to the extracted schema unless excluded.`,
+        fixable: false,
+      });
+    }
+  }
+
+  // Generate sanitized headers
+  const effectiveConvention =
+    convention === 'any' || convention === 'auto' ? 'snake_case' : convention;
+  const sanitizedHeaders = sanitizeAllHeaders(rawHeadersList, effectiveConvention);
+
+  // Build column-level diagnostic mapping
+  const headerMapping: HeaderColumnMapping[] = rawHeadersList.map((original, idx) => {
+    const colIssues = issues.filter((iss) => iss.columnIndex === idx);
+    const hasCrit = colIssues.some((i) => i.severity === 'critical');
+    const hasWarn = colIssues.some((i) => i.severity === 'warning');
+    return {
+      original,
+      sanitized: sanitizedHeaders[idx],
+      index: idx,
+      issues: colIssues,
+      status: hasCrit ? 'critical' : hasWarn ? 'warning' : 'valid',
+    };
+  });
+
+  const criticalCount = issues.filter((i) => i.severity === 'critical').length;
+  const warningCount = issues.filter((i) => i.severity === 'warning').length;
+  const infoCount = issues.filter((i) => i.severity === 'info').length;
+
+  return {
+    isValid: criticalCount === 0,
+    hasWarnings: criticalCount > 0 || warningCount > 0,
+    hasErrors: criticalCount > 0,
+    criticalCount,
+    warningCount,
+    infoCount,
+    totalHeaders: rawHeadersList.length,
+    issues,
+    rawHeaders: rawHeadersList,
+    sanitizedHeaders,
+    headerMapping,
+    matchedExpected,
+    missingExpected,
+    unexpectedExtra,
+  };
+}
+
+/**
+ * Apply sanitized headers to a ParsedWorkbook's active sheet
+ */
+export function applySanitizedHeadersToWorkbook(
+  workbook: ParsedWorkbook,
+  sheetName: string,
+  newHeaders: string[]
+): ParsedWorkbook {
+  const currentSheet = workbook.sheets[sheetName];
+  if (!currentSheet) return workbook;
+
+  const updatedSheet: SheetData = {
+    ...currentSheet,
+    headers: [...newHeaders],
+    totalCols: newHeaders.length,
+  };
+
+  return {
+    ...workbook,
+    sheets: {
+      ...workbook.sheets,
+      [sheetName]: updatedSheet,
+    },
+  };
 }
 
 /**
@@ -192,6 +728,12 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
 
+  let fileFormat = 'csv';
+  if (lowerName.endsWith('.xlsx')) fileFormat = 'xlsx';
+  else if (lowerName.endsWith('.xls')) fileFormat = 'xls';
+  else if (lowerName.endsWith('.tsv')) fileFormat = 'tsv';
+  else if (lowerName.endsWith('.txt')) fileFormat = 'txt';
+
   const sheetNames = workbook.SheetNames;
   const sheets: Record<string, SheetData> = {};
 
@@ -209,6 +751,8 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
       sheets[name] = {
         sheetName: name,
         headers: [],
+        rawHeaders: [],
+        validationReport: validateCsvHeaders([], { fileFormat: 'csv' }),
         rows: [],
         totalRows: 0,
         totalCols: 0,
@@ -217,6 +761,14 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
     }
 
     const headerRow = rawRows[0] || [];
+    const rawHeaders = headerRow.map((cell: any) =>
+      cell !== null && cell !== undefined ? String(cell) : ''
+    );
+    const validationReport = validateCsvHeaders(rawHeaders, {
+      expectedConvention: 'auto',
+      fileFormat,
+    });
+
     const headers = headerRow.map((cell: any, idx: number) => {
       const str = cell !== null && cell !== undefined ? String(cell).trim() : '';
       return str || `col_${idx + 1}`;
@@ -236,17 +788,13 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
     sheets[name] = {
       sheetName: name,
       headers,
+      rawHeaders,
+      validationReport,
       rows: dataRows,
       totalRows: dataRows.length,
       totalCols: headers.length,
     };
   }
-
-  let fileFormat = 'csv';
-  if (lowerName.endsWith('.xlsx')) fileFormat = 'xlsx';
-  else if (lowerName.endsWith('.xls')) fileFormat = 'xls';
-  else if (lowerName.endsWith('.tsv')) fileFormat = 'tsv';
-  else if (lowerName.endsWith('.txt')) fileFormat = 'txt';
 
   return {
     filename: file.name,
@@ -272,6 +820,14 @@ export function parsePastedDelimitedText(text: string, filename: string = 'paste
   });
 
   const headerRow = rawRows[0] || [];
+  const rawHeaders = headerRow.map((cell: any) =>
+    cell !== null && cell !== undefined ? String(cell) : ''
+  );
+  const validationReport = validateCsvHeaders(rawHeaders, {
+    expectedConvention: 'auto',
+    fileFormat: 'csv',
+  });
+
   const headers = headerRow.map((cell: any, idx: number) => {
     const str = cell !== null && cell !== undefined ? String(cell).trim() : '';
     return str || `col_${idx + 1}`;
@@ -294,6 +850,8 @@ export function parsePastedDelimitedText(text: string, filename: string = 'paste
       [sheetName]: {
         sheetName,
         headers,
+        rawHeaders,
+        validationReport,
         rows: dataRows,
         totalRows: dataRows.length,
         totalCols: headers.length,

@@ -1,0 +1,139 @@
+name: CD (Release Standalone .exe)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        default: 'manual-release'
+      draft:
+        description: 'Create as Draft Release'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate CI Before Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Verify build
+        run: npm run build
+
+  build-standalone-exe:
+    name: Build Standalone Windows .exe
+    needs: validate
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci || npm install
+          npm install --no-save @rollup/rollup-win32-x64-msvc
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Inline Assets into Standalone Server
+        run: npm run bundle:assets
+
+      - name: Create Single Executable .exe (Node SEA)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release
+
+          Write-Host "Generating SEA blob from sea-config.json..."
+          node --experimental-sea-config sea-config.json
+
+          Write-Host "Copying native node.exe binary..."
+          $nodePath = (Get-Command node).Source
+          Copy-Item $nodePath release\Synthetix.exe
+
+          Write-Host "Injecting SEA blob into Synthetix.exe..."
+          npx --yes postject release\Synthetix.exe NODE_SEA_BLOB sea-prep.blob --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+
+          if (Test-Path release\Synthetix.exe) {
+            $size = (Get-Item release\Synthetix.exe).Length / 1MB
+            Write-Host "Successfully produced standalone Synthetix.exe ($([math]::Round($size, 2)) MB)"
+          } else {
+            Write-Error "Failed to generate Synthetix.exe"
+            exit 1
+          }
+
+      - name: Generate SHA-256 Checksum
+        shell: pwsh
+        run: |
+          cd release
+          $hash = (Get-FileHash -Algorithm SHA256 Synthetix.exe).Hash
+          "$hash  Synthetix.exe" | Out-File -Encoding ascii Synthetix.exe.sha256
+          Get-Content Synthetix.exe.sha256
+
+      - name: Upload .exe as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Synthetix-Standalone-Windows-x64
+          path: |
+            release/Synthetix.exe
+            release/Synthetix.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ github.ref_name || inputs.release_tag }}
+          name: Synthetix Release ${{ github.ref_name || inputs.release_tag }}
+          draft: ${{ inputs.draft || false }}
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Synthetix Standalone Executable Release
+
+            This release includes a **completely standalone single `.exe` file** for Windows.
+
+            ### Highlights:
+            - **No installer needed**: Simply download `Synthetix.exe` and double-click to launch.
+            - **No external bundles**: All UI assets, styles, icons, and generator engines are baked directly inside the single binary.
+            - **100% Offline**: Runs on an internal embedded loopback server (`http://127.0.0.1`) with zero telemetry or cloud dependencies.
+            - **Auto-launch**: Automatically opens your default web browser to the Synthetix workspace upon launching.
+
+            ### Verification:
+            Compare the SHA-256 checksum with `Synthetix.exe.sha256`.
+          files: |
+            release/Synthetix.exe
+            release/Synthetix.exe.sha256

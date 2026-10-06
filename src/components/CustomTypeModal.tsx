@@ -519,7 +519,8 @@ return code`;
   const handleSaveType = (e: React.FormEvent) => {
     e.preventDefault();
     if (!typeName.trim()) {
-      alert('Please enter a type name.');
+      setBenchmarkResult({ timeMs: 0, error: 'Please enter a type name.' });
+      if (setStatusMessage) setStatusMessage('Please enter a type name.');
       return;
     }
 

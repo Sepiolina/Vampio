@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { 
   X, 
   Settings2, 
@@ -29,6 +29,7 @@ export const WorkspaceSettingsModal: React.FC = () => {
   } = useWorkspace();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Close on Escape key press
   useEffect(() => {
@@ -59,6 +60,7 @@ export const WorkspaceSettingsModal: React.FC = () => {
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setErrorMsg(null);
 
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -76,10 +78,10 @@ export const WorkspaceSettingsModal: React.FC = () => {
           }
           setIsSettingsModalOpen(false);
         } else {
-          alert('Invalid workspaces backup file.');
+          setErrorMsg('Invalid workspaces backup file.');
         }
       } catch (err: any) {
-        alert(`Failed to import workspaces: ${err.message}`);
+        setErrorMsg(`Failed to import workspaces: ${err.message}`);
       }
     };
     reader.readAsText(file);
@@ -112,6 +114,18 @@ export const WorkspaceSettingsModal: React.FC = () => {
             <X size={15} />
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="px-5 py-2.5 bg-red-500/10 border-b border-red-500/20 text-xs text-red-400 flex items-center justify-between">
+            <span>{errorMsg}</span>
+            <button 
+              onClick={() => setErrorMsg(null)}
+              className="text-red-400 hover:text-red-300 ml-2"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
 
         {/* Content */}
         <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto bg-secondary">
