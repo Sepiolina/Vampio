@@ -216,6 +216,9 @@ export const FolderMonitorModal: React.FC<Props> = ({
       }
     } catch (err: any) {
       addEvent('info', `Folder selection note: ${err.message || 'Cancelled'}`);
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      }
     }
   };
 

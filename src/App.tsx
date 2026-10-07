@@ -34,9 +34,13 @@ import {
   createMultiFileStreamWriter,
   writeMultipleFilesToDirectory,
   StreamFileWriter,
-  MultiFileStreamWriter
+  MultiFileStreamWriter,
+  isTauri,
+  isEmbeddedIframe,
+  isFileSystemAccessSupported,
+  createVirtualDirectoryHandle
 } from './utils/fileSystem';
-import { addRecentFile, addRecentFolder, saveCurrentSessionAuto } from './utils/sessionManager';
+import { addRecentFile, addRecentFolder, getRecentFolders, saveCurrentSessionAuto } from './utils/sessionManager';
 import { PRESET_SCHEMAS } from './data/presets';
 import { Header, WorkspaceTab } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -47,6 +51,7 @@ import { PreviewTable } from './components/PreviewTable';
 import { PresetSelector } from './components/PresetSelector';
 import { OfflineExtractorModal } from './components/OfflineExtractorModal';
 import { FolderMonitorModal } from './components/FolderMonitorModal';
+import { FolderSelectModal } from './components/FolderSelectModal';
 import { RestApiConfigModal } from './components/RestApiConfigModal';
 import { ActionConfigModal } from './components/ActionConfigModal';
 import { ActionLogModal } from './components/ActionLogModal';
@@ -739,19 +744,59 @@ export default function App() {
     });
   }, [columns, columnSearch]);
 
+  // Folder select modal state
+  const [isFolderSelectModalOpen, setIsFolderSelectModalOpen] = useState<boolean>(false);
+  const [folderModalErrorNotice, setFolderModalErrorNotice] = useState<string | null>(null);
+
   // Folder picker workflow
   const handleSelectFolder = async () => {
+    // 1. In native Tauri desktop app (.exe / macOS / Linux):
+    // Directly launch native OS folder picker!
+    if (isTauri()) {
+      try {
+        const handle = await requestDirectoryHandle();
+        if (handle) {
+          setDirectoryHandle(handle);
+          setSelectedFolderName(handle.name);
+          setOutputDestination('folder');
+          addRecentFolder(handle.name);
+          setStatusMessage(`Selected local directory "${handle.name}". Ready for direct writes.`);
+        }
+        return;
+      } catch (err: any) {
+        console.warn('Desktop native picker error:', err);
+        setFolderModalErrorNotice(err.message || 'Desktop folder picker error');
+        setIsFolderSelectModalOpen(true);
+        return;
+      }
+    }
+
+    // 2. In browser / iframe:
+    // If running in an embedded iframe or unsupported browser, show the Folder Selection Modal directly!
+    if (isEmbeddedIframe() || !isFileSystemAccessSupported()) {
+      setFolderModalErrorNotice(
+        isEmbeddedIframe()
+          ? 'Browser security policy restricts the File System Access API inside embedded iframes. Choose a Virtual Output Folder or browse via HTML5.'
+          : null
+      );
+      setIsFolderSelectModalOpen(true);
+      return;
+    }
+
+    // 3. Top-level browser tab with File System Access API
     try {
       const handle = await requestDirectoryHandle();
       if (handle) {
         setDirectoryHandle(handle);
         setSelectedFolderName(handle.name);
         setOutputDestination('folder');
+        addRecentFolder(handle.name);
         setStatusMessage(`Selected folder "${handle.name}". Ready for direct writes.`);
       }
     } catch (err: any) {
       console.warn('Folder selection notice:', err);
-      setStatusMessage(`Notice: ${err.message || 'Could not select folder'}`);
+      setFolderModalErrorNotice(err.message || 'Could not select folder');
+      setIsFolderSelectModalOpen(true);
     }
   };
 
@@ -959,15 +1004,25 @@ export default function App() {
       try {
         const handle = await requestDirectoryHandle();
         if (!handle) {
-          setStatusMessage('Folder selection was cancelled. Generation aborted.');
-          return;
+          const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'output_dataset');
+          setDirectoryHandle(fallbackHandle);
+          setSelectedFolderName(fallbackHandle.name);
+          addRecentFolder(fallbackHandle.name);
+          activeDir = fallbackHandle;
+          setStatusMessage(`Folder selection cancelled. Using virtual folder "${fallbackHandle.name}".`);
+        } else {
+          setDirectoryHandle(handle);
+          setSelectedFolderName(handle.name);
+          addRecentFolder(handle.name);
+          activeDir = handle;
         }
-        setDirectoryHandle(handle);
-        setSelectedFolderName(handle.name);
-        activeDir = handle;
       } catch (err: any) {
-        setStatusMessage(`Folder selection error: ${err.message}`);
-        return;
+        const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'output_dataset');
+        setDirectoryHandle(fallbackHandle);
+        setSelectedFolderName(fallbackHandle.name);
+        addRecentFolder(fallbackHandle.name);
+        activeDir = fallbackHandle;
+        setStatusMessage(`Folder notice: ${err.message}. Using virtual folder "${fallbackHandle.name}".`);
       }
     }
 
@@ -1347,15 +1402,25 @@ export default function App() {
       try {
         const handle = await requestDirectoryHandle();
         if (!handle) {
-          setStatusMessage('Folder selection was cancelled. Stream aborted.');
-          return;
+          const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'stream_dataset');
+          setDirectoryHandle(fallbackHandle);
+          setSelectedFolderName(fallbackHandle.name);
+          addRecentFolder(fallbackHandle.name);
+          activeDir = fallbackHandle;
+          setStatusMessage(`Folder selection cancelled. Using virtual folder "${fallbackHandle.name}".`);
+        } else {
+          setDirectoryHandle(handle);
+          setSelectedFolderName(handle.name);
+          addRecentFolder(handle.name);
+          activeDir = handle;
         }
-        setDirectoryHandle(handle);
-        setSelectedFolderName(handle.name);
-        activeDir = handle;
       } catch (err: any) {
-        setStatusMessage(`Folder selection notice: ${err.message}`);
-        return;
+        const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'stream_dataset');
+        setDirectoryHandle(fallbackHandle);
+        setSelectedFolderName(fallbackHandle.name);
+        addRecentFolder(fallbackHandle.name);
+        activeDir = fallbackHandle;
+        setStatusMessage(`Folder notice: ${err.message}. Using virtual folder "${fallbackHandle.name}".`);
       }
     }
 
@@ -2291,6 +2356,25 @@ export default function App() {
           autoExtract={extractorAutoExtract}
         />
       )}
+
+      {/* Target Folder Selection & Fallback Modal */}
+      <FolderSelectModal
+        isOpen={isFolderSelectModalOpen}
+        onClose={() => {
+          setIsFolderSelectModalOpen(false);
+          setFolderModalErrorNotice(null);
+        }}
+        onSelectFolder={(handle, name) => {
+          setDirectoryHandle(handle);
+          setSelectedFolderName(name);
+          setOutputDestination('folder');
+          addRecentFolder(name);
+          setStatusMessage(`Target folder locked on "${name}". Ready for output.`);
+        }}
+        currentFolderName={selectedFolderName}
+        recentFolders={getRecentFolders().map((f) => f.name)}
+        initialErrorNotice={folderModalErrorNotice}
+      />
 
       {/* 100% Offline Target Folder Behavior Monitor & Mode Recommender Modal */}
       {isFolderMonitorOpen && (

@@ -7,8 +7,10 @@ import { zh } from './locales/zh';
 import { es } from './locales/es';
 import { Globe, Check, ChevronDown } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { FlagIcon } from '../components/FlagIcon';
 
 export * from './types';
+export { FlagIcon };
 
 const TRANSLATIONS: Record<SupportedLocale, TranslationDictionary> = {
   en,
@@ -165,7 +167,9 @@ export const LanguageSelectDropdown: React.FC<{ className?: string; compact?: bo
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold transition shadow-xs cursor-pointer"
         title="Change Language"
       >
-        <span className="text-sm leading-none">{currentLocaleInfo.flag}</span>
+        <span className="text-sm leading-none flex items-center justify-center">
+          <FlagIcon country={currentLocaleInfo.code} className="w-4 h-3" title={currentLocaleInfo.name} />
+        </span>
         {!compact && (
           <span className="truncate max-w-[80px] font-sans text-xs">
             {currentLocaleInfo.nativeName}
@@ -201,7 +205,9 @@ export const LanguageSelectDropdown: React.FC<{ className?: string; compact?: bo
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-sm leading-none">{item.flag}</span>
+                  <span className="text-sm leading-none flex items-center justify-center">
+                    <FlagIcon country={item.code} className="w-4 h-3" title={item.name} />
+                  </span>
                   <div>
                     <div className="leading-tight">{item.nativeName}</div>
                     <div className={cn('text-[10px]', isSelected ? 'text-white/80' : 'text-content-muted')}>

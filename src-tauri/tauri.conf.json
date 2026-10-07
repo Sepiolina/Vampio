@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "VAMPIO - Synthetic Data Generator & Architecture Extractor",

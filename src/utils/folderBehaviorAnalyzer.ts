@@ -1,6 +1,7 @@
 import { ColumnSpec, ColumnType, ExportFormat, OutputStrategy, PresetSchema } from '../types';
 import { PRESET_SCHEMAS } from '../data/presets';
-import { isTauri } from '@tauri-apps/api/core';
+import { isTauri } from './fileSystem';
+import { readDir, readFile } from '@tauri-apps/plugin-fs';
 
 export interface DiscoveredFolderFile {
   name: string;
@@ -152,7 +153,6 @@ export async function readFolderFromDirectoryHandle(
   // 1. Support Tauri Native Desktop Folder
   if (dirHandle && (dirHandle.kind === 'tauri-dir' || (isTauri() && typeof dirHandle.path === 'string'))) {
     try {
-      const { readDir, readFile } = await import('@tauri-apps/plugin-fs');
       const targetPath = dirHandle.path;
       const entries = await readDir(targetPath);
       for (const entry of entries) {
@@ -193,8 +193,22 @@ export async function readFolderFromDirectoryHandle(
     }
   }
 
-  // 2. Standard Web File System Access API
+  // 2. Virtual Directory or HTML FileList
+  if (dirHandle && dirHandle.kind === 'virtual-dir') {
+    if (dirHandle.htmlFileList) {
+      return await readFilesFromHtmlFileList(dirHandle.htmlFileList, sampleContentLimitBytes, maxFilesToReadContent);
+    }
+    if (Array.isArray(dirHandle.files)) {
+      return dirHandle.files;
+    }
+    return [];
+  }
+
+  // 3. Standard Web File System Access API
   try {
+    if (typeof dirHandle.values !== 'function') {
+      return [];
+    }
     // @ts-ignore
     for await (const entry of dirHandle.values()) {
       if (entry.kind === 'file') {

@@ -37,7 +37,7 @@ import { ColumnSpec, ExportFormat } from '../types';
 import { AnimatedTabs } from './AnimatedTabs';
 import { FormatSelectDropdown } from './FormatSelectDropdown';
 import { CustomTypeModal, CustomTypeModalTab } from './CustomTypeModal';
-import { useI18n, LanguageSelectDropdown } from '../i18n';
+import { useI18n, LanguageSelectDropdown, FlagIcon } from '../i18n';
 import { useUserRole } from '../context/UserRoleContext';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { exportWorkspacesAsJson } from '../utils/workspaceStorage';
@@ -758,7 +758,9 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                                 : 'bg-primary hover:bg-tertiary border-border-subtle text-content'
                             }`}
                           >
-                            <span className="text-xs leading-none">{loc.flag}</span>
+                            <span className="text-xs leading-none flex items-center justify-center">
+                              <FlagIcon country={loc.code} className="w-3.5 h-2.5" title={loc.name} />
+                            </span>
                             <span className="truncate">{loc.name}</span>
                           </button>
                         );

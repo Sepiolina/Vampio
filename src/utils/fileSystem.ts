@@ -1,31 +1,103 @@
 import { ColumnSpec, ExportFormat } from '../types';
-import { isTauri } from '@tauri-apps/api/core';
+import { isTauri as coreIsTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
+import { downloadFile, createZipArchive } from './export';
 
+// Ensure global Tauri detection is immediately populated
+if (typeof window !== 'undefined') {
+  if ((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__) {
+    (window as any).isTauri = true;
+  }
+}
+
+/**
+ * Robustly checks if running inside the Tauri native desktop application (.exe, macOS, Linux).
+ */
+export function isTauri(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(
+    (window as any).__TAURI_INTERNALS__ ||
+    (window as any).__TAURI__ ||
+    (window as any).isTauri ||
+    (typeof coreIsTauri === 'function' && coreIsTauri())
+  );
+}
+
+/**
+ * Checks whether the app is running embedded within an iframe (e.g. AI Studio preview)
+ */
+export function isEmbeddedIframe(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Checks whether low-level direct filesystem access is supported.
+ * In desktop mode (Tauri), it is always supported.
+ * In browser iframes, the browser security policy strictly blocks showDirectoryPicker.
+ */
 export function isFileSystemAccessSupported(): boolean {
   if (isTauri()) return true;
+  if (isEmbeddedIframe()) return false;
   return typeof window !== 'undefined' && typeof (window as any).showDirectoryPicker === 'function';
 }
 
+/**
+ * Creates a Virtual Directory Handle for safe, portable operations in browser / iframe environments.
+ */
+export function createVirtualDirectoryHandle(name: string, path?: string): any {
+  const cleanName = name.trim().replace(/^[/\\]+/, '') || 'output_folder';
+  return {
+    kind: 'virtual-dir',
+    name: cleanName,
+    path: path || cleanName,
+    files: [],
+  };
+}
+
 export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandle | any | null> {
+  // 1. Native Desktop App (Tauri)
   if (isTauri()) {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-    });
-    if (selected === null) {
-      return null;
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select Output Directory',
+      });
+      if (selected === null) {
+        return null;
+      }
+      const path = Array.isArray(selected) ? selected[0] : selected;
+      const name = path.split(/[\\/]/).pop() || path;
+      return { kind: 'tauri-dir', path, name };
+    } catch (err: any) {
+      console.error('Tauri native directory picker failed:', err);
+      throw new Error(`Desktop folder picker error: ${err.message || String(err)}`);
     }
-    const path = Array.isArray(selected) ? selected[0] : selected;
-    const name = path.split(/[\\/]/).pop() || path;
-    return { kind: 'tauri-dir', path, name };
   }
 
+  // 2. Embedded Iframe Environment
+  if (isEmbeddedIframe()) {
+    const err: any = new Error(
+      'Access to local directory was denied by browser security policy. This often occurs inside embedded iframes. Opening the app in a new browser tab allows full directory write access.'
+    );
+    err.name = 'SecurityError';
+    err.isIframe = true;
+    throw err;
+  }
+
+  // 3. Web Browser without File System Access API
   if (!isFileSystemAccessSupported()) {
-    throw new Error('File System Access API is not supported in this browser.');
+    const err: any = new Error('File System Access API is not supported in this browser.');
+    err.name = 'NotSupportedError';
+    throw err;
   }
 
+  // 4. Standard Browser with File System Access API
   try {
     const handle = await (window as any).showDirectoryPicker({
       mode: 'readwrite',
@@ -38,7 +110,12 @@ export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandl
       return null;
     }
     if (err.name === 'SecurityError') {
-      throw new Error('Access to local directory was denied by browser security policy. This often occurs inside embedded iframes. Opening the app in a new browser tab allows full directory write access.');
+      const secErr: any = new Error(
+        'Access to local directory was denied by browser security policy. This often occurs inside embedded iframes. Opening the app in a new browser tab allows full directory write access.'
+      );
+      secErr.name = 'SecurityError';
+      secErr.isIframe = true;
+      throw secErr;
     }
     throw err;
   }
@@ -66,6 +143,23 @@ export async function writeBatchToDirectory(
     return { bytesWritten: bytes, filename };
   }
 
+  if (dirHandle.kind === 'virtual-dir') {
+    const mime = filename.endsWith('.json')
+      ? 'application/json'
+      : filename.endsWith('.csv')
+      ? 'text/csv'
+      : filename.endsWith('.xml')
+      ? 'application/xml'
+      : filename.endsWith('.sql')
+      ? 'application/sql'
+      : 'text/plain';
+    const blob = content instanceof Blob
+      ? content
+      : new Blob([content], { type: mime });
+    downloadFile(blob, filename, mime);
+    return { bytesWritten: bytes, filename };
+  }
+
   // @ts-ignore
   const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
   // @ts-ignore
@@ -84,6 +178,21 @@ export async function writeMultipleFilesToDirectory(
   onProgress?: (writtenCount: number, totalCount: number) => void
 ): Promise<{ totalBytes: number; fileCount: number }> {
   let totalBytes = 0;
+
+  if (dirHandle.kind === 'virtual-dir') {
+    const zipEntries = files.map((f) => ({
+      filename: f.filename,
+      content: f.content,
+    }));
+    const zipBlob = await createZipArchive(zipEntries);
+    const zipFilename = `${dirHandle.name || 'dataset'}_bundle.zip`;
+    downloadFile(zipBlob, zipFilename, 'application/zip');
+    for (const f of files) {
+      totalBytes += typeof f.content === 'string' ? new Blob([f.content]).size : f.content.byteLength;
+    }
+    if (onProgress) onProgress(files.length, files.length);
+    return { totalBytes, fileCount: files.length };
+  }
 
   for (let i = 0; i < files.length; i++) {
     const item = files[i];
@@ -113,16 +222,18 @@ export async function createStreamFileWriter(
 ): Promise<StreamFileWriter> {
   let writable: FileSystemWritableFileStream | null = null;
   const isTauriDir = dirHandle.kind === 'tauri-dir';
+  const isVirtualDir = dirHandle.kind === 'virtual-dir';
   const filePath = isTauriDir ? `${dirHandle.path}/${filename}` : filename;
+  let accumulatedVirtualContent = '';
 
-  if (!isTauriDir) {
+  if (isTauriDir) {
+    // Overwrite initially
+    await writeTextFile(filePath, "");
+  } else if (!isVirtualDir) {
     // @ts-ignore
     const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
     // @ts-ignore
     writable = await fileHandle.createWritable({ keepExistingData: false });
-  } else {
-    // Overwrite initially
-    await writeTextFile(filePath, "");
   }
 
   const colNames = columns.map((c) => c.name);
@@ -135,7 +246,9 @@ export async function createStreamFileWriter(
     if (buffer.length > 0) {
       const dataToWrite = buffer;
       buffer = '';
-      if (writable) {
+      if (isVirtualDir) {
+        accumulatedVirtualContent += dataToWrite;
+      } else if (writable) {
         await writable.write(dataToWrite);
       } else {
         await writeTextFile(filePath, dataToWrite, { append: true });
@@ -226,6 +339,10 @@ export async function createStreamFileWriter(
       await flushBuffer();
       if (writable) {
         await writable.close();
+      } else if (isVirtualDir) {
+        const mime = format === 'json' ? 'application/json' : format === 'csv' ? 'text/csv' : 'text/plain';
+        const blob = new Blob([accumulatedVirtualContent], { type: mime });
+        downloadFile(blob, filename, mime);
       }
     },
     getBytesWritten: () => bytesWritten + new Blob([buffer]).size,
@@ -254,6 +371,8 @@ export async function createMultiFileStreamWriter(
   let fileIndex = 0;
   let currentFileRows: Record<string, unknown>[] = [];
   let totalBytesWritten = 0;
+  const isVirtualDir = dirHandle.kind === 'virtual-dir';
+  const virtualEntries: Array<{ filename: string; content: string | Uint8Array }> = [];
 
   const flushCurrentFile = async () => {
     if (currentFileRows.length === 0) return;
@@ -281,8 +400,13 @@ export async function createMultiFileStreamWriter(
       }
     }
 
-    const res = await writeBatchToDirectory(dirHandle, outFilename, content);
-    totalBytesWritten += res.bytesWritten;
+    if (isVirtualDir) {
+      virtualEntries.push({ filename: outFilename, content });
+      totalBytesWritten += typeof content === 'string' ? new Blob([content]).size : (content as Uint8Array).byteLength;
+    } else {
+      const res = await writeBatchToDirectory(dirHandle, outFilename, content);
+      totalBytesWritten += res.bytesWritten;
+    }
     currentFileRows = [];
   };
 
@@ -298,6 +422,11 @@ export async function createMultiFileStreamWriter(
     },
     close: async () => {
       await flushCurrentFile();
+      if (isVirtualDir && virtualEntries.length > 0) {
+        const zipBlob = await createZipArchive(virtualEntries);
+        const zipName = `${dirHandle.name || 'dataset'}_bundle.zip`;
+        downloadFile(zipBlob, zipName, 'application/zip');
+      }
     },
     getBytesWritten: () => totalBytesWritten,
     getFilesCount: () => fileIndex,
