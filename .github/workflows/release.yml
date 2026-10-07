@@ -1,134 +1,228 @@
-name: Release (Tauri Multi-Platform Desktop Build)
+name: Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (e.g. v1.0.0)'
+        description: 'Release tag (e.g. v1.0.0). Empty = tag on the selected ref / latest tag.'
         required: false
         default: ''
       draft:
-        description: 'Create as Draft Release'
+        description: 'Keep the release as a draft (do not publish automatically)'
         type: boolean
         required: false
         default: false
 
+# Never run two releases for the same tag at once, and never cancel one midway.
+concurrency:
+  group: release-${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag || github.sha }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  prepare-release:
-    name: Prepare Release & Commit Changelog
+  # ---------------------------------------------------------------------------
+  # 1. Resolve tag/version, generate notes, create ONE draft release.
+  #    Creating the draft here (not in each matrix job) avoids the race where
+  #    three parallel builds each try to create the release.
+  # ---------------------------------------------------------------------------
+  prepare:
+    name: Prepare release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.notes.outputs.tag }}
       version: ${{ steps.notes.outputs.version }}
-      prev_tag: ${{ steps.notes.outputs.prev_tag }}
-      release_body: ${{ steps.notes.outputs.release_body }}
-
+      prerelease: ${{ steps.notes.outputs.prerelease }}
+      tag_exists: ${{ steps.notes.outputs.tag_exists }}
     steps:
-      - name: Checkout repository with full history
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js 20.x
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: 22.x
 
-      - name: Fetch all Git tags
-        run: |
-          git fetch --tags --force || true
+      - name: Fetch tags
+        run: git fetch --tags --force
 
-      - name: Extract Tag, Version & Commit Details
+      - name: Resolve tag, version and release notes
         id: notes
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node .github/scripts/generate-release-notes.cjs
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/generate-release-notes.cjs
 
-      - name: Upload Release Notes Artifact
+      - name: Upload release notes
         uses: actions/upload-artifact@v4
         with:
           name: release-notes
           path: release_notes.md
           retention-days: 7
 
-  build-tauri:
-    name: Build (${{ matrix.platform }})
-    needs: prepare-release
+      - name: Create draft release (if missing)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.notes.outputs.tag }}
+          VERSION: ${{ steps.notes.outputs.version }}
+          PRERELEASE: ${{ steps.notes.outputs.prerelease }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; builds will upload into it."
+            exit 0
+          fi
+          args=(--draft --title "VAMPIO v$VERSION" --notes-file release_notes.md --target "$GITHUB_SHA")
+          if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); fi
+          gh release create "$TAG" "${args[@]}"
+
+  # ---------------------------------------------------------------------------
+  # 2. Gate: don't spend 3 x runner-minutes on installers if tests fail.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Typecheck & tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: prepare
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag_exists == 'true' && needs.prepare.outputs.tag || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  # ---------------------------------------------------------------------------
+  # 3. Build installers on each OS and attach them to the draft release.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.name }})
+    needs: [prepare, verify]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'windows-latest'
+          - name: Windows x64
+            platform: windows-latest
             args: ''
-          - platform: 'macos-latest'
+            rust_targets: ''
+          - name: macOS universal
+            platform: macos-latest
             args: '--target universal-apple-darwin'
-          - platform: 'ubuntu-22.04'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+          - name: Linux x64
+            platform: ubuntu-22.04
             args: ''
-
-    runs-on: ${{ matrix.platform }}
-
+            rust_targets: ''
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20.x
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: 20.x
+          ref: ${{ needs.prepare.outputs.tag_exists == 'true' && needs.prepare.outputs.tag || github.sha }}
 
-      - name: Automatically sync version from tag
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Sync version from tag
         env:
-          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
-        run: |
-          node .github/scripts/sync-version.cjs
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: node .github/scripts/sync-version.cjs
 
-      - name: Install Rust stable
+      - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: src-tauri -> target
 
-      - name: Install Linux system dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
+      # The lockfile already contains every platform's optional native
+      # packages, so a plain `npm ci` is correct on all three runners.
       - name: Install frontend dependencies
-        shell: bash
-        run: |
-          npm ci || npm install
-          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            npm install --no-save @tauri-apps/cli-win32-x64-msvc @rollup/rollup-win32-x64-msvc lightningcss-win32-x64-msvc @tailwindcss/oxide-win32-x64-msvc @esbuild/win32-x64
-          elif [ "${{ matrix.platform }}" = "macos-latest" ]; then
-            npm install --no-save @tauri-apps/cli-darwin-arm64 @tauri-apps/cli-darwin-x64 @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 @tailwindcss/oxide-darwin-arm64 @esbuild/darwin-arm64
-          elif [ "${{ matrix.platform }}" = "ubuntu-22.04" ]; then
-            npm install --no-save @tauri-apps/cli-linux-x64-gnu
-          fi
+        run: npm ci
 
-      - name: Build Tauri Desktop Application & Release
+      - name: Build & upload installers
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ needs.prepare-release.outputs.tag }}
-          releaseName: 'VAMPIO v${{ needs.prepare-release.outputs.version }}'
-          releaseBody: ${{ needs.prepare-release.outputs.release_body }}
-          releaseDraft: ${{ inputs.draft || false }}
-          prerelease: false
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: 'VAMPIO v${{ needs.prepare.outputs.version }}'
+          releaseDraft: true
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           args: ${{ matrix.args }}
+
+  # ---------------------------------------------------------------------------
+  # 4. Publish only if every platform produced its installers.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Verify assets & publish
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Verify every platform's installer is attached
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort | tee assets.txt
+          missing=0
+          check() {
+            if ! grep -Eq "$1" assets.txt; then
+              echo "::error::Missing release asset: $2"
+              missing=1
+            fi
+          }
+          check '\.msi$'        'Windows .msi'
+          check '(setup\.exe)$' 'Windows .exe (NSIS) installer'
+          check '\.dmg$'        'macOS .dmg'
+          check '\.deb$'        'Linux .deb'
+          check '\.AppImage$'   'Linux .AppImage'
+          exit $missing
+
+      - name: Publish release
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
+        run: |
+          args=(--draft=false --notes-file release_notes.md --repo "$GITHUB_REPOSITORY")
+          if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); else args+=(--latest); fi
+          gh release edit "$TAG" "${args[@]}"
+
+      - name: Left as draft
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
+        run: echo "Release $TAG left as a draft as requested. Publish it from the Releases page."

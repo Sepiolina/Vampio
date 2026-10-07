@@ -70,3 +70,26 @@ This executes:
 | `src-tauri/capabilities/default.json` | Security permissions and window capabilities. |
 | `src-tauri/icons/` | Native app icons (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, `icon.ico`). |
 | `vite.config.ts` | Configured with `clearScreen: false`, `port: 3000`, and `strictPort: true` for Tauri IPC integration. |
+
+---
+
+## 🚢 CI & Releases
+
+**CI** (`.github/workflows/CI.yml`) runs on every push/PR: typecheck, unit tests and Vite build on Node 20 and 22, `rustfmt` + `clippy` on the Tauri crate, and a check that the version in `package.json`, `tauri.conf.json` and `Cargo.toml` agree.
+
+**Releasing:**
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The release workflow then:
+1. Validates the tag (`vMAJOR.MINOR.PATCH[-prerelease]`), generates notes and creates **one draft** release.
+2. Runs typecheck + tests as a gate.
+3. Builds Windows (`.msi`/`.exe`), macOS universal (`.dmg`), and Linux (`.deb`/`.AppImage`) installers in parallel and attaches them to the draft. The app version is synced from the tag automatically.
+4. Publishes the release **only if every platform's installer is present**. If any build fails, the release stays a draft and nothing half-finished goes public; re-run the failed jobs.
+
+You can also run it manually from the Actions tab (optionally as a draft). Keep `src-tauri/Cargo.lock` committed; run `cargo update` in `src-tauri/` to refresh dependencies.
+
+> Installers are not code-signed. Windows SmartScreen and macOS Gatekeeper may warn on first launch.
