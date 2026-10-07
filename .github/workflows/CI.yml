@@ -93,7 +93,7 @@ jobs:
 
       - name: clippy
         working-directory: src-tauri
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
   version-consistency:
     name: Version files in sync

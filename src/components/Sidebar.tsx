@@ -242,26 +242,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="w-8 h-px bg-border-subtle/80 my-0.5" />
 
         {/* Dedicated Action / API Egress Launcher */}
-        <div className="flex flex-col items-center w-full px-1.5">
+        <div className="flex flex-col items-center">
           <button
             type="button"
             onClick={() => {
               setOutputDestination('action');
               onToggle();
             }}
-            className={`w-10 h-11 rounded-xl flex flex-col items-center justify-center transition cursor-pointer relative group ${
+            className={`p-2 rounded-xl border transition shadow-xs cursor-pointer group relative ${
               outputDestination === 'action'
-                ? 'bg-accent text-white shadow-md shadow-accent/25 ring-2 ring-accent/30'
-                : 'bg-accent/15 hover:bg-accent/25 border border-accent/40 text-accent shadow-xs'
+                ? 'bg-accent text-white border-accent shadow-xs'
+                : 'bg-primary hover:bg-tertiary border-border-subtle text-content-muted hover:text-accent'
             }`}
             title="Action / API Egress: Stream or batch to REST API & Webhooks"
           >
-            <Zap size={15} className={`transition-transform group-hover:scale-110 ${outputDestination === 'action' ? 'fill-current animate-pulse' : ''}`} />
-            <span className="text-[8px] font-mono font-black mt-0.5 tracking-tighter leading-none">
-              ACT
-            </span>
+            <Zap size={16} className={`transition-transform group-hover:scale-110 ${outputDestination === 'action' ? 'fill-current' : ''}`} />
             {actionStats.totalDispatched > 0 && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-secondary animate-pulse" />
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full ring-2 ring-secondary animate-pulse" />
             )}
           </button>
         </div>
