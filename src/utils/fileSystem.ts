@@ -4,15 +4,12 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
 import { downloadFile, createZipArchive } from './export';
 
-// Ensure global Tauri detection is immediately populated
-if (typeof window !== 'undefined') {
-  if ((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__) {
-    (window as any).isTauri = true;
-  }
-}
-
 /**
  * Robustly checks if running inside the Tauri native desktop application (.exe, macOS, Linux).
+ *
+ * Note: never assign `window.isTauri` ourselves. Tauri v2 defines it as a
+ * read-only property, and assigning to it from an ES module (strict mode)
+ * throws at load time, leaving the desktop app on a blank screen.
  */
 export function isTauri(): boolean {
   if (typeof window === 'undefined') return false;
