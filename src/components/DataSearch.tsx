@@ -21,11 +21,15 @@ export const DataSearch: React.FC<Props> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   // Click outside to close
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const clickedInsideInput = containerRef.current && containerRef.current.contains(target);
+      const clickedInsidePopover = popoverRef.current && popoverRef.current.contains(target);
+      if (!clickedInsideInput && !clickedInsidePopover) {
         setIsOpen(false);
       }
     };
@@ -295,6 +299,8 @@ export const DataSearch: React.FC<Props> = ({
         onHoverIndex={setSelectedIndex}
         query={lastWord}
         title="Data Filters"
+        anchorRef={containerRef}
+        popoverRef={popoverRef}
       />
     </div>
   );

@@ -1,4 +1,5 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Columns, 
@@ -31,6 +32,8 @@ interface Props {
   onHoverIndex: (index: number) => void;
   query: string;
   title?: string;
+  anchorRef?: React.RefObject<HTMLElement | null>;
+  popoverRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export const FilterSuggestionPopover: React.FC<Props> = ({
@@ -40,12 +43,16 @@ export const FilterSuggestionPopover: React.FC<Props> = ({
   onSelect,
   onHoverIndex,
   query,
-  title
+  title,
+  anchorRef,
+  popoverRef
 }) => {
   const { t } = useI18n();
   const displayTitle = title || t('schema.searchIntelliSense');
   const listRef = useRef<HTMLDivElement>(null);
   const activeItemRef = useRef<HTMLButtonElement>(null);
+  const internalRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Auto-scroll the selected item into view
   useEffect(() => {
@@ -54,7 +61,57 @@ export const FilterSuggestionPopover: React.FC<Props> = ({
     }
   }, [selectedIndex]);
 
+  // Viewport-safe and boundary-safe positioning anchored to input
+  useEffect(() => {
+    if (!isOpen || !anchorRef?.current) {
+      setCoords(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!anchorRef.current) return;
+      const rect = anchorRef.current.getBoundingClientRect();
+      const popoverWidth = Math.min(320, window.innerWidth - 24);
+
+      // Default: align left edge with the search input
+      let targetLeft = rect.left;
+
+      // If aligning left causes it to overflow right edge of viewport:
+      if (targetLeft + popoverWidth > window.innerWidth - 12) {
+        targetLeft = rect.right - popoverWidth;
+      }
+
+      // Keep safely clear of sidebar (at least 48px if sidebar is docked on left)
+      // and clamp within viewport margins
+      const minLeft = Math.max(12, rect.left >= 48 ? 48 : 12);
+      const maxLeft = Math.max(minLeft, window.innerWidth - popoverWidth - 12);
+      const finalLeft = Math.min(Math.max(minLeft, targetLeft), maxLeft);
+
+      setCoords({
+        top: rect.bottom + 6,
+        left: finalLeft,
+        width: popoverWidth,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen, anchorRef]);
+
   if (!isOpen) return null;
+
+  const setRefs = (el: HTMLDivElement | null) => {
+    (internalRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    if (popoverRef) {
+      (popoverRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    }
+  };
 
   const renderCategoryIcon = (category: SuggestionCategory) => {
     switch (category) {
@@ -113,14 +170,23 @@ export const FilterSuggestionPopover: React.FC<Props> = ({
     );
   };
 
-  return (
+  const popoverContent = (
     <AnimatePresence>
       <motion.div
+        ref={setRefs}
         initial={{ opacity: 0, scale: 0.96, y: -4 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: -4 }}
         transition={{ duration: 0.12, ease: 'easeOut' }}
-        className="absolute top-full right-0 mt-1.5 w-72 sm:w-84 max-w-[calc(100vw-24px)] bg-primary border border-border-subtle rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col font-sans select-none"
+        className={coords 
+          ? "fixed z-50 bg-primary border border-border-subtle rounded-xl shadow-2xl overflow-hidden flex flex-col font-sans select-none text-content"
+          : "absolute top-full left-0 mt-1.5 w-72 sm:w-80 max-w-[calc(100vw-24px)] bg-primary border border-border-subtle rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col font-sans select-none text-content"
+        }
+        style={coords ? {
+          top: coords.top,
+          left: coords.left,
+          width: coords.width,
+        } : undefined}
       >
         {/* Header Bar */}
         <div className="px-3 py-1.5 border-b border-border-subtle bg-secondary/70 flex items-center justify-between text-[10px] font-semibold text-content-muted">
@@ -202,4 +268,10 @@ export const FilterSuggestionPopover: React.FC<Props> = ({
       </motion.div>
     </AnimatePresence>
   );
+
+  if (coords && typeof document !== 'undefined') {
+    return createPortal(popoverContent, document.body);
+  }
+
+  return popoverContent;
 };

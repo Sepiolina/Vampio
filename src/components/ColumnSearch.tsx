@@ -23,6 +23,7 @@ export const ColumnSearch: React.FC<Props> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const ALL_TYPES = useMemo(() => [
     { type: 'String', detail: t('schema.typeDescString') },
@@ -53,7 +54,10 @@ export const ColumnSearch: React.FC<Props> = ({
   // Click outside listener
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const clickedInsideInput = containerRef.current && containerRef.current.contains(target);
+      const clickedInsidePopover = popoverRef.current && popoverRef.current.contains(target);
+      if (!clickedInsideInput && !clickedInsidePopover) {
         setIsOpen(false);
       }
     };
@@ -337,6 +341,8 @@ export const ColumnSearch: React.FC<Props> = ({
         onHoverIndex={setSelectedIndex}
         query={lastWord}
         title={t('schema.searchIntelliSense')}
+        anchorRef={containerRef}
+        popoverRef={popoverRef}
       />
     </div>
   );
