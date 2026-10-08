@@ -48,7 +48,8 @@ import {
   Key,
   Send,
   AlertTriangle,
-  Filter
+  Filter,
+  Webhook
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -223,40 +224,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Toggle / Expand Generation Deck Button */}
         <button
           type="button"
-          onClick={() => {
-            if (outputDestination === 'action') {
-              setOutputDestination('download');
-            }
-            onToggle();
-          }}
-          className={`p-2 rounded-xl border transition shadow-xs cursor-pointer group ${
-            outputDestination !== 'action'
-              ? 'bg-primary hover:bg-tertiary border-border-subtle text-content-muted hover:text-accent'
-              : 'bg-primary/60 hover:bg-primary border-border-subtle/70 text-content-muted hover:text-content'
-          }`}
-          title="Expand Generation Deck (Files)"
+          onClick={onToggle}
+          className="p-2 rounded-xl border transition shadow-xs cursor-pointer group bg-primary hover:bg-tertiary border-border-subtle text-content-muted hover:text-accent"
+          title="Expand Generation Deck"
         >
           <Sliders size={16} className="group-hover:rotate-45 transition-transform duration-200" />
         </button>
 
         <div className="w-8 h-px bg-border-subtle/80 my-0.5" />
 
-        {/* Dedicated Action / API Egress Launcher */}
+        {/* Dedicated Action Add-on Launcher */}
         <div className="flex flex-col items-center">
           <button
             type="button"
-            onClick={() => {
-              setOutputDestination('action');
-              onToggle();
-            }}
+            onClick={onOpenActionConfig}
             className={`p-2 rounded-xl border transition shadow-xs cursor-pointer group relative ${
-              outputDestination === 'action'
-                ? 'bg-accent text-white border-accent shadow-xs'
+              actionConfig.enabled
+                ? 'bg-accent/15 text-accent border-accent/40 shadow-xs'
                 : 'bg-primary hover:bg-tertiary border-border-subtle text-content-muted hover:text-accent'
             }`}
-            title="Action / API Egress: Stream or batch to REST API & Webhooks"
+            title={`Action Add-on: Webhook & REST API Egress (${actionConfig.enabled ? 'ACTIVE' : 'OFF'})`}
           >
-            <Zap size={16} className={`transition-transform group-hover:scale-110 ${outputDestination === 'action' ? 'fill-current' : ''}`} />
+            <Webhook size={16} className={`transition-transform group-hover:scale-110 ${actionConfig.enabled ? 'text-accent' : ''}`} />
             {actionStats.totalDispatched > 0 && (
               <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full ring-2 ring-secondary animate-pulse" />
             )}
@@ -291,23 +280,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               disabled={isGeneratingBatch || totalColumns === 0}
               onClick={onStart}
-              className={`p-2.5 rounded-xl text-white shadow-md disabled:opacity-40 transition cursor-pointer ${
-                outputDestination === 'action'
-                  ? 'bg-accent hover:bg-accent-hover ring-2 ring-accent/30'
-                  : 'bg-accent hover:bg-accent-hover'
-              }`}
+              className="p-2.5 rounded-xl text-white shadow-md disabled:opacity-40 transition cursor-pointer bg-accent hover:bg-accent-hover"
               title={
-                outputDestination === 'action'
-                  ? `Dispatch ${count.toLocaleString()} rows to Action API`
+                actionConfig.enabled
+                  ? `Generate Batch (${count.toLocaleString()} rows + Action Add-on)`
                   : t('sidebar.generateBatch')
               }
             >
               {isGeneratingBatch ? (
                 <RefreshCw size={14} className="animate-spin" />
-              ) : outputDestination === 'action' ? (
-                <Send size={14} className="fill-current" />
               ) : (
-                <Zap size={14} className="fill-current" />
+                <Play size={14} fill="currentColor" />
               )}
             </button>
           )}
@@ -321,25 +304,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-secondary sticky top-0 z-10">
         <div className="flex items-center gap-2 min-w-0">
-          {outputDestination === 'action' ? (
-            <>
-              <div className="w-6 h-6 rounded-lg bg-accent/15 text-accent flex items-center justify-center border border-accent/30 shadow-2xs shrink-0">
-                <Zap size={14} className="fill-current text-accent" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-accent font-mono truncate">
-                  Action / API Egress
-                </h3>
-                <p className="text-[10px] text-content-muted truncate">REST API &amp; Webhook Dispatcher</p>
-              </div>
-            </>
-          ) : (
-            <>
-              <Sliders size={15} className="text-accent shrink-0" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-content truncate">
-                {t('sidebar.title')}
-              </h3>
-            </>
+          <Sliders size={15} className="text-accent shrink-0" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-content truncate">
+            {t('sidebar.title')}
+          </h3>
+          {actionConfig.enabled && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-accent/15 text-accent border border-accent/30 shrink-0">
+              + Action Add-on
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -378,22 +350,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Section 2: Output Destination */}
-        {outputDestination !== 'action' ? (
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-content uppercase tracking-wider flex items-center justify-between">
-              <span>{t('sidebar.destination')}</span>
-              <span className="text-[10px] text-content-muted lowercase font-normal">
-                {outputDestination === 'folder' 
-                  ? t('sidebar.directDiskWrite') 
-                  : t('sidebar.browserDownload')}
-              </span>
-            </label>
-            <AnimatedTabs
-              tabs={[
-                { id: 'download', label: t('sidebar.download'), icon: <Download size={11} /> },
-                { id: 'folder', label: t('sidebar.localFolder'), icon: <FolderCheck size={11} /> }
-              ]}
-              activeTab={outputDestination}
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold text-content uppercase tracking-wider flex items-center justify-between">
+            <span>{t('sidebar.destination')}</span>
+            <span className="text-[10px] text-content-muted lowercase font-normal">
+              {outputDestination === 'folder' 
+                ? t('sidebar.directDiskWrite') 
+                : t('sidebar.browserDownload')}
+            </span>
+          </label>
+          <AnimatedTabs
+            tabs={[
+              { id: 'download', label: t('sidebar.download'), icon: <Download size={11} /> },
+              { id: 'folder', label: t('sidebar.localFolder'), icon: <FolderCheck size={11} /> }
+            ]}
+            activeTab={outputDestination === 'folder' ? 'folder' : 'download'}
               onChange={(dest) => {
                 const d = dest as OutputDestination;
                 setOutputDestination(d);
@@ -452,422 +423,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
           </div>
-        ) : (
-          /* Action Destination Card */
-          <div className="p-3 rounded-xl bg-primary border border-accent/40 space-y-3 text-xs shadow-xs animate-in fade-in duration-150">
-            {/* Header & Master Toggle */}
-            <div className="flex items-center justify-between gap-1 pb-1 border-b border-border-subtle/50">
-              <span className="text-[10px] text-content-muted uppercase font-bold flex items-center gap-1.5">
-                <Zap size={12} className="text-accent" />
-                REST API &amp; Webhook Egress
-              </span>
-              <button
-                type="button"
-                onClick={() => setActionConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition flex items-center gap-1 cursor-pointer ${
-                  actionConfig.enabled
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
-                    : 'bg-secondary border border-border-subtle text-content-muted hover:text-content'
-                }`}
-                title={actionConfig.enabled ? 'Click to disable Action dispatch' : 'Click to enable Action dispatch'}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${actionConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-content-muted/40'}`} />
-                <span>{actionConfig.enabled ? 'ACTIVE (ON)' : 'OFF (DEFAULT)'}</span>
-              </button>
-            </div>
 
-            {/* Inactive Notice when OFF */}
-            {!actionConfig.enabled ? (
-              <div className="p-3 rounded-lg bg-secondary/50 border border-dashed border-border-subtle text-center space-y-2">
-                <p className="text-[11px] text-content-muted leading-relaxed">
-                  Action is <strong>OFF by default</strong> to protect performance and prevent unintended network requests during file synthesis.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActionConfig((prev) => ({ ...prev, enabled: true }))}
-                  className="w-full py-1.5 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <Zap size={13} className="fill-current" />
-                  <span>Turn ON Action Egress</span>
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Method + URL Input */}
-                <div className="space-y-1">
-                  <label className="text-[10px] text-content-muted font-medium flex items-center justify-between">
-                    <span>Target Endpoint</span>
-                    {actionConfig.authType !== 'none' && (
-                      <span className="text-[9px] text-amber-400 font-mono flex items-center gap-1">
-                        <Key size={9} />
-                        {actionConfig.authType.toUpperCase()}
-                      </span>
-                    )}
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={actionConfig.method}
-                      onChange={(e) => setActionConfig((prev) => ({ ...prev, method: e.target.value as any }))}
-                      className="bg-secondary px-2 py-1.5 text-xs text-accent font-mono font-bold rounded-lg border border-border-subtle focus:outline-none cursor-pointer"
-                    >
-                      <option value="POST">POST</option>
-                      <option value="PUT">PUT</option>
-                      <option value="PATCH">PATCH</option>
-                    </select>
-                    <input
-                      type="url"
-                      value={actionConfig.endpointUrl}
-                      onChange={(e) => setActionConfig((prev) => ({ ...prev, endpointUrl: e.target.value }))}
-                      placeholder="https://api.example.com/v1/records"
-                      className="flex-1 px-2.5 py-1.5 bg-secondary border border-border-subtle rounded-lg text-xs font-mono text-content focus:outline-none focus:border-accent"
-                    />
-                  </div>
-                </div>
-
-                {/* Trigger Configuration Card */}
-                <div className="p-2.5 rounded-lg bg-secondary/60 border border-border-subtle space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-content flex items-center gap-1.5">
-                      <Sparkles size={11} className="text-accent" />
-                      <span>Trigger Configuration</span>
-                    </span>
-                    <span className="text-[9px] font-mono text-accent font-semibold">
-                      {actionConfig.mode === 'per_entry' ? 'Per-Row' : `Batch (${actionConfig.batchSize}/req)`}
-                    </span>
-                  </div>
-
-                  {/* 1. Cadence Trigger: Every row complete vs Every X rows complete */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-content-muted font-medium block">
-                      1. Trigger Cadence:
-                    </span>
-                    <div className="grid grid-cols-2 gap-1 bg-primary/80 p-0.5 rounded-md border border-border-subtle">
-                      <button
-                        type="button"
-                        onClick={() => setActionConfig((prev) => ({ ...prev, mode: 'per_entry' }))}
-                        className={`py-1 px-1.5 rounded text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
-                          actionConfig.mode === 'per_entry'
-                            ? 'bg-accent text-white shadow-xs'
-                            : 'text-content-muted hover:text-content'
-                        }`}
-                        title="Dispatch every row immediately as it completes"
-                      >
-                        <Radio size={10} />
-                        <span>Every Row</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActionConfig((prev) => ({ ...prev, mode: 'batch' }))}
-                        className={`py-1 px-1.5 rounded text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
-                          actionConfig.mode === 'batch'
-                            ? 'bg-accent text-white shadow-xs'
-                            : 'text-content-muted hover:text-content'
-                        }`}
-                        title="Collect rows and dispatch in batch chunks"
-                      >
-                        <Layers size={10} />
-                        <span>Every X Rows</span>
-                      </button>
-                    </div>
-
-                    {actionConfig.mode === 'batch' && (
-                      <div className="space-y-1.5 pt-1">
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <div>
-                            <label className="text-[9px] uppercase font-bold text-content-muted block mb-0.5">
-                              Batch Chunk (X rows)
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={10000}
-                              value={actionConfig.batchSize}
-                              onChange={(e) => setActionConfig((prev) => ({ ...prev, batchSize: Math.max(1, parseInt(e.target.value) || 1) }))}
-                              className="w-full px-2 py-1 bg-primary border border-border-subtle rounded text-xs font-mono font-bold text-accent focus:outline-none focus:border-accent"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9px] uppercase font-bold text-content-muted block mb-0.5">
-                              Payload Key
-                            </label>
-                            <input
-                              type="text"
-                              value={actionConfig.batchPayloadKey}
-                              onChange={(e) => setActionConfig((prev) => ({ ...prev, batchPayloadKey: e.target.value }))}
-                              placeholder="(Root array)"
-                              className="w-full px-2 py-1 bg-primary border border-border-subtle rounded text-xs font-mono text-content focus:outline-none focus:border-accent"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Quick Chunk Size Chips */}
-                        <div className="flex items-center gap-1 text-[9px] font-mono">
-                          <span className="text-content-muted">Preset:</span>
-                          {[10, 50, 100, 500].map((size) => (
-                            <button
-                              key={size}
-                              type="button"
-                              onClick={() => setActionConfig((prev) => ({ ...prev, batchSize: size }))}
-                              className={`px-1.5 py-0.5 rounded border transition cursor-pointer ${
-                                actionConfig.batchSize === size
-                                  ? 'bg-accent/20 border-accent text-accent font-bold'
-                                  : 'bg-primary border-border-subtle text-content-muted hover:text-content'
-                              }`}
-                            >
-                              {size}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 2. Conditional Filter Trigger (e.g. only when column error = 1) */}
-                  <div className="space-y-1.5 pt-1.5 border-t border-border-subtle/60">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-content-muted font-medium flex items-center gap-1">
-                        <Filter size={10} />
-                        <span>2. Conditional Filter:</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setActionConfig((prev) => ({
-                          ...prev,
-                          triggerCondition: {
-                            ...prev.triggerCondition,
-                            enabled: !prev.triggerCondition?.enabled,
-                            column: prev.triggerCondition?.column || (sampleColumns[0]?.name || 'error'),
-                            operator: prev.triggerCondition?.operator || 'equals',
-                            value: prev.triggerCondition?.value || '1'
-                          }
-                        }))}
-                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold transition cursor-pointer ${
-                          actionConfig.triggerCondition?.enabled
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-primary border border-border-subtle text-content-muted hover:text-content'
-                        }`}
-                      >
-                        {actionConfig.triggerCondition?.enabled ? 'FILTER ACTIVE' : '+ ADD CONDITION'}
-                      </button>
-                    </div>
-
-                    {actionConfig.triggerCondition?.enabled ? (
-                      <div className="p-2 rounded-md bg-primary/90 border border-accent/30 space-y-1.5">
-                        <div className="text-[10px] text-accent font-semibold flex items-center justify-between">
-                          <span>Only send row when:</span>
-                          <span className="text-[9px] font-mono text-content-muted">Target column filter</span>
-                        </div>
-                        <div className="grid grid-cols-12 gap-1 items-center">
-                          {/* Column select */}
-                          <div className="col-span-5">
-                            <select
-                              value={actionConfig.triggerCondition.column}
-                              onChange={(e) => setActionConfig((prev) => ({
-                                ...prev,
-                                triggerCondition: { ...prev.triggerCondition, column: e.target.value }
-                              }))}
-                              className="w-full bg-secondary px-1.5 py-1 text-[11px] font-mono font-bold text-content rounded border border-border-subtle focus:outline-none cursor-pointer"
-                            >
-                              {sampleColumns && sampleColumns.length > 0 ? (
-                                sampleColumns.map((c) => (
-                                  <option key={c.id || c.name} value={c.name}>
-                                    {c.name}
-                                  </option>
-                                ))
-                              ) : (
-                                <option value="error">error</option>
-                              )}
-                            </select>
-                          </div>
-
-                          {/* Operator select */}
-                          <div className="col-span-3">
-                            <select
-                              value={actionConfig.triggerCondition.operator}
-                              onChange={(e) => setActionConfig((prev) => ({
-                                ...prev,
-                                triggerCondition: { ...prev.triggerCondition, operator: e.target.value as any }
-                              }))}
-                              className="w-full bg-secondary px-1 py-1 text-[11px] font-mono font-bold text-accent rounded border border-border-subtle focus:outline-none cursor-pointer"
-                            >
-                              <option value="equals">=</option>
-                              <option value="not_equals">!=</option>
-                              <option value="greater_than">&gt;</option>
-                              <option value="less_than">&lt;</option>
-                              <option value="contains">contains</option>
-                            </select>
-                          </div>
-
-                          {/* Target value input */}
-                          <div className="col-span-4">
-                            <input
-                              type="text"
-                              placeholder='e.g. 1 or "true"'
-                              value={actionConfig.triggerCondition.value}
-                              onChange={(e) => setActionConfig((prev) => ({
-                                ...prev,
-                                triggerCondition: { ...prev.triggerCondition, value: e.target.value }
-                              }))}
-                              className="w-full bg-secondary px-1.5 py-1 text-[11px] font-mono text-content rounded border border-border-subtle focus:outline-none focus:border-accent"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Quick Presets */}
-                        <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-border-subtle/50 text-[9px]">
-                          <span className="text-content-muted">Quick presets:</span>
-                          <button
-                            type="button"
-                            onClick={() => setActionConfig((prev) => ({
-                              ...prev,
-                              triggerCondition: {
-                                enabled: true,
-                                column: sampleColumns.some(c => c.name === 'error') ? 'error' : (sampleColumns[0]?.name || 'error'),
-                                operator: 'equals',
-                                value: '1'
-                              }
-                            }))}
-                            className="px-1.5 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle font-mono text-accent transition cursor-pointer"
-                          >
-                            error = 1
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActionConfig((prev) => ({
-                              ...prev,
-                              triggerCondition: {
-                                enabled: true,
-                                column: sampleColumns.some(c => c.name === 'status') ? 'status' : (sampleColumns[0]?.name || 'status'),
-                                operator: 'equals',
-                                value: 'failed'
-                              }
-                            }))}
-                            className="px-1.5 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle font-mono text-accent transition cursor-pointer"
-                          >
-                            status = &quot;failed&quot;
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActionConfig((prev) => ({
-                              ...prev,
-                              triggerCondition: {
-                                enabled: true,
-                                column: sampleColumns.some(c => c.name === 'error') ? 'error' : (sampleColumns[0]?.name || 'error'),
-                                operator: 'equals',
-                                value: 'true'
-                              }
-                            }))}
-                            className="px-1.5 py-0.5 rounded bg-secondary hover:bg-tertiary border border-border-subtle font-mono text-accent transition cursor-pointer"
-                          >
-                            error = true
-                          </button>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[9px] text-content-muted font-mono pt-0.5">
-                          <span>
-                            🎯 Dispatches when <strong>{actionConfig.triggerCondition.column || 'column'}</strong> {actionConfig.triggerCondition.operator === 'equals' ? '=' : actionConfig.triggerCondition.operator} <strong>&quot;{actionConfig.triggerCondition.value ?? '1'}&quot;</strong>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setActionConfig((prev) => ({
-                              ...prev,
-                              triggerCondition: { ...prev.triggerCondition, enabled: false }
-                            }))}
-                            className="text-rose-400 hover:underline cursor-pointer"
-                          >
-                            Disable
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] text-content-muted block italic">
-                        All rows dispatched (no condition filter).
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Quick Actions: Auth/Headers & Test Ping */}
-                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={onOpenActionConfig}
-                    className="py-1.5 px-2 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-semibold text-content flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Key size={11} className="text-accent" />
-                    <span>Headers &amp; Auth</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isPinging || !actionConfig.endpointUrl.trim()}
-                    onClick={handleTestPing}
-                    className="py-1.5 px-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-                  >
-                    {isPinging ? <RefreshCw size={11} className="animate-spin" /> : <Play size={11} />}
-                    <span>{isPinging ? 'Pinging...' : 'Test Ping'}</span>
-                  </button>
-                </div>
-
-                {/* Test Ping Result */}
-                {pingResult && (
-                  <div className={`p-2 rounded-lg border text-[11px] flex items-start gap-1.5 ${
-                    pingResult.success 
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
-                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                  }`}>
-                    {pingResult.success ? <CheckCircle2 size={13} className="shrink-0 mt-0.5 text-emerald-400" /> : <AlertTriangle size={13} className="shrink-0 mt-0.5 text-rose-400" />}
-                    <div className="flex-1 truncate">
-                      <span className="font-bold">{pingResult.statusCode ? `HTTP ${pingResult.statusCode}: ` : ''}</span>
-                      <span>{pingResult.message}</span>
-                      {pingResult.durationMs !== undefined && <span className="font-mono ml-1 opacity-80">({pingResult.durationMs}ms)</span>}
-                    </div>
-                  </div>
-                )}
-
-                {/* Delivery Logs & Dead Letter Queue Button */}
-                <button
-                  type="button"
-                  onClick={onOpenActionLogs}
-                  className="w-full py-2 px-3 rounded-lg bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent font-semibold text-[11px] flex items-center justify-between transition cursor-pointer"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Send size={12} />
-                    <span>Delivery Logs &amp; Dead Letter</span>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-[10px]">
-                    {actionStats.failedRecords.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded bg-rose-500/30 text-rose-300 font-bold">
-                        {actionStats.failedRecords.length} failed
-                      </span>
-                    )}
-                    <span className="opacity-75">{actionStats.totalDispatched} sent</span>
-                  </div>
-                </button>
-
-                {/* Live Metric Badges */}
-                <div className="grid grid-cols-3 gap-1 pt-0.5 text-center font-mono text-[10px]">
-                  <div className="p-1.5 rounded bg-secondary/80 border border-border-subtle">
-                    <span className="text-content-muted block text-[9px] uppercase">Delivered</span>
-                    <span className="font-bold text-emerald-400">{actionStats.successCount}</span>
-                  </div>
-                  <div className="p-1.5 rounded bg-secondary/80 border border-border-subtle">
-                    <span className="text-content-muted block text-[9px] uppercase">Retries</span>
-                    <span className="font-bold text-amber-400">{actionStats.retryCount}</span>
-                  </div>
-                  <div className="p-1.5 rounded bg-secondary/80 border border-border-subtle">
-                    <span className="text-content-muted block text-[9px] uppercase">Latency</span>
-                    <span className="font-bold text-accent">{actionStats.avgLatencyMs ? `${actionStats.avgLatencyMs}ms` : '--'}</span>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-          )}
-
-        {/* Section 2.5 & 3: File Strategies (Only shown for file outputs) */}
-        {outputDestination !== 'action' && (
-          <>
             {/* Section 2.5: Output Strategy (Single File vs Multi-File vs In-Place Append) */}
             <div className="space-y-2 p-3 bg-primary rounded-xl border border-border-subtle">
           <div className="flex items-center justify-between">
@@ -1499,8 +1055,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         )}
-          </>
-        )}
 
         {/* Section 4: Parameters (Count or Interval) */}
         <div className="space-y-2 p-3 bg-primary rounded-xl border border-border-subtle">
@@ -1565,6 +1119,164 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
+        {/* Section 4.5: Action Add-on (REST API & Webhook Egress) */}
+        <div className="p-3 rounded-xl bg-primary border border-border-subtle hover:border-accent/30 space-y-3 text-xs shadow-xs transition-colors">
+          {/* Header & Master Toggle */}
+          <div className="flex items-center justify-between gap-1 pb-1 border-b border-border-subtle/50">
+            <span className="text-[10px] text-content-muted uppercase font-bold flex items-center gap-1.5">
+              <Webhook size={13} className="text-accent" />
+              Action Add-on (API &amp; Webhooks)
+            </span>
+            <button
+              type="button"
+              onClick={() => setActionConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition flex items-center gap-1 cursor-pointer ${
+                actionConfig.enabled
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                  : 'bg-secondary border border-border-subtle text-content-muted hover:text-content'
+              }`}
+              title={actionConfig.enabled ? 'Click to disable Action add-on' : 'Click to enable Action add-on'}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${actionConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-content-muted/40'}`} />
+              <span>{actionConfig.enabled ? 'ACTIVE (ON)' : 'OFF (DEFAULT)'}</span>
+            </button>
+          </div>
+
+          {!actionConfig.enabled ? (
+            <div className="p-2.5 rounded-lg bg-secondary/50 border border-dashed border-border-subtle text-center space-y-2">
+              <p className="text-[11px] text-content-muted leading-relaxed">
+                Action is an <strong>add-on to Generation</strong>. When enabled, synthesized records are dispatched to your REST API or webhook endpoint alongside file generation.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActionConfig((prev) => ({ ...prev, enabled: true }))}
+                className="w-full py-1.5 px-3 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content hover:text-accent text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Webhook size={13} />
+                <span>Enable Action Add-on</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Target Endpoint */}
+              <div className="space-y-1">
+                <label className="text-[10px] text-content-muted font-medium flex items-center justify-between">
+                  <span>Target Endpoint</span>
+                  {actionConfig.authType !== 'none' && (
+                    <span className="text-[9px] text-amber-400 font-mono flex items-center gap-1">
+                      <Key size={9} />
+                      {actionConfig.authType.toUpperCase()}
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={actionConfig.method}
+                    onChange={(e) => setActionConfig((prev) => ({ ...prev, method: e.target.value as any }))}
+                    className="bg-secondary px-2 py-1.5 text-xs text-accent font-mono font-bold rounded-lg border border-border-subtle focus:outline-none cursor-pointer"
+                  >
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                  </select>
+                  <input
+                    type="url"
+                    value={actionConfig.endpointUrl}
+                    onChange={(e) => setActionConfig((prev) => ({ ...prev, endpointUrl: e.target.value }))}
+                    placeholder="https://api.example.com/v1/webhook"
+                    className="flex-1 bg-secondary px-2.5 py-1.5 text-xs rounded-lg border border-border-subtle focus:outline-none focus:border-accent font-mono text-content truncate"
+                  />
+                </div>
+              </div>
+
+              {/* Dispatch Mode: Per-Entry vs Batch */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setActionConfig((prev) => ({ ...prev, mode: 'per_entry' }))}
+                  className={`p-1.5 rounded-lg border text-center transition ${
+                    actionConfig.mode === 'per_entry'
+                      ? 'bg-secondary border-accent text-accent font-bold'
+                      : 'bg-secondary/40 border-border-subtle text-content-muted hover:text-content'
+                  }`}
+                >
+                  <span className="block text-[11px]">Per-Entry</span>
+                  <span className="block text-[9px] opacity-75">1 row / req</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActionConfig((prev) => ({ ...prev, mode: 'batch' }))}
+                  className={`p-1.5 rounded-lg border text-center transition ${
+                    actionConfig.mode === 'batch'
+                      ? 'bg-secondary border-accent text-accent font-bold'
+                      : 'bg-secondary/40 border-border-subtle text-content-muted hover:text-content'
+                  }`}
+                >
+                  <span className="block text-[11px]">Chunked Batch</span>
+                  <span className="block text-[9px] opacity-75">{actionConfig.batchSize || 50} rows / req</span>
+                </button>
+              </div>
+
+              {/* Action Buttons: Modal Config & Test Ping */}
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={onOpenActionConfig}
+                  className="py-1.5 px-2 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-[11px] font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <SlidersHorizontal size={11} />
+                  <span>Configure</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isPinging || !actionConfig.endpointUrl.trim()}
+                  onClick={handleTestPing}
+                  className="py-1.5 px-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                >
+                  {isPinging ? <RefreshCw size={11} className="animate-spin" /> : <Play size={11} />}
+                  <span>{isPinging ? 'Pinging...' : 'Test Ping'}</span>
+                </button>
+              </div>
+
+              {/* Test Ping Result */}
+              {pingResult && (
+                <div className={`p-2 rounded-lg border text-[11px] flex items-start gap-1.5 ${
+                  pingResult.success 
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}>
+                  {pingResult.success ? <CheckCircle2 size={13} className="shrink-0 mt-0.5 text-emerald-400" /> : <AlertTriangle size={13} className="shrink-0 mt-0.5 text-rose-400" />}
+                  <div className="flex-1 truncate">
+                    <span className="font-bold">{pingResult.statusCode ? `HTTP ${pingResult.statusCode}: ` : ''}</span>
+                    <span>{pingResult.message}</span>
+                    {pingResult.durationMs !== undefined && <span className="font-mono ml-1 opacity-80">({pingResult.durationMs}ms)</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Delivery Logs Button */}
+              <button
+                type="button"
+                onClick={onOpenActionLogs}
+                className="w-full py-1.5 px-2.5 rounded-lg bg-secondary/80 hover:bg-secondary border border-border-subtle text-content text-[11px] font-semibold flex items-center justify-between transition cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Send size={11} />
+                  <span>Delivery Logs</span>
+                </div>
+                <div className="flex items-center gap-1 font-mono text-[10px]">
+                  {actionStats.failedRecords.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded bg-rose-500/30 text-rose-300 font-bold">
+                      {actionStats.failedRecords.length} failed
+                    </span>
+                  )}
+                  <span className="opacity-75">{actionStats.totalDispatched} sent</span>
+                </div>
+              </button>
+            </>
+          )}
+        </div>
+
         {/* Section 5: Primary Action Button */}
         <div className="space-y-2 pt-1">
           {isStreaming ? (
@@ -1602,18 +1314,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>{t('sidebar.generating')} {batchProgress}%...</span>
                 </>
               ) : mode === 'Batch' ? (
-                outputDestination === 'action' ? (
-                  <>
-                    <Send size={13} className="fill-current flex-shrink-0" />
-                    <span>
-                      Dispatch {count.toLocaleString()} Records to API
-                    </span>
-                  </>
-                ) : outputStrategy === 'append_existing' && importedContext ? (
+                outputStrategy === 'append_existing' && importedContext ? (
                   <>
                     <ArrowDownCircle size={14} className="text-emerald-300 flex-shrink-0" />
                     <span className="truncate">
                       Append +{count.toLocaleString()} Rows to {importedContext.filename}
+                      {actionConfig.enabled ? ' (+ Action)' : ''}
                     </span>
                   </>
                 ) : outputStrategy === 'multi_file' ? (
@@ -1621,15 +1327,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Files size={13} className="fill-current flex-shrink-0" />
                     <span>
                       Generate {Math.ceil(count / Math.max(1, multiFileConfig.rowsPerFile))} Files ({count >= 1000 ? `${count / 1000}k` : count} rows)
+                      {actionConfig.enabled ? ' (+ Action)' : ''}
                     </span>
                   </>
                 ) : (
                   <>
-                    <Zap size={13} className="fill-current flex-shrink-0" />
+                    <Play size={13} fill="currentColor" className="flex-shrink-0" />
                     <span>
                       {outputDestination === 'folder'
                         ? t('sidebar.generateToFolder')
                         : `${t('sidebar.generateBatch')} (${count >= 1000 ? `${count / 1000}k` : count})`}
+                      {actionConfig.enabled ? ' (+ Action)' : ''}
                     </span>
                   </>
                 )
@@ -1637,7 +1345,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <>
                   <Play size={13} fill="currentColor" />
                   <span>
-                    {outputDestination === 'action' ? 'Start Live API Stream' : t('sidebar.startStreamingLive')}
+                    {t('sidebar.startStreamingLive')}
+                    {actionConfig.enabled ? ' (+ Action Stream)' : ''}
                   </span>
                 </>
               )}

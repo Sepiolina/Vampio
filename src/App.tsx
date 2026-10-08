@@ -987,16 +987,8 @@ export default function App() {
       return;
     }
 
-    if (outputDestination === 'action') {
-      if (!actionConfig.enabled) {
-        setStatusMessage('Action Egress is OFF by default. Please toggle "Action Egress" ON in the sidebar or settings to dispatch.');
-        return;
-      }
-      if (!actionConfig.endpointUrl.trim()) {
-        setStatusMessage('Please enter an Endpoint URL in Action / API settings before dispatching.');
-        setIsActionConfigModalOpen(true);
-        return;
-      }
+    if (actionConfig.enabled && !actionConfig.endpointUrl.trim()) {
+      setStatusMessage('Notice: Action Add-on is enabled, but Endpoint URL is empty. Generating files normally.');
     }
 
     let activeDir = directoryHandle;
@@ -1040,15 +1032,19 @@ export default function App() {
     const isContinuation = outputStrategy === 'append_existing' && importedContext;
     const isMultiFile = outputStrategy === 'multi_file';
 
-    const actionDescription = outputDestination === 'action'
-      ? `Synthesizing ${count.toLocaleString()} records for Action dispatch to ${actionConfig.endpointUrl}...`
-      : isContinuation
+    const baseDescription = isContinuation
       ? `Continuing "${importedContext.filename}" (adding ${count.toLocaleString()} rows from row #${importedContext.startingRowNumber})...`
       : isMultiFile
       ? `Synthesizing ${count.toLocaleString()} rows split across individual files (${multiFileConfig.rowsPerFile} per file)...`
       : outputDestination === 'folder' && activeDir
       ? `Synthesizing ${count.toLocaleString()} records for direct write to "${activeDir.name}"...`
       : `Synthesizing ${count.toLocaleString()} records for browser download...`;
+
+    const actionSuffix = actionConfig.enabled && actionConfig.endpointUrl.trim()
+      ? ` (+ Action Add-on: ${actionConfig.endpointUrl})`
+      : '';
+
+    const actionDescription = `${baseDescription}${actionSuffix}`;
 
     setStatusMessage(actionDescription);
 
@@ -1082,92 +1078,8 @@ export default function App() {
         const elapsedSec = elapsed / 1000;
         const rowsPerSec = Math.round(count / (elapsedSec || 0.001));
 
-        // Output Branch 0: Action Destination (REST API / Webhook Egress)
-        if (outputDestination === 'action') {
-          if (!actionConfig.enabled) {
-            setStatusMessage('Action Egress is OFF by default. Enable it to dispatch synthesized records.');
-            setStats((prev) => ({ ...prev, isGenerating: false }));
-            setIsGeneratingBatch(false);
-            return;
-          }
-
-          // Apply trigger conditional filtering (e.g. only when column error = 1)
-          const candidateRows = actionConfig.triggerCondition?.enabled && actionConfig.triggerCondition.column
-            ? allRows.filter((r) => matchesTriggerCondition(r, actionConfig.triggerCondition))
-            : allRows;
-
-          if (candidateRows.length === 0) {
-            setStatusMessage(
-              `Synthesized ${allRows.length.toLocaleString()} records, but 0 matched trigger condition (${actionConfig.triggerCondition?.column} ${actionConfig.triggerCondition?.operator} "${actionConfig.triggerCondition?.value}"). No Action requests sent.`
-            );
-            setStats({
-              rowsGenerated: allRows.length,
-              rowsPerSec,
-              elapsedSeconds: parseFloat(elapsedSec.toFixed(3)),
-              fileSizeBytes: allRows.length * 128,
-              isGenerating: false,
-            });
-            setIsGeneratingBatch(false);
-            return;
-          }
-
-          const filterNotice = candidateRows.length !== allRows.length
-            ? ` (${candidateRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} matched trigger filter)`
-            : '';
-
-          setStatusMessage(`Synthesized ${allRows.length.toLocaleString()} records${filterNotice}. Starting dispatch to ${actionConfig.endpointUrl}...`);
-
-          const batchSize = actionConfig.mode === 'per_entry' ? 1 : Math.max(1, actionConfig.batchSize || 50);
-          const totalBatches = Math.ceil(candidateRows.length / batchSize);
-          let dispatchedCount = 0;
-          let failedCount = 0;
-          let successCount = 0;
-
-          for (let b = 0; b < totalBatches; b++) {
-            const chunk = candidateRows.slice(b * batchSize, (b + 1) * batchSize);
-            setBatchProgress(Math.floor(((b + 1) / totalBatches) * 100));
-            setStatusMessage(`Dispatching Action batch ${b + 1}/${totalBatches} (${chunk.length} records) to ${actionConfig.endpointUrl}...`);
-
-            const res = await dispatchActionRequest(actionConfig, chunk, b, (log) => {
-              addActionLog(log);
-            });
-
-            dispatchedCount += chunk.length;
-            if (res.success) {
-              successCount += chunk.length;
-            } else {
-              failedCount += chunk.length;
-              if (actionConfig.stopOnError) {
-                setStatusMessage(`Action dispatch paused due to error: ${res.error || 'Request failed'}`);
-                break;
-              }
-            }
-
-            if (actionConfig.throttleMs > 0) {
-              await new Promise((r) => setTimeout(r, actionConfig.throttleMs));
-            } else if (b % 5 === 0) {
-              await new Promise((r) => setTimeout(r, 0));
-            }
-          }
-
-          const actionElapsed = performance.now() - startTime;
-          const actionElapsedSec = actionElapsed / 1000;
-          const actionRowsPerSec = Math.round(dispatchedCount / (actionElapsedSec || 0.001));
-
-          setStats({
-            rowsGenerated: dispatchedCount,
-            rowsPerSec: actionRowsPerSec,
-            elapsedSeconds: parseFloat(actionElapsedSec.toFixed(3)),
-            fileSizeBytes: dispatchedCount * 128,
-            isGenerating: false,
-          });
-
-          setStatusMessage(
-            `Action dispatch complete! Sent ${dispatchedCount.toLocaleString()} rows in ${actionElapsedSec.toFixed(2)}s (${successCount.toLocaleString()} delivered, ${failedCount.toLocaleString()} failed).`
-          );
-
         // Output Branch 1: Multi-file Generation (1 file per row/chunk)
-        } else if (isMultiFile) {
+        if (isMultiFile) {
           const rowsPerFile = Math.max(1, multiFileConfig.rowsPerFile || 1);
           const pattern = multiFileConfig.filenamePattern || '{filename}_{index}.{ext}';
           const baseName = filename || 'record';
@@ -1369,6 +1281,45 @@ export default function App() {
           });
         }
 
+        // Action Add-on Pipeline Execution
+        if (actionConfig.enabled && actionConfig.endpointUrl.trim()) {
+          const candidateRows = actionConfig.triggerCondition?.enabled && actionConfig.triggerCondition.column
+            ? allRows.filter((r) => matchesTriggerCondition(r, actionConfig.triggerCondition))
+            : allRows;
+
+          if (candidateRows.length > 0) {
+            setStatusMessage((prev) => `${prev} · Dispatching ${candidateRows.length.toLocaleString()} rows to Action API...`);
+            const batchSize = actionConfig.mode === 'per_entry' ? 1 : Math.max(1, actionConfig.batchSize || 50);
+            const totalBatches = Math.ceil(candidateRows.length / batchSize);
+            let dispatchedCount = 0;
+            let successCount = 0;
+            let failedCount = 0;
+
+            for (let b = 0; b < totalBatches; b++) {
+              const chunk = candidateRows.slice(b * batchSize, (b + 1) * batchSize);
+              const res = await dispatchActionRequest(actionConfig, chunk, b, (log) => {
+                addActionLog(log);
+              });
+
+              dispatchedCount += chunk.length;
+              if (res.success) {
+                successCount += chunk.length;
+              } else {
+                failedCount += chunk.length;
+                if (actionConfig.stopOnError) break;
+              }
+
+              if (actionConfig.throttleMs > 0) {
+                await new Promise((r) => setTimeout(r, actionConfig.throttleMs));
+              } else if (b % 5 === 0) {
+                await new Promise((r) => setTimeout(r, 0));
+              }
+            }
+
+            setStatusMessage((prev) => `${prev} · Action Add-on: ${successCount.toLocaleString()} delivered, ${failedCount.toLocaleString()} failed.`);
+          }
+        }
+
         // Update preview with first rows
         setPreviewData(allRows.slice(0, previewCount));
         setIsGeneratingBatch(false);
@@ -1385,16 +1336,8 @@ export default function App() {
       return;
     }
 
-    if (outputDestination === 'action') {
-      if (!actionConfig.enabled) {
-        setStatusMessage('Action Egress is OFF by default. Please toggle "Action Egress" ON in the sidebar before streaming.');
-        return;
-      }
-      if (!actionConfig.endpointUrl.trim()) {
-        setStatusMessage('Please enter an Endpoint URL in Action / API settings before streaming.');
-        setIsActionConfigModalOpen(true);
-        return;
-      }
+    if (actionConfig.enabled && !actionConfig.endpointUrl.trim()) {
+      setStatusMessage('Notice: Action Add-on is enabled, but Endpoint URL is empty. Streaming locally.');
     }
 
     let activeDir = directoryHandle;
@@ -1469,15 +1412,17 @@ export default function App() {
     actionBatchIndexRef.current = 0;
     const streamEngine = new GeneratorEngine();
 
-    const destLabel = outputDestination === 'action'
-      ? `Action Stream: ${actionConfig.endpointUrl}`
-      : activeMultiWriter && activeDir
+    const destLabel = activeMultiWriter && activeDir
       ? `Live Multi-File Writer: /${activeDir.name}/`
       : activeStreamWriter && activeDir
       ? `Live Disk Writer: /${activeDir.name}/${fullFilename}`
       : 'In-Memory Buffer';
 
-    setStatusMessage(`Stream Active [${destLabel}] at ${intervalMs}ms...`);
+    const actionAddonLabel = actionConfig.enabled && actionConfig.endpointUrl.trim()
+      ? ` + Action Egress (${actionConfig.method} ${actionConfig.mode === 'per_entry' ? 'Per-Entry' : `Batch ${actionConfig.batchSize}`})`
+      : '';
+
+    setStatusMessage(`Stream Active [${destLabel}${actionAddonLabel}] at ${intervalMs}ms...`);
 
     streamingTimerRef.current = window.setInterval(async () => {
       const rowIndex = streamingRowCountRef.current;
@@ -1485,10 +1430,22 @@ export default function App() {
       streamingRowCountRef.current += 1;
       continuousBufferRef.current.push(newRow);
 
-      if (outputDestination === 'action') {
-        if (!actionConfig.enabled) return;
+      if (activeMultiWriter) {
+        try {
+          await activeMultiWriter.writeRow(newRow, rowIndex);
+        } catch (err) {
+          console.error('Error writing streamed multi-file row:', err);
+        }
+      } else if (activeStreamWriter) {
+        try {
+          await activeStreamWriter.writeRow(newRow, rowIndex);
+        } catch (err) {
+          console.error('Error writing streamed row:', err);
+        }
+      }
 
-        // Check conditional trigger filter (e.g. only when column error = 1)
+      // Action Add-on Pipeline Execution (Concurrent with Stream Writing)
+      if (actionConfig.enabled && actionConfig.endpointUrl.trim()) {
         const passesCondition = matchesTriggerCondition(newRow, actionConfig.triggerCondition);
         if (passesCondition) {
           if (actionConfig.mode === 'per_entry') {
@@ -1507,18 +1464,6 @@ export default function App() {
               });
             }
           }
-        }
-      } else if (activeMultiWriter) {
-        try {
-          await activeMultiWriter.writeRow(newRow, rowIndex);
-        } catch (err) {
-          console.error('Error writing streamed multi-file row:', err);
-        }
-      } else if (activeStreamWriter) {
-        try {
-          await activeStreamWriter.writeRow(newRow, rowIndex);
-        } catch (err) {
-          console.error('Error writing streamed row:', err);
         }
       }
 
@@ -1540,13 +1485,15 @@ export default function App() {
         isGenerating: true,
       });
 
-      const targetIndicator = outputDestination === 'action'
-        ? `Action Egress (${actionConfig.method} ${actionConfig.mode === 'per_entry' ? 'Per-Entry' : `Batch ${actionConfig.batchSize}`})`
-        : activeMultiWriter && activeDir
+      const baseIndicator = activeMultiWriter && activeDir
         ? `Multi-File (${activeMultiWriter.getFilesCount()} files in /${activeDir.name})`
         : activeStreamWriter && activeDir
         ? `Direct Disk: /${activeDir.name}/${fullFilename}`
         : 'Buffer';
+
+      const targetIndicator = actionConfig.enabled && actionConfig.endpointUrl.trim()
+        ? `${baseIndicator} + Action (${actionConfig.method})`
+        : baseIndicator;
 
       setStatusMessage(
         `Streaming [${targetIndicator}]: ${streamingRowCountRef.current.toLocaleString()} rows (${rowsPerSec} rows/sec)`
@@ -1561,21 +1508,15 @@ export default function App() {
     }
     setIsStreaming(false);
 
-    if (outputDestination === 'action') {
-      if (actionConfig.mode === 'batch' && actionContinuousBufferRef.current.length > 0) {
-        const remaining = [...actionContinuousBufferRef.current];
-        actionContinuousBufferRef.current = [];
-        const bIdx = actionBatchIndexRef.current++;
-        try {
-          await dispatchActionRequest(actionConfig, remaining, bIdx, addActionLog);
-        } catch (err) {
-          console.error('Error flushing final continuous action batch:', err);
-        }
+    if (actionConfig.enabled && actionConfig.mode === 'batch' && actionContinuousBufferRef.current.length > 0) {
+      const remaining = [...actionContinuousBufferRef.current];
+      actionContinuousBufferRef.current = [];
+      const bIdx = actionBatchIndexRef.current++;
+      try {
+        await dispatchActionRequest(actionConfig, remaining, bIdx, addActionLog);
+      } catch (err) {
+        console.error('Error flushing final continuous action batch:', err);
       }
-      setStatusMessage(
-        `Action stream stopped. Total generated: ${streamingRowCountRef.current.toLocaleString()} rows.`
-      );
-      return;
     }
 
     if (multiStreamWriterRef.current) {
