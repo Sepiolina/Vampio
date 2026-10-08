@@ -113,11 +113,11 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
     return (
       <aside className="w-12 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20 transition-all duration-200">
         {/* Collapsed Header / Toggle */}
-        <div className="p-2 flex flex-col items-center border-b border-border-subtle bg-card/40 gap-1.5">
+        <div className="w-full p-2 flex flex-col items-center border-b border-border-subtle bg-card/40 gap-1.5">
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="w-8 h-8 rounded-md flex items-center justify-center text-content-muted hover:text-content hover:bg-card border border-transparent hover:border-border-subtle transition-all cursor-pointer shadow-2xs"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-content hover:bg-card border border-transparent hover:border-border-subtle transition-all cursor-pointer shadow-2xs"
             title="Expand Sidebar (Ctrl+B)"
             aria-label="Expand Sidebar"
           >
@@ -133,7 +133,7 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
                 columns: [],
               })
             }
-            className="w-8 h-8 rounded-md flex items-center justify-center text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 hover:border-accent/40 transition-all cursor-pointer shadow-2xs"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 hover:border-accent/40 transition-all cursor-pointer shadow-2xs"
             title="New Workspace"
             aria-label="New Workspace"
           >
@@ -142,7 +142,7 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
         </div>
 
         {/* Collapsed Workspace List */}
-        <div className="flex-1 overflow-y-auto p-1.5 space-y-1.5 no-scrollbar flex flex-col items-center">
+        <div className="w-full flex-1 overflow-y-auto px-2 py-1.5 flex flex-col items-center gap-1.5 no-scrollbar">
           {workspaces.map((ws, idx) => {
             const isActive = ws.id === activeWorkspaceId;
             const initial = ws.name ? ws.name.trim().charAt(0).toUpperCase() : `${idx + 1}`;
@@ -154,7 +154,7 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
                 onClick={() => switchWorkspace(ws.id)}
                 className={`w-8 h-8 rounded-lg flex items-center justify-center relative transition-all cursor-pointer group ${
                   isActive
-                    ? 'bg-card border border-accent/50 text-accent font-bold shadow-xs ring-1 ring-accent/20'
+                    ? 'bg-card border border-accent text-accent font-bold shadow-xs'
                     : 'bg-card/40 hover:bg-card border border-border-subtle hover:border-border text-content-muted hover:text-content'
                 }`}
                 title={`${ws.name} (${ws.tableName || 'table'}) · ${ws.columns?.length || 0} cols`}
@@ -169,11 +169,11 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
         </div>
 
         {/* Collapsed Footer: Settings */}
-        <div className="p-2 border-t border-border-subtle flex flex-col items-center bg-card/20">
+        <div className="w-full p-2 border-t border-border-subtle flex flex-col items-center bg-card/20">
           <button
             type="button"
             onClick={() => setIsSettingsModalOpen(true)}
-            className="w-8 h-8 rounded-md flex items-center justify-center text-content-muted hover:text-content hover:bg-card transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-content hover:bg-card transition-colors cursor-pointer"
             title="Workspace Settings"
             aria-label="Workspace Settings"
           >

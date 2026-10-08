@@ -220,44 +220,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   if (!isOpen) {
     return (
-      <aside className="w-14 border-l border-border-subtle bg-secondary flex flex-col items-center py-3 gap-3 flex-shrink-0 transition-all z-20 select-none">
-        {/* Toggle / Expand Generation Deck Button */}
-        <button
-          type="button"
-          onClick={onToggle}
-          className="p-2 rounded-xl border transition shadow-xs cursor-pointer group bg-primary hover:bg-tertiary border-border-subtle text-content-muted hover:text-accent"
-          title="Expand Generation Deck"
-        >
-          <Sliders size={16} className="group-hover:rotate-45 transition-transform duration-200" />
-        </button>
+      <aside className="w-14 border-l border-border-subtle bg-secondary flex flex-col items-center flex-shrink-0 transition-all z-20 select-none h-full">
+        {/* Toggle / Expand Generation Deck Button - Row 1 (aligned with Schema Controls Bar, 40px) */}
+        <div className="h-10 min-h-[40px] max-h-[40px] w-full flex items-center justify-center border-b border-border-subtle bg-secondary flex-shrink-0">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="w-[30px] h-[30px] rounded-full border transition shadow-xs cursor-pointer group bg-card/60 hover:bg-card border-border-subtle hover:border-accent/40 text-content-muted hover:text-accent flex items-center justify-center active:scale-95"
+            title="Expand Generation Deck"
+            aria-label="Expand Generation Deck"
+          >
+            <Sliders size={13} className="group-hover:rotate-45 transition-transform duration-200" />
+          </button>
+        </div>
 
-        <div className="w-8 h-px bg-border-subtle/80 my-0.5" />
-
-        {/* Dedicated Action Add-on Launcher */}
-        <div className="flex flex-col items-center">
+        {/* Dedicated Webhook Add-on Launcher - Row 2 (aligned with Quick Insert Strip, 32px) */}
+        <div className="h-8 min-h-[32px] max-h-[32px] w-full flex items-center justify-center border-b border-border-subtle bg-secondary/50 flex-shrink-0">
           <button
             type="button"
             onClick={onOpenActionConfig}
-            className={`p-2 rounded-xl border transition shadow-xs cursor-pointer group relative ${
+            className={`w-[30px] h-[30px] rounded-full border transition shadow-xs cursor-pointer flex items-center justify-center relative active:scale-95 ${
               actionConfig.enabled
                 ? 'bg-accent/15 text-accent border-accent/40 shadow-xs'
-                : 'bg-primary hover:bg-tertiary border-border-subtle text-content-muted hover:text-accent'
+                : 'bg-card/60 hover:bg-card border-border-subtle hover:border-accent/40 text-content-muted hover:text-accent'
             }`}
-            title={`Action Add-on: Webhook & REST API Egress (${actionConfig.enabled ? 'ACTIVE' : 'OFF'})`}
+            title={`Webhook Add-on (${actionConfig.enabled ? 'ACTIVE' : 'OFF'})`}
+            aria-label="Webhook Configuration"
           >
-            <Webhook size={16} className={`transition-transform group-hover:scale-110 ${actionConfig.enabled ? 'text-accent' : ''}`} />
+            <Webhook size={13} className={actionConfig.enabled ? 'text-accent' : ''} />
             {actionStats.totalDispatched > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full ring-2 ring-secondary animate-pulse" />
+              <span className="absolute top-0 right-0 w-2 h-2 bg-emerald-400 rounded-full animate-pulse ring-1 ring-card" />
             )}
           </button>
         </div>
 
-        <div className="w-8 h-px bg-border-subtle/80 my-0.5" />
-
-        {/* Vertical mode badge */}
-        <div className="flex flex-col items-center gap-1.5 my-1">
-          <span className="text-[9px] font-mono font-bold text-accent uppercase tracking-wider -rotate-90 origin-center py-2">
-            {mode}
+        {/* Clean Mode Indicator (Upright, no awkward rotated text) */}
+        <div className="flex flex-col items-center gap-1.5 my-3 w-full px-1">
+          <span className="text-[9px] font-mono font-bold text-accent uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20 text-center truncate max-w-full">
+            {mode === 'Continuous' ? 'LIVE' : 'BATCH'}
           </span>
           {isStreaming && (
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
@@ -301,16 +301,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside className="w-80 sm:w-88 border-l border-border-subtle bg-secondary flex flex-col h-full flex-shrink-0 overflow-y-auto transition-all z-20 shadow-lg">
-      {/* Sidebar Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-secondary sticky top-0 z-10">
+      {/* Sidebar Header - Row 1 (aligned with Schema Architecture Controls Bar, 40px) */}
+      <div className="h-10 min-h-[40px] max-h-[40px] flex items-center justify-between px-3.5 border-b border-border-subtle bg-secondary sticky top-0 z-10 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <Sliders size={15} className="text-accent shrink-0" />
+          <Sliders size={14} className="text-accent shrink-0" />
           <h3 className="text-xs font-bold uppercase tracking-wider text-content truncate">
             {t('sidebar.title')}
           </h3>
           {actionConfig.enabled && (
             <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-accent/15 text-accent border border-accent/30 shrink-0">
-              + Action Add-on
+              + Webhook
             </span>
           )}
         </div>
@@ -321,8 +321,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className="p-1 rounded-md text-content-muted hover:text-content hover:bg-tertiary transition cursor-pointer"
             title="Collapse Panel"
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={15} />
           </button>
+        </div>
+      </div>
+
+      {/* Sidebar Sub-bar - Row 2 (aligned with Quick Insert Strip, 32px) */}
+      <div className="h-8 min-h-[32px] max-h-[32px] px-3.5 bg-secondary/50 border-b border-border-subtle flex items-center justify-between text-[11px] flex-shrink-0 select-none sticky top-10 z-10">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted font-mono">
+          {mode === 'Continuous' ? 'STREAM DECK' : 'BATCH DECK'}
+        </span>
+        <div className="flex items-center gap-2 font-mono text-[10px] text-content-muted">
+          <span>{totalColumns} {totalColumns === 1 ? 'col' : 'cols'}</span>
+          <span className="text-border-subtle">·</span>
+          <span className="text-accent font-semibold">{count.toLocaleString()} rows</span>
         </div>
       </div>
 
@@ -1120,40 +1132,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Section 4.5: Action Add-on (REST API & Webhook Egress) */}
-        <div className="p-3 rounded-xl bg-primary border border-border-subtle hover:border-accent/30 space-y-3 text-xs shadow-xs transition-colors">
+        <div className="p-3 rounded-xl bg-primary border border-border-subtle hover:border-accent/30 space-y-2.5 text-xs shadow-xs transition-colors">
           {/* Header & Master Toggle */}
           <div className="flex items-center justify-between gap-1 pb-1 border-b border-border-subtle/50">
             <span className="text-[10px] text-content-muted uppercase font-bold flex items-center gap-1.5">
               <Webhook size={13} className="text-accent" />
-              Action Add-on (API &amp; Webhooks)
+              Webhook Add-on
             </span>
             <button
               type="button"
               onClick={() => setActionConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
-              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition flex items-center gap-1 cursor-pointer ${
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition flex items-center gap-1.5 cursor-pointer ${
                 actionConfig.enabled
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                  ? 'bg-accent/15 text-accent border border-accent/30'
                   : 'bg-secondary border border-border-subtle text-content-muted hover:text-content'
               }`}
-              title={actionConfig.enabled ? 'Click to disable Action add-on' : 'Click to enable Action add-on'}
+              title={actionConfig.enabled ? 'Click to disable Webhook add-on' : 'Click to enable Webhook add-on'}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${actionConfig.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-content-muted/40'}`} />
-              <span>{actionConfig.enabled ? 'ACTIVE (ON)' : 'OFF (DEFAULT)'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${actionConfig.enabled ? 'bg-emerald-400' : 'bg-content-muted/40'}`} />
+              <span>{actionConfig.enabled ? 'Enabled' : 'Off'}</span>
             </button>
           </div>
 
           {!actionConfig.enabled ? (
-            <div className="p-2.5 rounded-lg bg-secondary/50 border border-dashed border-border-subtle text-center space-y-2">
-              <p className="text-[11px] text-content-muted leading-relaxed">
-                Action is an <strong>add-on to Generation</strong>. When enabled, synthesized records are dispatched to your REST API or webhook endpoint alongside file generation.
+            <div className="p-2.5 rounded-lg bg-secondary/30 border border-border-subtle text-center space-y-1.5">
+              <p className="text-[11px] text-content-muted">
+                Optional: dispatch generated rows to an HTTP webhook alongside file generation.
               </p>
               <button
                 type="button"
                 onClick={() => setActionConfig((prev) => ({ ...prev, enabled: true }))}
-                className="w-full py-1.5 px-3 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content hover:text-accent text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                className="w-full py-1.5 px-3 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Webhook size={13} />
-                <span>Enable Action Add-on</span>
+                <Webhook size={12} />
+                <span>Enable Webhook Add-on</span>
               </button>
             </div>
           ) : (
