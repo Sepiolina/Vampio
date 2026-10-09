@@ -111,11 +111,9 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
     setSavePolicy,
     displayMode,
     setDisplayMode,
-    isSettingsModalOpen,
     switchWorkspace, 
     createWorkspace, 
-    setIsQuickSwitcherOpen, 
-    setIsSettingsModalOpen 
+    setIsQuickSwitcherOpen 
   } = useWorkspace();
   const [activeMenu, setActiveMenu] = useState<'files' | 'settings' | 'advance' | null>(null);
   const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'workspace'>('general');
@@ -138,15 +136,6 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const workspaceFileInputRef = useRef<HTMLInputElement>(null);
-
-  // Synchronize with external settings open events (e.g. from tab bar gear)
-  useEffect(() => {
-    if (isSettingsModalOpen) {
-      setActiveMenu('settings');
-      setSettingsSubTab('workspace');
-      setIsSettingsModalOpen(false);
-    }
-  }, [isSettingsModalOpen, setIsSettingsModalOpen]);
 
   // Listen for custom types manager request
   useEffect(() => {

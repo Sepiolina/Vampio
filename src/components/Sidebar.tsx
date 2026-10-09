@@ -49,7 +49,9 @@ import {
   Send,
   AlertTriangle,
   Filter,
-  Webhook
+  Webhook,
+  PanelRightOpen,
+  History
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -220,77 +222,100 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   if (!isOpen) {
     return (
-      <aside className="w-14 border-l border-border-subtle bg-secondary flex flex-col items-center flex-shrink-0 transition-all z-20 select-none h-full">
-        {/* Toggle / Expand Generation Deck Button - Row 1 (aligned with Schema Controls Bar, 40px) */}
-        <div className="h-10 min-h-[40px] max-h-[40px] w-full flex items-center justify-center border-b border-border-subtle bg-secondary flex-shrink-0">
+      <aside className="w-12 shrink-0 bg-secondary/95 border-l border-border flex flex-col h-full select-none text-xs z-20 transition-all duration-200">
+        {/* Collapsed Header / Toggle (mirrors Left Rail Div 1) */}
+        <div className="w-full p-2 flex flex-col items-center border-b border-border-subtle bg-card/40 gap-1.5">
           <button
             type="button"
             onClick={onToggle}
-            className="w-[30px] h-[30px] rounded-full border transition shadow-xs cursor-pointer group bg-card/60 hover:bg-card border-border-subtle hover:border-accent/40 text-content-muted hover:text-accent flex items-center justify-center active:scale-95"
-            title="Expand Generation Deck"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-content hover:bg-card border border-transparent hover:border-border-subtle transition-all cursor-pointer shadow-2xs"
+            title="Expand Generation Deck (Ctrl+J)"
             aria-label="Expand Generation Deck"
           >
-            <Sliders size={13} className="group-hover:rotate-45 transition-transform duration-200" />
+            <PanelRightOpen size={14} className="text-accent" />
           </button>
-        </div>
 
-        {/* Dedicated Webhook Add-on Launcher - Row 2 (aligned with Quick Insert Strip, 32px) */}
-        <div className="h-8 min-h-[32px] max-h-[32px] w-full flex items-center justify-center border-b border-border-subtle bg-secondary/50 flex-shrink-0">
           <button
             type="button"
             onClick={onOpenActionConfig}
-            className={`w-[30px] h-[30px] rounded-full border transition shadow-xs cursor-pointer flex items-center justify-center relative active:scale-95 ${
+            className={`w-8 h-8 rounded-lg flex items-center justify-center relative transition-all cursor-pointer shadow-2xs ${
               actionConfig.enabled
-                ? 'bg-accent/15 text-accent border-accent/40 shadow-xs'
-                : 'bg-card/60 hover:bg-card border-border-subtle hover:border-accent/40 text-content-muted hover:text-accent'
+                ? 'text-accent bg-accent/20 hover:bg-accent/30 border border-accent/40 shadow-xs'
+                : 'text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 hover:border-accent/40'
             }`}
             title={`Webhook Add-on (${actionConfig.enabled ? 'ACTIVE' : 'OFF'})`}
             aria-label="Webhook Configuration"
           >
-            <Webhook size={13} className={actionConfig.enabled ? 'text-accent' : ''} />
+            <Webhook size={13} />
             {actionStats.totalDispatched > 0 && (
-              <span className="absolute top-0 right-0 w-2 h-2 bg-emerald-400 rounded-full animate-pulse ring-1 ring-card" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
             )}
           </button>
         </div>
 
-        {/* Clean Mode Indicator (Upright, no awkward rotated text) */}
-        <div className="flex flex-col items-center gap-1.5 my-3 w-full px-1">
-          <span className="text-[9px] font-mono font-bold text-accent uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20 text-center truncate max-w-full">
-            {mode === 'Continuous' ? 'LIVE' : 'BATCH'}
-          </span>
-          {isStreaming && (
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-          )}
+        {/* Collapsed Item List (mirrors Left Rail Div 2) */}
+        <div className="w-full flex-1 overflow-y-auto px-2 py-1.5 flex flex-col items-center gap-1.5 no-scrollbar">
+          {/* Mode Switcher Shortcut */}
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'Batch' ? 'Continuous' : 'Batch')}
+            className={`w-8 h-8 rounded-lg flex flex-col items-center justify-center transition-all cursor-pointer group ${
+              mode === 'Continuous'
+                ? 'bg-card border border-accent text-accent font-bold shadow-xs'
+                : 'bg-card/40 hover:bg-card border border-border-subtle hover:border-border text-content-muted hover:text-content'
+            }`}
+            title={`Generation Mode: ${mode} (Click to toggle)`}
+            aria-label="Toggle Generation Mode"
+          >
+            <span className="text-[10px] font-mono font-bold leading-none">
+              {mode === 'Continuous' ? 'LIVE' : 'BAT'}
+            </span>
+            {isStreaming && (
+              <span className="w-1.5 h-1.5 mt-0.5 rounded-full bg-emerald-400 animate-ping" />
+            )}
+          </button>
+
+          {/* Action / Webhook Logs Shortcut */}
+          <button
+            type="button"
+            onClick={onOpenActionLogs}
+            className="w-8 h-8 rounded-lg flex items-center justify-center bg-card/40 hover:bg-card border border-border-subtle hover:border-border text-content-muted hover:text-content transition-all cursor-pointer shadow-2xs"
+            title="Action Logs & Webhook History"
+            aria-label="Action Logs"
+          >
+            <History size={13} />
+          </button>
         </div>
 
-        {/* Floating Start button shortcut in collapsed mode */}
-        <div className="mt-auto">
+        {/* Collapsed Footer: Generation Control (mirrors Left Rail Div 3) */}
+        <div className="w-full p-2 border-t border-border-subtle flex flex-col items-center bg-card/20">
           {isStreaming ? (
             <button
               type="button"
               onClick={onStop}
-              className="p-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white shadow-md transition cursor-pointer"
+              className="w-8 h-8 rounded-lg bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow-xs transition active:scale-95 cursor-pointer"
               title={t('sidebar.stopContinuousStream')}
+              aria-label={t('sidebar.stopContinuousStream')}
             >
-              <Square size={14} fill="currentColor" />
+              <Square size={13} fill="currentColor" />
             </button>
           ) : (
             <button
               type="button"
               disabled={isGeneratingBatch || totalColumns === 0}
               onClick={onStart}
-              className="p-2.5 rounded-xl text-white shadow-md disabled:opacity-40 transition cursor-pointer bg-accent hover:bg-accent-hover"
+              className="w-8 h-8 rounded-lg text-white flex items-center justify-center shadow-xs disabled:opacity-40 transition active:scale-95 cursor-pointer bg-accent hover:bg-accent-hover"
               title={
                 actionConfig.enabled
                   ? `Generate Batch (${count.toLocaleString()} rows + Action Add-on)`
                   : t('sidebar.generateBatch')
               }
+              aria-label={t('sidebar.generateBatch')}
             >
               {isGeneratingBatch ? (
-                <RefreshCw size={14} className="animate-spin" />
+                <RefreshCw size={13} className="animate-spin" />
               ) : (
-                <Play size={14} fill="currentColor" />
+                <Play size={13} fill="currentColor" />
               )}
             </button>
           )}

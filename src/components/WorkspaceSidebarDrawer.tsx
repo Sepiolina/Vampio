@@ -32,6 +32,7 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
     duplicateWorkspace,
     renameWorkspace,
     deleteWorkspace,
+    isSettingsModalOpen,
     setIsSettingsModalOpen
   } = useWorkspace();
 
@@ -111,7 +112,7 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
   // Render Collapsed Sidebar Rail (Browser vertical tabs style)
   if (isCollapsed) {
     return (
-      <aside className="w-12 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20 transition-all duration-200">
+      <aside className="w-12 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-full select-none text-xs z-20 transition-all duration-200">
         {/* Collapsed Header / Toggle */}
         <div className="w-full p-2 flex flex-col items-center border-b border-border-subtle bg-card/40 gap-1.5">
           <button
@@ -172,8 +173,12 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
         <div className="w-full p-2 border-t border-border-subtle flex flex-col items-center bg-card/20">
           <button
             type="button"
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-content hover:bg-card transition-colors cursor-pointer"
+            onClick={() => setIsSettingsModalOpen(!isSettingsModalOpen)}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+              isSettingsModalOpen
+                ? 'bg-card text-accent border border-accent/40 shadow-xs'
+                : 'text-content-muted hover:text-content hover:bg-card border border-transparent'
+            }`}
             title="Workspace Settings"
             aria-label="Workspace Settings"
           >
@@ -186,7 +191,7 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
 
   // Render Expanded Sidebar Drawer
   return (
-    <aside className="w-72 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-[calc(100vh-44px)] select-none text-xs z-20 transition-all duration-200">
+    <aside className="w-72 shrink-0 bg-secondary/95 border-r border-border flex flex-col h-full select-none text-xs z-20 transition-all duration-200">
       {/* Drawer Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle bg-card/40">
         <div className="flex items-center gap-2">
@@ -199,8 +204,12 @@ export const WorkspaceSidebarDrawer: React.FC = () => {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="p-1 rounded-md text-content-muted hover:text-content hover:bg-card transition-colors cursor-pointer"
+            onClick={() => setIsSettingsModalOpen(!isSettingsModalOpen)}
+            className={`p-1 rounded-md transition-colors cursor-pointer ${
+              isSettingsModalOpen
+                ? 'bg-card text-accent'
+                : 'text-content-muted hover:text-content hover:bg-card'
+            }`}
             title="Workspace Settings"
           >
             <Settings2 size={13} />

@@ -89,12 +89,12 @@ export const WorkspaceSettingsModal: React.FC = () => {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/35 backdrop-blur-xs select-none animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) setIsSettingsModalOpen(false);
       }}
     >
-      <div className="w-full max-w-lg bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-content">
+      <div className="w-full max-w-lg bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 text-content flex flex-col max-h-[85vh]">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle bg-primary/40">
           <div className="flex items-center gap-2.5">
