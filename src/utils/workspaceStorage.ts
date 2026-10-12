@@ -113,6 +113,7 @@ export function createDefaultWorkspace(custom?: Partial<WorkspaceSession>): Work
     selectedFolderName: custom?.selectedFolderName || null,
     filename: custom?.filename || 'synthetic_dataset',
     description: custom?.description || '',
+    customJsonConfig: custom?.customJsonConfig,
   };
 }
 

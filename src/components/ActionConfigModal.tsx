@@ -14,8 +14,10 @@ import {
   Sparkles,
   RefreshCw,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Braces
 } from 'lucide-react';
+import { CustomJsonConfigModal } from './CustomJsonConfigModal';
 
 interface Props {
   isOpen: boolean;
@@ -34,6 +36,7 @@ export const ActionConfigModal: React.FC<Props> = ({
 }) => {
   const [localConfig, setLocalConfig] = useState<ActionConfig>({ ...config });
   const [activeTab, setActiveTab] = useState<'general' | 'advanced' | 'test'>('general');
+  const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [testResult, setTestResult] = useState<{
     running: boolean;
     success?: boolean;
@@ -310,6 +313,39 @@ export const ActionConfigModal: React.FC<Props> = ({
                   </div>
                 </div>
               )}
+
+              {/* Custom JSON Architecture Section */}
+              <div className="p-3 rounded-xl bg-primary/60 border border-border-subtle flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <Braces size={13} className="text-accent" />
+                    <span className="text-xs font-semibold text-content">Custom JSON Payload Architecture</span>
+                    {localConfig.customJsonConfig?.enabled ? (
+                      <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        ACTIVE
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-mono text-content-muted">
+                        DEFAULT
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-content-muted">
+                    {localConfig.customJsonConfig?.enabled
+                      ? 'Custom envelope with {{records}}, {{count}}, {{timestamp}} is active'
+                      : 'Customize JSON envelope, headers wrapper or GraphQL nodes for this webhook'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsJsonModalOpen(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-xs text-content font-medium transition cursor-pointer shrink-0 shadow-2xs"
+                >
+                  <Braces size={12} className="text-accent" />
+                  <span>Configure JSON...</span>
+                </button>
+              </div>
 
               {/* Authentication */}
               <div className="space-y-2 pt-1 border-t border-border-subtle/50">
@@ -670,6 +706,22 @@ export const ActionConfigModal: React.FC<Props> = ({
           </button>
         </div>
       </div>
+
+      {/* Embedded Custom JSON Payload Modal */}
+      {isJsonModalOpen && (
+        <CustomJsonConfigModal
+          isOpen={isJsonModalOpen}
+          onClose={() => setIsJsonModalOpen(false)}
+          configOverride={localConfig.customJsonConfig}
+          onSaveOverride={(updatedJsonConfig) => {
+            setLocalConfig((prev) => ({
+              ...prev,
+              customJsonConfig: updatedJsonConfig
+            }));
+          }}
+          columns={sampleColumns}
+        />
+      )}
     </div>
   );
 };

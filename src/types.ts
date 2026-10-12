@@ -85,6 +85,13 @@ export interface ActionTriggerCondition {
   value: string; // e.g. "1"
 }
 
+export interface CustomJsonConfig {
+  enabled: boolean;
+  template: string; // e.g. { "data": "{{records}}", "count": "{{count}}" }
+  rowTemplate?: string; // Optional custom template for each individual row
+  prettyPrint?: boolean; // 2-space indentation vs compact
+}
+
 export interface ActionConfig {
   enabled: boolean;
   endpointUrl: string;
@@ -107,6 +114,7 @@ export interface ActionConfig {
   stopOnError: boolean;
   throttleMs: number;
   triggerCondition: ActionTriggerCondition;
+  customJsonConfig?: CustomJsonConfig;
 }
 
 export interface ActionDispatchLog {
@@ -209,6 +217,7 @@ export interface WorkspaceSession {
   appendConfig: AppendConfig;
   selectedFolderName: string | null;
   filename?: string;
+  customJsonConfig?: CustomJsonConfig;
 }
 
 export interface WorkspaceSettings {

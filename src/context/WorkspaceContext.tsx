@@ -9,7 +9,8 @@ import {
   OutputDestination,
   OutputStrategy,
   MultiFileConfig,
-  AppendConfig
+  AppendConfig,
+  CustomJsonConfig
 } from '../types';
 import {
   loadAllWorkspaces,
@@ -30,6 +31,7 @@ interface WorkspaceContextValue {
   displayMode: WorkspaceDisplayMode;
   isQuickSwitcherOpen: boolean;
   isSettingsModalOpen: boolean;
+  isCustomJsonModalOpen: boolean;
   isUnsavedPromptOpen: boolean;
   pendingTargetWorkspaceId: string | null;
 
@@ -43,11 +45,13 @@ interface WorkspaceContextValue {
   renameWorkspace: (id: string, newName: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   updateActiveWorkspace: (updates: Partial<WorkspaceSession>) => void;
+  updateCustomJsonConfig: (config: CustomJsonConfig) => Promise<void>;
   saveActiveWorkspace: () => Promise<void>;
   setSavePolicy: (policy: WorkspaceSavePolicy) => Promise<void>;
   setDisplayMode: (mode: WorkspaceDisplayMode) => Promise<void>;
   setIsQuickSwitcherOpen: (open: boolean) => void;
   setIsSettingsModalOpen: (open: boolean) => void;
+  setIsCustomJsonModalOpen: (open: boolean) => void;
   importAsNewWorkspace: (data: {
     name: string;
     tableName?: string;
@@ -72,6 +76,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [displayMode, setDisplayModeState] = useState<WorkspaceDisplayMode>('top-bar');
   const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  const [isCustomJsonModalOpen, setIsCustomJsonModalOpen] = useState<boolean>(false);
   const [isUnsavedPromptOpen, setIsUnsavedPromptOpen] = useState<boolean>(false);
   const [pendingTargetWorkspaceId, setPendingTargetWorkspaceId] = useState<string | null>(null);
 
@@ -185,6 +190,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return next;
     });
   }, [activeWorkspaceId, savePolicy]);
+
+  // Update custom JSON payload configuration
+  const updateCustomJsonConfig = useCallback(async (customJsonConfig: CustomJsonConfig) => {
+    updateActiveWorkspace({ customJsonConfig });
+  }, [updateActiveWorkspace]);
 
   // Switch workspace
   const switchWorkspace = useCallback((targetId: string, force = false) => {
@@ -390,6 +400,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         displayMode,
         isQuickSwitcherOpen,
         isSettingsModalOpen,
+        isCustomJsonModalOpen,
         isUnsavedPromptOpen,
         pendingTargetWorkspaceId,
         switchWorkspace,
@@ -401,11 +412,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         renameWorkspace,
         deleteWorkspace,
         updateActiveWorkspace,
+        updateCustomJsonConfig,
         saveActiveWorkspace,
         setSavePolicy,
         setDisplayMode,
         setIsQuickSwitcherOpen,
         setIsSettingsModalOpen,
+        setIsCustomJsonModalOpen,
         importAsNewWorkspace,
       }}
     >

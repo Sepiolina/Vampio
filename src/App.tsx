@@ -66,6 +66,7 @@ import { WorkspaceSidebarDrawer } from './components/WorkspaceSidebarDrawer';
 import { WorkspaceQuickSwitcherModal } from './components/WorkspaceQuickSwitcherModal';
 import { WorkspaceSettingsModal } from './components/WorkspaceSettingsModal';
 import { UnsavedChangesPromptModal } from './components/UnsavedChangesPromptModal';
+import { CustomJsonConfigModal } from './components/CustomJsonConfigModal';
 import { VampioWorkspaceProfileBundle } from './utils/folderBehaviorAnalyzer';
 import { prefetchRestApiBatch, serializeRestApiConfig } from './utils/restApiManager';
 import { useI18n } from './i18n';
@@ -297,7 +298,9 @@ export default function App() {
     importAsNewWorkspace,
     displayMode,
     isInitialized: isWorkspaceInitialized,
-    savePolicy: workspaceSavePolicy
+    savePolicy: workspaceSavePolicy,
+    isCustomJsonModalOpen,
+    setIsCustomJsonModalOpen
   } = useWorkspace();
 
   const lastLoadedWorkspaceIdRef = useRef<string>('');
@@ -568,6 +571,10 @@ export default function App() {
           setIsRoleModalOpen(false);
           return;
         }
+        if (isCustomJsonModalOpen) {
+          setIsCustomJsonModalOpen(false);
+          return;
+        }
         if (isSidebarOpen && typeof window !== 'undefined' && window.innerWidth < 1024) {
           setIsSidebarOpen(false);
           return;
@@ -586,6 +593,8 @@ export default function App() {
     isActionLogModalOpen,
     isBundleImportModalOpen,
     isRoleModalOpen,
+    isCustomJsonModalOpen,
+    setIsCustomJsonModalOpen,
     isSidebarOpen,
     setIsRoleModalOpen
   ]);
@@ -1088,7 +1097,7 @@ export default function App() {
           const fileEntries: { filename: string; content: string | Uint8Array }[] = [];
           for (let fileIdx = 0; fileIdx * rowsPerFile < allRows.length; fileIdx++) {
             const chunk = allRows.slice(fileIdx * rowsPerFile, (fileIdx + 1) * rowsPerFile);
-            const formattedContent = formatSingleFileUnit(columns, chunk, format, tableName);
+            const formattedContent = formatSingleFileUnit(columns, chunk, format, tableName, activeWorkspace?.customJsonConfig);
             const indexStr = String(fileIdx + 1).padStart(5, '0');
             const fileItemName = pattern
               .replace('{filename}', baseName)
@@ -1236,7 +1245,7 @@ export default function App() {
 
         // Output Branch 3: Standard Single File Generation
         } else {
-          const output = formatDataset(columns, allRows, format, tableName);
+          const output = formatDataset(columns, allRows, format, tableName, activeWorkspace?.customJsonConfig);
           const mime = getMimeType(format);
           const fullFilename = `${filename || 'dataset'}.${format}`;
           const byteSize = typeof output === 'string' ? new Blob([output]).size : output.byteLength;
@@ -1566,7 +1575,7 @@ export default function App() {
         streamWriterRef.current = null;
       }
     } else if (continuousBufferRef.current.length > 0) {
-      const output = formatDataset(columns, continuousBufferRef.current, format, tableName);
+      const output = formatDataset(columns, continuousBufferRef.current, format, tableName, activeWorkspace?.customJsonConfig);
       const mime = getMimeType(format);
       const fullFilename = `${filename || 'stream_dataset'}_${continuousBufferRef.current.length}_rows.${format}`;
       downloadFile(output, fullFilename, mime);
@@ -2417,6 +2426,14 @@ export default function App() {
       <WorkspaceQuickSwitcherModal />
       <WorkspaceSettingsModal />
       <UnsavedChangesPromptModal />
+
+      {/* Custom JSON Architecture Payload Config Modal */}
+      <CustomJsonConfigModal
+        isOpen={isCustomJsonModalOpen}
+        onClose={() => setIsCustomJsonModalOpen(false)}
+        columns={columns}
+        tableName={tableName}
+      />
 
       {/* Context Menu Overlay */}
       <AnimatePresence>

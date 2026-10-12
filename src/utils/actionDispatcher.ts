@@ -1,4 +1,5 @@
 import { ActionConfig, ActionDispatchLog, ActionTriggerCondition } from '../types';
+import { renderCustomJsonTemplate } from './customJsonTemplate';
 
 export const defaultActionConfig: ActionConfig = {
   enabled: false, // Off by default to avoid unexpected network calls & preserve maximum performance
@@ -129,7 +130,19 @@ export function buildActionHeaders(config: ActionConfig): Record<string, string>
 /**
  * Formats data rows into JSON payload string according to config
  */
-export function formatActionPayload(config: ActionConfig, rows: Record<string, unknown>[]): string {
+export function formatActionPayload(
+  config: ActionConfig,
+  rows: Record<string, unknown>[],
+  metadata?: { tableName?: string }
+): string {
+  if (config.customJsonConfig?.enabled) {
+    return renderCustomJsonTemplate(config.customJsonConfig, rows, {
+      tableName: metadata?.tableName || 'webhook_dataset',
+      count: rows.length,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   if (config.mode === 'per_entry') {
     return JSON.stringify(rows[0] || {}, null, 2);
   }

@@ -31,7 +31,8 @@ import {
   Tag,
   Globe,
   Activity,
-  Plus
+  Plus,
+  Braces
 } from 'lucide-react';
 import { ColumnSpec, ExportFormat } from '../types';
 import { AnimatedTabs } from './AnimatedTabs';
@@ -107,13 +108,15 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
   const { 
     workspaces, 
     activeWorkspaceId, 
+    activeWorkspace,
     savePolicy,
     setSavePolicy,
     displayMode,
     setDisplayMode,
     switchWorkspace, 
     createWorkspace, 
-    setIsQuickSwitcherOpen 
+    setIsQuickSwitcherOpen,
+    setIsCustomJsonModalOpen
   } = useWorkspace();
   const [activeMenu, setActiveMenu] = useState<'files' | 'settings' | 'advance' | null>(null);
   const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'workspace'>('general');
@@ -607,6 +610,25 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
 
               {/* Blueprint Export / Import / Reset */}
               <div className="pt-2 border-t border-border-subtle space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomJsonModalOpen(true);
+                    setActiveMenu(null);
+                  }}
+                  title="Configure Custom JSON Payload Architecture"
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-tertiary text-content transition text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <Braces size={12} className="text-accent" />
+                    <span>Custom JSON Payload...</span>
+                  </div>
+                  {activeWorkspace?.customJsonConfig?.enabled && (
+                    <span className="text-[9px] font-mono font-semibold px-1 py-0.2 rounded bg-emerald-500/15 text-emerald-400">
+                      ON
+                    </span>
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => {

@@ -1,4 +1,5 @@
-import { ColumnSpec, ExportFormat } from '../types';
+import { ColumnSpec, ExportFormat, CustomJsonConfig } from '../types';
+import { renderCustomJsonTemplate } from './customJsonTemplate';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 
@@ -6,7 +7,8 @@ export function formatDataset(
   specs: ColumnSpec[],
   rows: Record<string, unknown>[],
   format: ExportFormat,
-  tableName: string = 'synthetic_data'
+  tableName: string = 'synthetic_data',
+  customJsonConfig?: CustomJsonConfig
 ): string | Uint8Array {
   const colNames = specs.map((c) => c.name);
 
@@ -34,6 +36,13 @@ export function formatDataset(
     }
 
     case 'json': {
+      if (customJsonConfig?.enabled) {
+        return renderCustomJsonTemplate(customJsonConfig, rows, {
+          tableName,
+          count: rows.length,
+          timestamp: new Date().toISOString(),
+        });
+      }
       return JSON.stringify(rows, null, 2);
     }
 
@@ -110,8 +119,12 @@ export function formatSingleFileUnit(
   specs: ColumnSpec[],
   rows: Record<string, unknown>[],
   format: ExportFormat,
-  tableName: string = 'synthetic_data'
+  tableName: string = 'synthetic_data',
+  customJsonConfig?: CustomJsonConfig
 ): string | Uint8Array {
+  if (customJsonConfig?.enabled && format === 'json') {
+    return formatDataset(specs, rows, format, tableName, customJsonConfig);
+  }
   // If 1 row and format is JSON, export object directly rather than single-element array if requested,
   // or structured log line for TXT.
   if (rows.length === 1) {
@@ -125,7 +138,7 @@ export function formatSingleFileUnit(
         .join('\n');
     }
   }
-  return formatDataset(specs, rows, format, tableName);
+  return formatDataset(specs, rows, format, tableName, customJsonConfig);
 }
 
 /**

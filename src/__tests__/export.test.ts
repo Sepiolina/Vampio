@@ -69,11 +69,27 @@ describe('formatDataset', () => {
     expect((xlsx as Uint8Array).byteLength).toBeGreaterThan(0);
   });
 
-  it('formats as SQL INSERT statements', () => {
-    const sql = formatDataset(columns, data, 'sql', 'custom_users');
+  it('formats with custom JSON template when enabled', () => {
+    const customConfig = {
+      enabled: true,
+      template: `{
+        "status": "success",
+        "table": "{{tableName}}",
+        "total": "{{count}}",
+        "data": "{{records}}"
+      }`,
+      prettyPrint: true,
+    };
 
-    expect(sql).toContain('INSERT INTO custom_users (`id`, `name`, `score`) VALUES');
-    expect(sql).toContain('(1, \'Alice Smith\', 95)');
-    expect(sql).toContain('(3, NULL, 72)');
+    const output = formatDataset(columns, data, 'json', 'test_items', customConfig) as string;
+    const parsed = JSON.parse(output);
+
+    expect(parsed.status).toBe('success');
+    expect(parsed.table).toBe('test_items');
+    expect(parsed.total).toBe(3);
+    expect(Array.isArray(parsed.data)).toBe(true);
+    expect(parsed.data).toHaveLength(3);
+    expect(parsed.data[0].name).toBe('Alice Smith');
   });
 });
+

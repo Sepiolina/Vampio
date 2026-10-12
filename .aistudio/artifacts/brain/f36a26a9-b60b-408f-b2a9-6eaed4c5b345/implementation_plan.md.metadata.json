@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for custom JSON payload configuration with placeholder variables (e.g., {{records}}, {{count}}, {{timestamp}}), supporting both dataset exports and webhook action payloads.",
+  "updatedAt":  "2026-10-12T01:50:57.946947352Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

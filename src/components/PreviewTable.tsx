@@ -19,10 +19,13 @@ import {
   Columns,
   Eye,
   EyeOff,
-  Focus
+  Focus,
+  Braces
 } from 'lucide-react';
 import { DataSearch } from './DataSearch';
 import { DataHeatmap } from './DataHeatmap';
+import { useWorkspace } from '../context/WorkspaceContext';
+import { renderCustomJsonTemplate } from '../utils/customJsonTemplate';
 
 interface Props {
   columns: ColumnSpec[];
@@ -43,6 +46,7 @@ export const PreviewTable: React.FC<Props> = ({
   onChangePreviewCount,
   theme
 }) => {
+  const { activeWorkspace, setIsCustomJsonModalOpen } = useWorkspace();
   const [viewMode, setViewMode] = useState<'table' | 'json' | 'list'>('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -241,7 +245,21 @@ export const PreviewTable: React.FC<Props> = ({
           visibleColumns.forEach(c => { res[c.name] = row[c.name]; });
           return res;
         });
-    navigator.clipboard.writeText(JSON.stringify(exportedRows, null, 2));
+
+    if (viewMode === 'json' && activeWorkspace?.customJsonConfig?.enabled) {
+      const rendered = renderCustomJsonTemplate(
+        activeWorkspace.customJsonConfig,
+        exportedRows,
+        {
+          tableName: activeWorkspace.tableName || 'synthetic_dataset',
+          count: exportedRows.length,
+          timestamp: new Date().toISOString(),
+        }
+      );
+      navigator.clipboard.writeText(rendered);
+    } else {
+      navigator.clipboard.writeText(JSON.stringify(exportedRows, null, 2));
+    }
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 1500);
   };
@@ -355,10 +373,17 @@ export const PreviewTable: React.FC<Props> = ({
               className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition-colors ${
                 viewMode === 'json' ? 'bg-accent text-white shadow-2xs' : 'text-content-muted hover:text-content'
               }`}
-              title="JSON View"
+              title={activeWorkspace?.customJsonConfig?.enabled ? 'Custom JSON Architecture Active' : 'JSON View'}
             >
-              <Code size={11} />
+              {activeWorkspace?.customJsonConfig?.enabled ? (
+                <Braces size={11} className={viewMode === 'json' ? 'text-white' : 'text-accent'} />
+              ) : (
+                <Code size={11} />
+              )}
               <span className="hidden sm:inline">JSON</span>
+              {activeWorkspace?.customJsonConfig?.enabled && (
+                <span className={`w-1.5 h-1.5 rounded-full ${viewMode === 'json' ? 'bg-white' : 'bg-emerald-400'}`} />
+              )}
             </button>
           </div>
 
@@ -802,19 +827,60 @@ export const PreviewTable: React.FC<Props> = ({
                 </button>
               </div>
             )}
-            <pre className="p-4 text-xs font-mono text-emerald-400/90 leading-relaxed overflow-auto flex-1">
-              {JSON.stringify(
-                filteredData.map(row => {
+            {/* Custom JSON Architecture Status & Action Bar */}
+            <div className="px-3.5 py-1.5 border-b border-border-subtle bg-secondary/50 flex items-center justify-between text-xs flex-shrink-0 select-none">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono text-content-muted">
+                  Payload Preview ({filteredData.length} records)
+                </span>
+                {activeWorkspace?.customJsonConfig?.enabled ? (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
+                    <Braces size={10} />
+                    <span>Custom JSON Architecture</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-tertiary text-content-muted border border-border-subtle/40">
+                    Standard Array
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCustomJsonModalOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-primary hover:bg-tertiary border border-border-subtle text-[11px] text-content transition cursor-pointer shadow-2xs"
+                title="Configure custom JSON envelope and template placeholders"
+              >
+                <Braces size={11} className="text-accent" />
+                <span>Configure Payload...</span>
+              </button>
+            </div>
+
+            <pre className="p-4 text-xs font-mono text-emerald-400/90 leading-relaxed overflow-auto flex-1 select-text">
+              {(() => {
+                const preparedRows = filteredData.map(row => {
                   if (hiddenColumnIds.size === 0) return row;
                   const filteredRow: Record<string, unknown> = {};
                   visibleColumns.forEach(c => {
                     filteredRow[c.name] = row[c.name];
                   });
                   return filteredRow;
-                }),
-                null,
-                2
-              )}
+                });
+
+                if (activeWorkspace?.customJsonConfig?.enabled) {
+                  return renderCustomJsonTemplate(
+                    activeWorkspace.customJsonConfig,
+                    preparedRows,
+                    {
+                      tableName: activeWorkspace.tableName || 'synthetic_dataset',
+                      count: preparedRows.length,
+                      timestamp: new Date().toISOString(),
+                    }
+                  );
+                }
+
+                return JSON.stringify(preparedRows, null, 2);
+              })()}
             </pre>
           </div>
         )}
