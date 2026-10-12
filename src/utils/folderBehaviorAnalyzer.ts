@@ -408,8 +408,8 @@ export function analyzeFolderFiles(
     extractedColumns = sniffColumnsFromContent(sampleCandidate.name, sampleCandidate.sampleContent);
   }
 
-  // Fallback: If no sample content available, infer from filenames
-  if (extractedColumns.length === 0) {
+  // Fallback: If no sample content available but files exist, infer from filenames
+  if (extractedColumns.length === 0 && totalFiles > 0) {
     extractedColumns = inferDefaultColumnsFromFolderContext(folderName, dominantFormat);
   }
 

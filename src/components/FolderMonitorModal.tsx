@@ -94,7 +94,9 @@ export const FolderMonitorModal: React.FC<Props> = ({
   const [hasApplied, setHasApplied] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
   const monitoringTimerRef = useRef<any>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const addEvent = (type: FolderMonitorEvent['type'], message: string, details?: string) => {
     const newEvent: FolderMonitorEvent = {
@@ -179,15 +181,43 @@ export const FolderMonitorModal: React.FC<Props> = ({
       return;
     }
 
+    // Only active polling on handles capable of disk reads
+    if (typeof folderHandle.values !== 'function' && folderHandle.kind !== 'tauri-dir') {
+      if (monitoringTimerRef.current) clearInterval(monitoringTimerRef.current);
+      return;
+    }
+
     monitoringTimerRef.current = setInterval(async () => {
       try {
-        const freshFiles = await readFolderFromDirectoryHandle(folderHandle, 1024, 1);
-        // Check if count or sizes changed
-        if (freshFiles.length !== discoveredFiles.length) {
-          addEvent(
-            'file_added',
-            `Folder change: File count changed from ${discoveredFiles.length} to ${freshFiles.length}`
-          );
+        const freshFiles = await readFolderFromDirectoryHandle(folderHandle, 65536, 1);
+        let hasChanges = freshFiles.length !== discoveredFiles.length;
+        let addedCount = 0;
+        let modifiedCount = 0;
+
+        if (!hasChanges) {
+          const prevMap = new Map<string, DiscoveredFolderFile>(discoveredFiles.map((f) => [f.name, f]));
+          for (const fresh of freshFiles) {
+            const prev = prevMap.get(fresh.name);
+            if (!prev) {
+              hasChanges = true;
+              addedCount++;
+            } else if (prev.size !== fresh.size || prev.lastModified !== fresh.lastModified) {
+              hasChanges = true;
+              modifiedCount++;
+            }
+          }
+        } else {
+          addedCount = freshFiles.length - discoveredFiles.length;
+        }
+
+        if (hasChanges) {
+          if (addedCount > 0) {
+            addEvent('file_added', `Detected ${addedCount} new file(s) in /${folderName}`);
+          } else if (modifiedCount > 0) {
+            addEvent('file_grown', `Detected ${modifiedCount} updated file(s) in /${folderName}`);
+          } else {
+            addEvent('info', `Folder refreshed: now ${freshFiles.length} file(s) in /${folderName}`);
+          }
           setDiscoveredFiles(freshFiles);
           const result = analyzeFolderFiles(freshFiles, folderName);
           setAnalysis(result);
@@ -195,12 +225,12 @@ export const FolderMonitorModal: React.FC<Props> = ({
       } catch {
         // Silent catch during background poll
       }
-    }, 4000);
+    }, 3000);
 
     return () => {
       if (monitoringTimerRef.current) clearInterval(monitoringTimerRef.current);
     };
-  }, [isOpen, isLiveMonitoring, folderHandle, discoveredFiles.length, folderName]);
+  }, [isOpen, isLiveMonitoring, folderHandle, discoveredFiles, folderName]);
 
   // Request directory picker
   const handlePickDirectory = async () => {
@@ -213,16 +243,146 @@ export const FolderMonitorModal: React.FC<Props> = ({
         onSelectLockedFolder(handle, name);
         addEvent('scan', `Locked onto target directory: /${name}`);
         await scanFolderHandle(handle, name);
+        return;
       }
     } catch (err: any) {
       addEvent('info', `Folder selection note: ${err.message || 'Cancelled'}`);
-      if (fileInputRef.current) {
-        fileInputRef.current.click();
-      }
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
     }
   };
 
-  // Handle directory files from HTML input
+  // Recursive entry scanner for dropped folders
+  const traverseFileSystemEntry = async (entry: any, outFiles: File[]) => {
+    if (!entry) return;
+    if (entry.isFile) {
+      await new Promise<void>((resolve) => {
+        entry.file(
+          (file: File) => {
+            outFiles.push(file);
+            resolve();
+          },
+          () => resolve()
+        );
+      });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readBatch = (): Promise<any[]> => {
+        return new Promise((resolve) => {
+          reader.readEntries(
+            (batch: any[]) => resolve(batch || []),
+            () => resolve([])
+          );
+        });
+      };
+      let entries: any[] = [];
+      do {
+        entries = await readBatch();
+        for (const child of entries) {
+          await traverseFileSystemEntry(child, outFiles);
+        }
+      } while (entries.length > 0);
+    }
+  };
+
+  // Drag and drop ingestion for folders & files
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    setIsLoading(true);
+    try {
+      const items = e.dataTransfer.items;
+      const files = e.dataTransfer.files;
+
+      // 1. Direct FileSystemDirectoryHandle support (Chromium)
+      let directDirHandle: any = null;
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          if (typeof (it as any).getAsFileSystemHandle === 'function') {
+            try {
+              const handle = await (it as any).getAsFileSystemHandle();
+              if (handle && handle.kind === 'directory') {
+                directDirHandle = handle;
+                break;
+              }
+            } catch {
+              // ignore and fallback
+            }
+          }
+        }
+      }
+
+      if (directDirHandle) {
+        const name = directDirHandle.name || 'target_folder';
+        setFolderHandle(directDirHandle);
+        setFolderName(name);
+        onSelectLockedFolder(directDirHandle, name);
+        addEvent('scan', `Locked onto dropped directory: /${name}`);
+        await scanFolderHandle(directDirHandle, name);
+        return;
+      }
+
+      // 2. Recursive traversal of dropped items (webkitGetAsEntry)
+      const droppedFiles: File[] = [];
+      let detectedDirName = '';
+
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          if (it.kind !== 'file') continue;
+          const entry = (it as any).webkitGetAsEntry ? (it as any).webkitGetAsEntry() : null;
+          if (entry) {
+            if (entry.isDirectory && !detectedDirName) {
+              detectedDirName = entry.name;
+            }
+            await traverseFileSystemEntry(entry, droppedFiles);
+          } else {
+            const f = it.getAsFile();
+            if (f) droppedFiles.push(f);
+          }
+        }
+      } else if (files && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          droppedFiles.push(files[i]);
+        }
+      }
+
+      if (droppedFiles.length === 0) {
+        addEvent('info', 'No valid files detected in dropped content.');
+        return;
+      }
+
+      const finalFolderName =
+        detectedDirName ||
+        (droppedFiles[0] as any).webkitRelativePath?.split('/')[0] ||
+        'dropped_folder';
+
+      setFolderName(finalFolderName);
+      const virtualHandle = { name: finalFolderName, kind: 'virtual-dir' };
+      setFolderHandle(virtualHandle);
+      onSelectLockedFolder(virtualHandle, finalFolderName);
+
+      const discovered = await readFilesFromHtmlFileList(droppedFiles);
+      setDiscoveredFiles(discovered);
+      const result = analyzeFolderFiles(discovered, finalFolderName);
+      setAnalysis(result);
+      if (discovered.length > 0) setSelectedFileForPreview(discovered[0]);
+      addEvent('info', `Ingested ${discovered.length} real files from dropped folder "/${finalFolderName}"`);
+      if (result.metrics.namingPattern?.detected) {
+        addEvent('pattern_matched', `Sequence pattern matched: "${result.metrics.namingPattern.pattern}"`);
+      }
+    } catch (err: any) {
+      addEvent('info', `Drop error: ${err.message || 'Could not parse dropped files'}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle directory files from HTML input (<input type="file" webkitdirectory />)
   const handleDirectoryInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
     if (!list || list.length === 0) return;
@@ -239,7 +399,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
       const result = analyzeFolderFiles(files, virtualName);
       setAnalysis(result);
       if (files.length > 0) setSelectedFileForPreview(files[0]);
-      addEvent('info', `Imported ${files.length} files from directory "/${virtualName}"`);
+      addEvent('info', `Imported ${files.length} real files from directory "/${virtualName}"`);
     } catch (err: any) {
       addEvent('info', `Import error: ${err.message}`);
     } finally {
@@ -248,99 +408,32 @@ export const FolderMonitorModal: React.FC<Props> = ({
     }
   };
 
-  // Preset synthetic sample folders for zero-barrier exploration / testing
-  const handleLoadSampleScenario = (type: 'iot' | 'ecommerce' | 'access_log') => {
+  // Handle individual files selection
+  const handleBatchFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+
     setIsLoading(true);
-    let mockFiles: DiscoveredFolderFile[] = [];
-    let name = 'iot_fleet_ingest';
+    const batchFiles: File[] = Array.from(list);
+    const derivedName = 'selected_files';
+    setFolderName(derivedName);
+    const virtualHandle = { name: derivedName, kind: 'virtual-dir' };
+    setFolderHandle(virtualHandle);
+    onSelectLockedFolder(virtualHandle, derivedName);
 
-    const now = Date.now();
-    if (type === 'iot') {
-      name = 'telemetry_node_drop';
-      mockFiles = [
-        {
-          name: 'node_sensor_0001.jsonl',
-          size: 4120,
-          lastModified: now - 180000,
-          sampleContent: `{"device_uid":"NODE-AB-101","packet_seq":1,"temp_c":23.4,"humidity":55.1,"battery_pct":98,"status":"OK"}\n{"device_uid":"NODE-AB-102","packet_seq":2,"temp_c":24.1,"humidity":54.8,"battery_pct":97,"status":"OK"}`,
-        },
-        {
-          name: 'node_sensor_0002.jsonl',
-          size: 4210,
-          lastModified: now - 120000,
-          sampleContent: `{"device_uid":"NODE-AB-101","packet_seq":3,"temp_c":23.9,"humidity":55.0,"battery_pct":96,"status":"OK"}`,
-        },
-        {
-          name: 'node_sensor_0003.jsonl',
-          size: 4080,
-          lastModified: now - 60000,
-          sampleContent: `{"device_uid":"NODE-AB-103","packet_seq":4,"temp_c":25.2,"humidity":53.2,"battery_pct":95,"status":"OK"}`,
-        },
-        {
-          name: 'node_sensor_0004.jsonl',
-          size: 4150,
-          lastModified: now - 10000,
-          sampleContent: `{"device_uid":"NODE-AB-102","packet_seq":5,"temp_c":24.5,"humidity":54.1,"battery_pct":94,"status":"OK"}`,
-        },
-      ];
-    } else if (type === 'ecommerce') {
-      name = 'orders_daily_pipeline';
-      mockFiles = [
-        {
-          name: 'orders_part_001.csv',
-          size: 14850,
-          lastModified: now - 86400000,
-          sampleContent: `Order_ID,Customer_Name,Customer_Email,Item_Quantity,Unit_Price,Order_Total,Order_Status\n1001,John Doe,john@example.com,2,29.99,59.98,COMPLETED\n1002,Jane Smith,jane@test.org,1,120.00,120.00,PENDING`,
-        },
-        {
-          name: 'orders_part_002.csv',
-          size: 15200,
-          lastModified: now - 43200000,
-          sampleContent: `Order_ID,Customer_Name,Customer_Email,Item_Quantity,Unit_Price,Order_Total,Order_Status\n1003,Alex Brown,alex@domain.com,3,15.50,46.50,COMPLETED`,
-        },
-      ];
-    } else {
-      name = 'nginx_access_logs';
-      mockFiles = [
-        {
-          name: 'production_access.log',
-          size: 1250000,
-          lastModified: now - 3000,
-          sampleContent: `192.168.1.101 - - [22/Sep/2026:11:30:01] "GET /api/v1/health HTTP/1.1" 200 142\n10.0.0.15 - - [22/Sep/2026:11:30:05] "POST /api/v1/orders HTTP/1.1" 201 512`,
-        },
-      ];
+    try {
+      const files = await readFilesFromHtmlFileList(batchFiles);
+      setDiscoveredFiles(files);
+      const result = analyzeFolderFiles(files, derivedName);
+      setAnalysis(result);
+      if (files.length > 0) setSelectedFileForPreview(files[0]);
+      addEvent('info', `Imported ${files.length} real files from file picker`);
+    } catch (err: any) {
+      addEvent('info', `File import error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+      e.target.value = '';
     }
-
-    setFolderName(name);
-    setFolderHandle({ name, kind: 'simulated-dir' });
-    setDiscoveredFiles(mockFiles);
-    const result = analyzeFolderFiles(mockFiles, name);
-    setAnalysis(result);
-    setSelectedFileForPreview(mockFiles[0]);
-    setIsLoading(false);
-    addEvent('info', `Loaded simulated test environment: /${name} (${mockFiles.length} files)`);
-  };
-
-  // Simulate new incoming file to show real-time behavior detection
-  const handleSimulateNewFile = () => {
-    if (!analysis) return;
-    const count = discoveredFiles.length + 1;
-    const numStr = String(count).padStart(4, '0');
-    const ext = analysis.suggestedMode.format;
-    const newName = `node_sensor_${numStr}.${ext}`;
-
-    const newFile: DiscoveredFolderFile = {
-      name: newName,
-      size: Math.round(3800 + Math.random() * 800),
-      lastModified: Date.now(),
-      sampleContent: `{"device_uid":"NODE-AB-${100 + count}","packet_seq":${count},"temp_c":24.2,"status":"OK"}`,
-    };
-
-    const updated = [...discoveredFiles, newFile];
-    setDiscoveredFiles(updated);
-    const newResult = analyzeFolderFiles(updated, folderName);
-    setAnalysis(newResult);
-    addEvent('file_added', `New file created: ${newName} (${formatFileSize(newFile.size)})`);
   };
 
   // Execute one-click apply of recommendations
@@ -431,8 +524,36 @@ export const FolderMonitorModal: React.FC<Props> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: 'spring', duration: 0.28, bounce: 0.1 }}
-            className="bg-primary border border-border-subtle rounded-2xl w-full max-w-4xl h-[90vh] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // Only clear if target is the modal container itself
+              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+              setIsDraggingOver(false);
+            }}
+            onDrop={handleDrop}
+            className="bg-primary border border-border-subtle rounded-2xl w-full max-w-4xl h-[90vh] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative"
           >
+            {/* Drag & Drop Visual Overlay */}
+            {isDraggingOver && (
+              <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-xs border-2 border-dashed border-accent rounded-2xl flex flex-col items-center justify-center gap-3 p-6 pointer-events-none transition-all">
+                <div className="h-16 w-16 rounded-2xl bg-accent text-white flex items-center justify-center shadow-lg animate-bounce">
+                  <Upload size={32} />
+                </div>
+                <div className="text-center">
+                  <h3 className="text-base font-bold text-white">Drop Target Folder Here</h3>
+                  <p className="text-xs text-white/80 mt-1 max-w-xs">
+                    Releases will recursively parse real files, infer schemas, and start live observation.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-subtle bg-secondary">
               <div className="flex items-center gap-3">
@@ -446,7 +567,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
                     </h2>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-500 border border-emerald-500/25 flex items-center gap-1">
                       <ShieldCheck size={11} />
-                      100% Offline • Zero API
+                      100% Offline • Zero Mock • Real Files Only
                     </span>
                   </div>
                   <p className="text-xs text-content-muted">
@@ -503,6 +624,14 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   className="hidden"
                 />
 
+                <input
+                  type="file"
+                  ref={filesInputRef}
+                  multiple
+                  onChange={handleBatchFilesChange}
+                  className="hidden"
+                />
+
                 <button
                   type="button"
                   onClick={handlePickDirectory}
@@ -519,7 +648,17 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   title="Select directory via native file browser"
                 >
                   <Upload size={12} className="text-content-muted" />
-                  <span>Browse Dir</span>
+                  <span>Upload Folder</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => filesInputRef.current?.click()}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-[11px] font-medium transition cursor-pointer"
+                  title="Select batch of files"
+                >
+                  <FileText size={12} className="text-content-muted" />
+                  <span>Batch Files</span>
                 </button>
 
                 {folderHandle && (
@@ -527,46 +666,15 @@ export const FolderMonitorModal: React.FC<Props> = ({
                     type="button"
                     onClick={() => scanFolderHandle(folderHandle, folderName)}
                     disabled={isLoading}
-                    className="p-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content transition cursor-pointer"
+                    className="p-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content transition cursor-pointer flex items-center gap-1 px-2 text-[11px]"
                     title="Scan folder now"
                   >
-                    <RefreshCw size={13} className={isLoading ? 'animate-spin text-accent' : ''} />
+                    <RefreshCw size={12} className={isLoading ? 'animate-spin text-accent' : ''} />
+                    <span>Scan</span>
                   </button>
                 )}
               </div>
             </div>
-
-            {/* Quick Scenario Preset Chips for Sandboxed Environments */}
-            {!folderHandle && (
-              <div className="px-5 py-3 bg-tertiary/20 border-b border-border-subtle flex items-center justify-between flex-wrap gap-2 text-xs">
-                <span className="text-[11px] text-content-muted">
-                  Quick test with simulated offline folder behaviors:
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleLoadSampleScenario('iot')}
-                    className="px-2 py-1 rounded-md bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-accent transition cursor-pointer"
-                  >
-                    IoT Stream Drops
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLoadSampleScenario('ecommerce')}
-                    className="px-2 py-1 rounded-md bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
-                  >
-                    E-Commerce Partitions
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLoadSampleScenario('access_log')}
-                    className="px-2 py-1 rounded-md bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
-                  >
-                    Growing Rolling Log
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Navigation Tabs */}
             <div className="px-5 pt-2 border-b border-border-subtle bg-secondary/40">
@@ -779,22 +887,64 @@ export const FolderMonitorModal: React.FC<Props> = ({
                       </div>
                     </>
                   ) : (
-                    <div className="text-center py-12 space-y-3">
-                      <div className="h-12 w-12 rounded-2xl bg-secondary mx-auto flex items-center justify-center text-content-muted">
-                        <FolderLock size={24} />
-                      </div>
-                      <h3 className="text-sm font-bold text-content">No Target Folder Selected</h3>
-                      <p className="text-xs text-content-muted max-w-md mx-auto">
-                        Select and lock a folder on your computer. The engine will inspect file structures, intervals, and naming conventions to suggest the optimal generation setup.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handlePickDirectory}
-                        className="px-4 py-2 rounded-xl bg-accent text-white hover:bg-accent-hover text-xs font-bold shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
+                    <div className="py-6 space-y-4">
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIsDraggingOver(true);
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                          setIsDraggingOver(false);
+                        }}
+                        onDrop={handleDrop}
+                        className={`p-10 rounded-2xl border-2 border-dashed transition-all text-center flex flex-col items-center justify-center gap-4 ${
+                          isDraggingOver
+                            ? 'border-accent bg-accent/15 shadow-xl scale-[1.01]'
+                            : 'border-border-subtle bg-secondary/40 hover:border-accent/40 hover:bg-secondary/70'
+                        }`}
                       >
-                        <FolderLock size={13} />
-                        <span>Select Target Folder</span>
-                      </button>
+                        <div className="h-16 w-16 rounded-2xl bg-accent/15 border border-accent/25 text-accent flex items-center justify-center shadow-xs">
+                          <FolderLock size={32} />
+                        </div>
+                        <div className="space-y-1.5 max-w-md">
+                          <h3 className="text-base font-bold text-content">
+                            Drag &amp; Drop Target Folder Here
+                          </h3>
+                          <p className="text-xs text-content-muted leading-relaxed">
+                            Drop any real local folder or multi-file set directly here to begin live analysis. The monitor reads 100% genuine local files with zero simulation.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={handlePickDirectory}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white hover:bg-accent-hover text-xs font-bold shadow-xs transition cursor-pointer"
+                          >
+                            <FolderLock size={13} />
+                            <span>Select Target Folder</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold transition cursor-pointer"
+                          >
+                            <Upload size={13} className="text-content-muted" />
+                            <span>Upload Local Folder</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => filesInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold transition cursor-pointer"
+                          >
+                            <FileText size={13} className="text-content-muted" />
+                            <span>Select Batch Files</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -982,17 +1132,19 @@ export const FolderMonitorModal: React.FC<Props> = ({
                       </button>
 
                       <span className="text-[11px] text-content-muted">
-                        Polls folder changes every 4 seconds
+                        Polls real folder changes every 3 seconds
                       </span>
                     </div>
 
                     <button
                       type="button"
-                      onClick={handleSimulateNewFile}
-                      className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-accent transition cursor-pointer"
-                      title="Simulate a new file arriving in the folder"
+                      onClick={() => folderHandle && scanFolderHandle(folderHandle, folderName)}
+                      disabled={isLoading || !folderHandle}
+                      className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer flex items-center gap-1.5"
+                      title="Re-scan the folder for new, modified, or deleted files"
                     >
-                      + Simulate Incoming File
+                      <RefreshCw size={12} className={isLoading ? 'animate-spin text-accent' : ''} />
+                      <span>Re-scan Real Folder</span>
                     </button>
                   </div>
 

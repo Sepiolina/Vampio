@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for custom JSON payload configuration with placeholder variables (e.g., {{records}}, {{count}}, {{timestamp}}), supporting both dataset exports and webhook action payloads.",
-  "updatedAt":  "2026-10-12T01:50:57.946947352Z",
+  "summary":  "Implementation plan to transition Target Folder Behavior Monitor to 100% genuine real-folder analysis:\n- Completely removes all simulated mock scenario buttons ('iot', 'ecommerce', 'access_log') and mock file generators ('+ Simulate Incoming File').\n- Implements dual real folder ingestion: direct folder picker (with iframe-safe synchronous HTML5 directory picker) and a full drag-and-drop zone for real folders and file batches.\n- Provides live automatic polling and real-time scanning for genuine file additions, updates, and lock statuses.\n- Enforces strict production-grade SaaS design without illusionary placeholders.",
+  "updatedAt":  "2026-10-12T04:58:26.374660415Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
