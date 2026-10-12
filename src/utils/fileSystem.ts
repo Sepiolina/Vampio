@@ -43,79 +43,404 @@ export function isFileSystemAccessSupported(): boolean {
   return typeof window !== 'undefined' && typeof (window as any).showDirectoryPicker === 'function';
 }
 
+export interface VirtualDirectoryHandle {
+  kind: 'virtual-dir';
+  name: string;
+  path: string;
+  files: File[];
+  getFiles?: () => Promise<File[]>;
+}
+
+export interface DirectorySelectionOptions {
+  allowFallback?: boolean;
+  title?: string;
+  startIn?: string;
+}
+
+export interface DirectorySelectionResult {
+  handle: FileSystemDirectoryHandle | VirtualDirectoryHandle | any;
+  name: string;
+  files: File[];
+  isVirtual: boolean;
+  path?: string;
+}
+
+export interface FileSelectionOptions {
+  accept?: string;
+  multiple?: boolean;
+  title?: string;
+}
+
+export interface ScannedDataTransferResult {
+  files: File[];
+  folderName: string;
+  directoryHandle?: any;
+  isDirectory: boolean;
+}
+
 /**
  * Creates a Virtual Directory Handle for safe, portable operations in browser / iframe environments.
  */
-export function createVirtualDirectoryHandle(name: string, path?: string): any {
+export function createVirtualDirectoryHandle(
+  name: string,
+  path?: string,
+  files?: File[]
+): VirtualDirectoryHandle {
   const cleanName = name.trim().replace(/^[/\\]+/, '') || 'output_folder';
+  const fileList = files || [];
   return {
     kind: 'virtual-dir',
     name: cleanName,
     path: path || cleanName,
-    files: [],
+    files: fileList,
+    async getFiles() {
+      return this.files;
+    },
   };
 }
 
-export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandle | any | null> {
+/**
+ * Ephemeral HTML Directory Picker fallback (<input type="file" webkitdirectory />).
+ * Works reliably even inside restricted browser iframes.
+ */
+export function pickDirectoryViaHtmlInput(): Promise<DirectorySelectionResult | null> {
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined') {
+      resolve(null);
+      return;
+    }
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('directory', '');
+    input.multiple = true;
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '-9999px';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+
+    let resolved = false;
+    const cleanup = () => {
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+
+    const handleChange = () => {
+      if (resolved) return;
+      resolved = true;
+      const fileList = input.files;
+      if (!fileList || fileList.length === 0) {
+        cleanup();
+        resolve(null);
+        return;
+      }
+      const files: File[] = Array.from(fileList);
+      const firstRelativePath = (files[0] as any)?.webkitRelativePath || '';
+      const rootName = firstRelativePath.split('/')[0] || 'selected_folder';
+      const handle = createVirtualDirectoryHandle(rootName, rootName, files);
+      cleanup();
+      resolve({
+        handle,
+        name: rootName,
+        files,
+        isVirtual: true,
+        path: rootName,
+      });
+    };
+
+    const handleCancel = () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(null);
+    };
+
+    input.addEventListener('change', handleChange, { once: true });
+    input.addEventListener('cancel', handleCancel, { once: true });
+
+    // Fallback cancel detector on window refocus
+    const onFocus = () => {
+      window.removeEventListener('focus', onFocus);
+      setTimeout(() => {
+        if (!resolved && (!input.files || input.files.length === 0)) {
+          handleCancel();
+        }
+      }, 1000);
+    };
+    window.addEventListener('focus', onFocus, { once: true });
+
+    input.click();
+  });
+}
+
+/**
+ * Single source of truth for directory selection across desktop (Tauri), native browser API,
+ * and transparent fallback HTML input (in iframes or unsupported browsers).
+ */
+export async function pickDirectory(
+  options: DirectorySelectionOptions = {}
+): Promise<DirectorySelectionResult | null> {
+  const allowFallback = options.allowFallback !== false;
+
   // 1. Native Desktop App (Tauri)
   if (isTauri()) {
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select Output Directory',
+        title: options.title || 'Select Folder',
       });
       if (selected === null) {
         return null;
       }
       const path = Array.isArray(selected) ? selected[0] : selected;
       const name = path.split(/[\\/]/).pop() || path;
-      return { kind: 'tauri-dir', path, name };
+      return {
+        handle: { kind: 'tauri-dir', path, name },
+        name,
+        files: [],
+        isVirtual: false,
+        path,
+      };
     } catch (err: any) {
       console.error('Tauri native directory picker failed:', err);
-      throw new Error(`Desktop folder picker error: ${err.message || String(err)}`);
+      if (!allowFallback) {
+        throw new Error(`Desktop folder picker error: ${err.message || String(err)}`);
+      }
     }
   }
 
-  // 2. Embedded Iframe Environment
-  if (isEmbeddedIframe()) {
-    const err: any = new Error(
-      'Access to local directory was denied by browser security policy. This often occurs inside embedded iframes. Opening the app in a new browser tab allows full directory write access.'
-    );
-    err.name = 'SecurityError';
-    err.isIframe = true;
-    throw err;
+  // 2. Standard Web Browser with File System Access API (when not blocked by iframe)
+  if (!isEmbeddedIframe() && typeof (window as any).showDirectoryPicker === 'function') {
+    try {
+      const handle = await (window as any).showDirectoryPicker({
+        mode: 'readwrite',
+        startIn: options.startIn || 'downloads',
+      });
+      return {
+        handle,
+        name: handle.name,
+        files: [],
+        isVirtual: false,
+      };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // User intentionally cancelled
+        return null;
+      }
+      if (!allowFallback) {
+        if (err.name === 'SecurityError') {
+          const secErr: any = new Error(
+            'Access to local directory was denied by browser security policy. This often occurs inside embedded iframes. Opening the app in a new browser tab allows full directory write access.'
+          );
+          secErr.name = 'SecurityError';
+          secErr.isIframe = true;
+          throw secErr;
+        }
+        throw err;
+      }
+      console.warn('Native showDirectoryPicker failed, falling back to HTML directory picker:', err);
+    }
   }
 
-  // 3. Web Browser without File System Access API
-  if (!isFileSystemAccessSupported()) {
+  // 3. Fallback or Iframe environment
+  if (!allowFallback) {
+    if (isEmbeddedIframe()) {
+      const err: any = new Error(
+        'Access to local directory was denied by browser security policy. This often occurs inside embedded iframes. Opening the app in a new browser tab allows full directory write access.'
+      );
+      err.name = 'SecurityError';
+      err.isIframe = true;
+      throw err;
+    }
     const err: any = new Error('File System Access API is not supported in this browser.');
     err.name = 'NotSupportedError';
     throw err;
   }
 
-  // 4. Standard Browser with File System Access API
-  try {
-    const handle = await (window as any).showDirectoryPicker({
-      mode: 'readwrite',
-      startIn: 'downloads',
-    });
-    return handle as FileSystemDirectoryHandle;
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      // User cancelled picker dialog
-      return null;
+  return await pickDirectoryViaHtmlInput();
+}
+
+/**
+ * Single source of truth for file selection across desktop and web environments.
+ */
+export function pickFiles(options: FileSelectionOptions = {}): Promise<File[]> {
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined') {
+      resolve([]);
+      return;
     }
-    if (err.name === 'SecurityError') {
-      const secErr: any = new Error(
-        'Access to local directory was denied by browser security policy. This often occurs inside embedded iframes. Opening the app in a new browser tab allows full directory write access.'
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    if (options.accept) {
+      input.accept = options.accept;
+    }
+    input.multiple = options.multiple ?? true;
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '-9999px';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+
+    let resolved = false;
+    const cleanup = () => {
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+
+    const handleChange = () => {
+      if (resolved) return;
+      resolved = true;
+      const fileList = input.files;
+      const files: File[] = fileList ? Array.from(fileList) : [];
+      cleanup();
+      resolve(files);
+    };
+
+    const handleCancel = () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve([]);
+    };
+
+    input.addEventListener('change', handleChange, { once: true });
+    input.addEventListener('cancel', handleCancel, { once: true });
+
+    const onFocus = () => {
+      window.removeEventListener('focus', onFocus);
+      setTimeout(() => {
+        if (!resolved && (!input.files || input.files.length === 0)) {
+          handleCancel();
+        }
+      }, 1000);
+    };
+    window.addEventListener('focus', onFocus, { once: true });
+
+    input.click();
+  });
+}
+
+/**
+ * Recursively traverses a FileSystemEntry (WebKit directory entry standard)
+ */
+export async function traverseFileSystemEntry(entry: any, outFiles: File[]): Promise<void> {
+  if (!entry) return;
+  if (entry.isFile) {
+    await new Promise<void>((resolve) => {
+      entry.file(
+        (file: File) => {
+          outFiles.push(file);
+          resolve();
+        },
+        () => resolve()
       );
-      secErr.name = 'SecurityError';
-      secErr.isIframe = true;
-      throw secErr;
-    }
-    throw err;
+    });
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    const readBatch = (): Promise<any[]> => {
+      return new Promise((resolve) => {
+        reader.readEntries(
+          (batch: any[]) => resolve(batch || []),
+          () => resolve([])
+        );
+      });
+    };
+    let entries: any[] = [];
+    do {
+      entries = await readBatch();
+      for (const child of entries) {
+        await traverseFileSystemEntry(child, outFiles);
+      }
+    } while (entries.length > 0);
   }
+}
+
+/**
+ * Single source of truth for processing drag-and-drop transfers containing files or directories.
+ */
+export async function scanDataTransfer(
+  dataTransfer: DataTransfer
+): Promise<ScannedDataTransferResult> {
+  const items = dataTransfer.items;
+  const files = dataTransfer.files;
+
+  // 1. Direct FileSystemDirectoryHandle support (Chromium)
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (typeof (it as any).getAsFileSystemHandle === 'function') {
+        try {
+          const handle = await (it as any).getAsFileSystemHandle();
+          if (handle && handle.kind === 'directory') {
+            return {
+              files: [],
+              folderName: handle.name || 'target_folder',
+              directoryHandle: handle,
+              isDirectory: true,
+            };
+          }
+        } catch {
+          // ignore and fall through
+        }
+      }
+    }
+  }
+
+  // 2. Recursive traversal of dropped items (webkitGetAsEntry)
+  const droppedFiles: File[] = [];
+  let detectedDirName = '';
+  let hasDirectory = false;
+
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.kind !== 'file') continue;
+      const entry = (it as any).webkitGetAsEntry ? (it as any).webkitGetAsEntry() : null;
+      if (entry) {
+        if (entry.isDirectory) {
+          hasDirectory = true;
+          if (!detectedDirName) {
+            detectedDirName = entry.name;
+          }
+        }
+        await traverseFileSystemEntry(entry, droppedFiles);
+      } else {
+        const f = it.getAsFile();
+        if (f) droppedFiles.push(f);
+      }
+    }
+  } else if (files && files.length > 0) {
+    for (let i = 0; i < files.length; i++) {
+      droppedFiles.push(files[i]);
+    }
+  }
+
+  const folderName =
+    detectedDirName ||
+    (droppedFiles.length > 0 && (droppedFiles[0] as any)?.webkitRelativePath
+      ? (droppedFiles[0] as any).webkitRelativePath.split('/')[0]
+      : '') ||
+    'dropped_folder';
+
+  return {
+    files: droppedFiles,
+    folderName,
+    isDirectory: hasDirectory || Boolean(detectedDirName),
+  };
+}
+
+/**
+ * Backward compatibility wrapper for requesting raw FileSystemDirectoryHandle or Tauri dir
+ */
+export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandle | any | null> {
+  const result = await pickDirectory({ allowFallback: false });
+  return result ? result.handle : null;
 }
 
 export async function writeBatchToDirectory(

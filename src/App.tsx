@@ -29,6 +29,7 @@ import {
 } from './utils/export';
 import { parseExcelOrCsvFile } from './utils/schemaExtractor';
 import { 
+  pickDirectory,
   requestDirectoryHandle, 
   writeBatchToDirectory, 
   createStreamFileWriter, 
@@ -758,54 +759,20 @@ export default function App() {
   const [isFolderSelectModalOpen, setIsFolderSelectModalOpen] = useState<boolean>(false);
   const [folderModalErrorNotice, setFolderModalErrorNotice] = useState<string | null>(null);
 
-  // Folder picker workflow
+  // Folder picker workflow via single source of truth
   const handleSelectFolder = async () => {
-    // 1. In native Tauri desktop app (.exe / macOS / Linux):
-    // Directly launch native OS folder picker!
-    if (isTauri()) {
-      try {
-        const handle = await requestDirectoryHandle();
-        if (handle) {
-          setDirectoryHandle(handle);
-          setSelectedFolderName(handle.name);
-          setOutputDestination('folder');
-          addRecentFolder(handle.name);
-          setStatusMessage(`Selected local directory "${handle.name}". Ready for direct writes.`);
-        }
-        return;
-      } catch (err: any) {
-        console.warn('Desktop native picker error:', err);
-        setFolderModalErrorNotice(err.message || 'Desktop folder picker error');
-        setIsFolderSelectModalOpen(true);
-        return;
-      }
-    }
-
-    // 2. In browser / iframe:
-    // If running in an embedded iframe or unsupported browser, show the Folder Selection Modal directly!
-    if (isEmbeddedIframe() || !isFileSystemAccessSupported()) {
-      setFolderModalErrorNotice(
-        isEmbeddedIframe()
-          ? 'Browser security policy restricts the File System Access API inside embedded iframes. Choose a Virtual Output Folder or browse via HTML5.'
-          : null
-      );
-      setIsFolderSelectModalOpen(true);
-      return;
-    }
-
-    // 3. Top-level browser tab with File System Access API
     try {
-      const handle = await requestDirectoryHandle();
-      if (handle) {
-        setDirectoryHandle(handle);
-        setSelectedFolderName(handle.name);
+      const result = await pickDirectory({ allowFallback: true, title: 'Select Output Directory' });
+      if (result) {
+        setDirectoryHandle(result.handle);
+        setSelectedFolderName(result.name);
         setOutputDestination('folder');
-        addRecentFolder(handle.name);
-        setStatusMessage(`Selected folder "${handle.name}". Ready for direct writes.`);
+        addRecentFolder(result.name);
+        setStatusMessage(`Selected directory "${result.name}". Ready for direct writes.`);
       }
     } catch (err: any) {
       console.warn('Folder selection notice:', err);
-      setFolderModalErrorNotice(err.message || 'Could not select folder');
+      setFolderModalErrorNotice(err?.message || 'Could not select folder');
       setIsFolderSelectModalOpen(true);
     }
   };
@@ -1003,28 +970,19 @@ export default function App() {
 
     let activeDir = directoryHandle;
     if (outputDestination === 'folder' && !activeDir) {
-      try {
-        const handle = await requestDirectoryHandle();
-        if (!handle) {
-          const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'output_dataset');
-          setDirectoryHandle(fallbackHandle);
-          setSelectedFolderName(fallbackHandle.name);
-          addRecentFolder(fallbackHandle.name);
-          activeDir = fallbackHandle;
-          setStatusMessage(`Folder selection cancelled. Using virtual folder "${fallbackHandle.name}".`);
-        } else {
-          setDirectoryHandle(handle);
-          setSelectedFolderName(handle.name);
-          addRecentFolder(handle.name);
-          activeDir = handle;
-        }
-      } catch (err: any) {
+      const dirResult = await pickDirectory({ allowFallback: true });
+      if (dirResult) {
+        setDirectoryHandle(dirResult.handle);
+        setSelectedFolderName(dirResult.name);
+        addRecentFolder(dirResult.name);
+        activeDir = dirResult.handle;
+      } else {
         const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'output_dataset');
         setDirectoryHandle(fallbackHandle);
         setSelectedFolderName(fallbackHandle.name);
         addRecentFolder(fallbackHandle.name);
         activeDir = fallbackHandle;
-        setStatusMessage(`Folder notice: ${err.message}. Using virtual folder "${fallbackHandle.name}".`);
+        setStatusMessage(`Folder selection cancelled. Using virtual folder "${fallbackHandle.name}".`);
       }
     }
 
@@ -1348,28 +1306,19 @@ export default function App() {
 
     let activeDir = directoryHandle;
     if (outputDestination === 'folder' && !activeDir) {
-      try {
-        const handle = await requestDirectoryHandle();
-        if (!handle) {
-          const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'stream_dataset');
-          setDirectoryHandle(fallbackHandle);
-          setSelectedFolderName(fallbackHandle.name);
-          addRecentFolder(fallbackHandle.name);
-          activeDir = fallbackHandle;
-          setStatusMessage(`Folder selection cancelled. Using virtual folder "${fallbackHandle.name}".`);
-        } else {
-          setDirectoryHandle(handle);
-          setSelectedFolderName(handle.name);
-          addRecentFolder(handle.name);
-          activeDir = handle;
-        }
-      } catch (err: any) {
+      const dirResult = await pickDirectory({ allowFallback: true });
+      if (dirResult) {
+        setDirectoryHandle(dirResult.handle);
+        setSelectedFolderName(dirResult.name);
+        addRecentFolder(dirResult.name);
+        activeDir = dirResult.handle;
+      } else {
         const fallbackHandle = createVirtualDirectoryHandle(selectedFolderName || 'stream_dataset');
         setDirectoryHandle(fallbackHandle);
         setSelectedFolderName(fallbackHandle.name);
         addRecentFolder(fallbackHandle.name);
         activeDir = fallbackHandle;
-        setStatusMessage(`Folder notice: ${err.message}. Using virtual folder "${fallbackHandle.name}".`);
+        setStatusMessage(`Folder selection cancelled. Using virtual folder "${fallbackHandle.name}".`);
       }
     }
 

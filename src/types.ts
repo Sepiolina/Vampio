@@ -226,3 +226,5 @@ export interface WorkspaceSettings {
   autoSaveDelayMs: number;
 }
 
+export type WorkspaceProfile = WorkspaceSession;
+

@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to transition Target Folder Behavior Monitor to 100% genuine real-folder analysis:\n- Completely removes all simulated mock scenario buttons ('iot', 'ecommerce', 'access_log') and mock file generators ('+ Simulate Incoming File').\n- Implements dual real folder ingestion: direct folder picker (with iframe-safe synchronous HTML5 directory picker) and a full drag-and-drop zone for real folders and file batches.\n- Provides live automatic polling and real-time scanning for genuine file additions, updates, and lock statuses.\n- Enforces strict production-grade SaaS design without illusionary placeholders.",
-  "updatedAt":  "2026-10-12T04:58:26.374660415Z",
+  "summary":  "Architectural plan to refine code quality, separate orchestration from business logic into domain hooks (useDatasetGenerator, useFolderMonitor), decompose monolithic modals into focused sub-components, and introduce strict boundary guards with typed error envelopes.",
+  "updatedAt":  "2026-10-12T10:11:24.197416334Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

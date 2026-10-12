@@ -196,9 +196,12 @@ export async function readFolderFromDirectoryHandle(
   // 2. Virtual Directory or HTML FileList
   if (dirHandle && dirHandle.kind === 'virtual-dir') {
     if (dirHandle.htmlFileList) {
-      return await readFilesFromHtmlFileList(dirHandle.htmlFileList, sampleContentLimitBytes, maxFilesToReadContent);
+      return await readFilesFromHtmlFileList(dirHandle.htmlFileList, maxFilesToReadContent, sampleContentLimitBytes);
     }
-    if (Array.isArray(dirHandle.files)) {
+    if (Array.isArray(dirHandle.files) && dirHandle.files.length > 0) {
+      if (typeof File !== 'undefined' && dirHandle.files[0] instanceof File) {
+        return await readFilesFromHtmlFileList(dirHandle.files, maxFilesToReadContent, sampleContentLimitBytes);
+      }
       return dirHandle.files;
     }
     return [];

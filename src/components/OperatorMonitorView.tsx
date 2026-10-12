@@ -32,7 +32,7 @@ import {
   generateWorkspaceProfileBundle,
   VampioWorkspaceProfileBundle
 } from '../utils/folderBehaviorAnalyzer';
-import { requestDirectoryHandle, isFileSystemAccessSupported } from '../utils/fileSystem';
+import { pickDirectory, isFileSystemAccessSupported } from '../utils/fileSystem';
 import { useUserRole } from '../context/UserRoleContext';
 import { useI18n, LanguageSelectDropdown } from '../i18n';
 
@@ -53,7 +53,6 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const watchIntervalRef = useRef<any>(null);
 
   // Trigger notification toast
@@ -78,47 +77,36 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
     }
   };
 
-  // Handle select folder
+  // Handle select folder via single source of truth
   const handleSelectFolder = async () => {
     try {
-      const handle = await requestDirectoryHandle();
-      if (!handle) return;
+      const result = await pickDirectory({ allowFallback: true, title: 'Select Monitored Directory' });
+      if (!result) return;
 
-      const name = handle.name || (handle.path ? handle.path.split(/[\\/]/).pop() : 'Monitored_Folder');
-      const path = handle.path || '';
-      setDirectoryHandle(handle);
+      const name = result.name || 'Monitored_Folder';
+      const path = result.path || name;
+      setDirectoryHandle(result.handle);
       setFolderName(name);
       setFolderPath(path);
 
-      await performScan(handle, name);
-      notify(`${t('operator.monitoringFolder')} "${name}"`);
-    } catch (err: any) {
-      console.warn('Native picker failed or cancelled, using fallback input:', err);
-      if (fileInputRef.current) {
-        fileInputRef.current.click();
+      if (result.files && result.files.length > 0) {
+        setIsScanning(true);
+        try {
+          const files = await readFilesFromHtmlFileList(result.files);
+          setDiscoveredFiles(files);
+          const analysisResult = analyzeFolderFiles(files, name);
+          setAnalysis(analysisResult);
+          notify(`Loaded ${files.length} files from "${name}"`);
+        } finally {
+          setIsScanning(false);
+        }
+      } else {
+        await performScan(result.handle, name);
+        notify(`${t('operator.monitoringFolder')} "${name}"`);
       }
-    }
-  };
-
-  // Handle fallback file input (<input webkitdirectory />)
-  const handleFallbackFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    setIsScanning(true);
-    try {
-      const files = await readFilesFromHtmlFileList(e.target.files);
-      const firstPath = (e.target.files[0] as any).webkitRelativePath || '';
-      const rootFolder = firstPath.split('/')[0] || 'Selected_Folder';
-      setFolderName(rootFolder);
-      setFolderPath(rootFolder);
-      setDiscoveredFiles(files);
-      const result = analyzeFolderFiles(files, rootFolder);
-      setAnalysis(result);
-      notify(`Loaded ${files.length} files from "${rootFolder}"`);
     } catch (err: any) {
-      console.error('Fallback input error:', err);
-      notify('Failed to process directory files');
-    } finally {
-      setIsScanning(false);
+      console.warn('Directory selection failed:', err);
+      notify(`Selection note: ${err?.message || 'Could not select folder'}`);
     }
   };
 
@@ -209,18 +197,6 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
 
   return (
     <div className="min-h-screen bg-primary text-content flex flex-col font-sans select-none">
-      {/* Hidden fallback directory file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        // @ts-ignore
-        webkitdirectory="true"
-        directory="true"
-        multiple
-        className="hidden"
-        onChange={handleFallbackFileInput}
-      />
-
       {/* Top Header Bar */}
       <header className="h-14 border-b border-border-subtle bg-secondary/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-10 sticky top-0">
         <div className="flex items-center gap-3">

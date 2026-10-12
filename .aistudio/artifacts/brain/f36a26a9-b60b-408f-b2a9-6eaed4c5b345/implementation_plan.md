@@ -1,66 +1,128 @@
-# Implementation Plan: Genuine Target Folder Behavior Monitor (No Simulated Mocks)
+# Implementation Plan: Code Quality & Maintainability Refinement
 
-Transition the Target Folder Behavior Monitor from illusionary simulated examples to a 100% working, real-world folder ingestion and monitoring engine supporting both directory pickers and drag-and-drop folder uploads with live polling.
-
----
-
-## 1. User Decisions & Confirmed Requirements
-
-- **Real Ingestion Methods**: Both native/HTML5 folder picker and direct drag-and-drop folder/file upload.
-- **Mock Elimination**: Completely remove all mock simulation buttons, synthetic scenarios (`iot`, `ecommerce`, `access_log`), and the `+ Simulate Incoming File` fake generator.
-- **Live Updating**: Live automatic polling of real directory handles and file change detection.
-- **Zero Illusionary Placeholders**: Every metric, schema inference, cadence calculation, and file lock detection is computed strictly from real files supplied by the user.
+Refactor the application architecture to separate orchestration from business logic, decompose monolithic views, enforce strict boundary guards, and establish typed error envelopes across the generation pipeline and file system engine.
 
 ---
 
-## 2. Architecture & Implementation Details
+## User Review & Critical Decisions
 
-### A. Folder Ingestion Engine (`src/components/FolderMonitorModal.tsx`)
-1. **Drag-and-Drop Zone**:
-   - Implement `onDragOver`, `onDragLeave`, and `onDrop` handlers on the modal workspace.
-   - Support recursive directory traversal using `DataTransferItem.webkitGetAsEntry()` / `FileSystemDirectoryEntry.createReader()` to read real folder hierarchies dropped into the browser.
-   - Fallback to `e.dataTransfer.files` if directory entries are unsupported.
-2. **Reliable Folder Picker**:
-   - Provide a direct synchronous button click on `<input type="file" webkitdirectory directory />` to bypass iframe user-gesture expiration.
-   - Also allow selecting individual multi-file batches (`<input type="file" multiple />`) for environments where directory picking is restricted.
-3. **Removal of Mock/Simulated Code**:
-   - Remove `handleLoadSampleScenario` and mock file definitions (`iot_fleet_ingest`, `orders_daily_pipeline`, `nginx_access_logs`).
-   - Remove `handleSimulateNewFile` and `simulated-dir` state.
-   - Remove mock banner (`Quick test with simulated offline folder behaviors`).
-   - Remove `+ Simulate Incoming File` button from the live events tab.
-
-### B. Live Real-Folder Polling & Event Stream
-1. **Directory Handle Polling**:
-   - For real `FileSystemDirectoryHandle` (native or desktop), run periodic polling (every 3 seconds) using `readFolderFromDirectoryHandle`.
-   - Detect real new files, deleted files, and file size updates, firing genuine `file_added` and `file_modified` events.
-2. **Real Folder Status & Empty State**:
-   - Clean empty state with high-contrast drop zone, file/folder select buttons, and instructions explaining how to link a local folder.
-   - Clear indicators showing folder path, total files discovered, dominant format, and real read permissions.
-
-### C. Offline Analysis & Forensics on Real Files (`src/utils/folderBehaviorAnalyzer.ts`)
-- Ensure all metric cards (file count, total bytes, dominant format, naming pattern detection, temporal cadence, encoding, delimiter, and schema column inference) render purely from real discovered files.
-- If a folder is empty, report zero files and prompt the user to generate or drop files into it.
+> [!IMPORTANT]
+> The following architectural decisions were confirmed by the user in Phase 1:
+> - **Scope**: End-to-end audit across file engine, generation pipeline, and UI modals.
+> - **Structural Remedy**: Extract domain sub-hooks and cleanly separate business logic from UI orchestration.
+> - **Error Handling**: Add strict boundary guards and explicit typed error envelopes.
 
 ---
 
-## 3. UI & Design Guidelines (`references/3_saas_dashboard.md`)
-- **Typography & Tabular Figures**: Use `font-mono` and `tabular-nums` for timestamps, file sizes, and row counters to prevent jitter.
-- **Zero-Pill Discipline**: Unboxed metadata text with `·` separators for file stats.
-- **Responsive Layout**: High-density table list of discovered files with real file sizes, last modified times, and format indicators.
-- **Status Colors**: Emerald for verified/locked files, amber for cadence warnings, crimson for file lock errors.
+## 1. Overview & Core Concept
+
+While the application provides extensive capabilities (multi-format synthetic generation, streaming file output, REST API enrichment, offline folder behavior monitoring, and multi-file batching), several core files have become overgrown monoliths:
+- `App.tsx` exceeds 2,400 lines, conflating UI state, column management, REST prefetch orchestration, generation loops, and modal routing.
+- `FolderMonitorModal.tsx` exceeds 1,000 lines, embedding 4 full tab views, polling cadence, diffing algorithms, and event logging in a single component.
+- Error handling in multiple hot paths relies on raw `catch (err: any)` and ad-hoc string formatting instead of structured typed error boundaries.
+
+This refactoring implements targeted **Structural Remedies**:
+1. **Separate Orchestration from Presentation**: Extract `useDatasetGenerator` and `useFolderMonitor` hooks to encapsulate background tasks, timeouts, stream writers, and cancel tokens.
+2. **Decompose Monolithic Modals**: Split `FolderMonitorModal` tabs into dedicated, single-responsibility sub-components (`RecommendationsTab`, `MetricsTab`, `SchemaTab`, `EventsTab`).
+3. **Strict Boundary Guards & Typed Error Envelopes**: Replace untyped `any` errors with a typed `Result<T, E>` / `AppError` envelope that distinguishes file system permissions, generator validation failures, and network timeouts.
+4. **Zero-Pill Visual Cleanliness**: Refine metadata and status labels across headers and summary views to comply with the frontend design standard.
+
+---
+
+## 2. Technical Architecture & System Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            UI View Layer                                    │
+│   ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────────┐  │
+│   │ App.tsx (Lean UI)  │ │ FolderMonitorModal │ │ FolderSelectModal      │  │
+│   └─────────┬──────────┘ └─────────┬──────────┘ └───────────┬────────────┘  │
+│             │                      │                        │               │
+│             │   ┌──────────────────┴──────────────────┐     │               │
+│             │   │ Decomposed Modal Tab Sub-Components │     │               │
+│             │   │ - RecommendationsTab                │     │               │
+│             │   │ - MetricsTab                        │     │               │
+│             │   │ - SchemaTab                         │     │               │
+│             │   │ - EventsTab                         │     │               │
+│             │   └──────────────────┬──────────────────┘     │               │
+└─────────────┼──────────────────────┼────────────────────────┼───────────────┘
+              │                      │                        │
+              ▼                      ▼                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Domain Orchestration Hooks                            │
+│  ┌───────────────────────────────┐   ┌───────────────────────────────────┐  │
+│  │ src/hooks/useDatasetGenerator │   │ src/hooks/useFolderMonitor.ts     │  │
+│  │ - Batch generation lifecycle  │   │ - Polling cadence & diffing       │  │
+│  │ - Streaming writer management │   │ - Event logging & audit stream    │  │
+│  │ - Progress, rate & cancel     │   │ - Analysis caching                │  │
+│  └───────────────┬───────────────┘   └─────────────────┬─────────────────┘  │
+└──────────────────┼─────────────────────────────────────┼────────────────────┘
+                   │                                     │
+                   ▼                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Core Engine & Typed Boundary Layer                    │
+│  ┌───────────────────────────────┐   ┌───────────────────────────────────┐  │
+│  │ src/utils/errors.ts           │   │ src/utils/fileSystem.ts           │  │
+│  │ - Typed AppError envelopes    │   │ - Single Source of Truth for I/O  │  │
+│  │ - Result<T, E> functional map │   │ - Tauri, Web & Virtual Handles    │  │
+│  ├───────────────────────────────┤   ├───────────────────────────────────┤  │
+│  │ src/utils/generator.ts        │   │ src/utils/folderBehaviorAnalyzer  │  │
+│  │ - Strict boundary guards      │   │ - Pure analysis & metric engine   │  │
+│  │ - Column spec validation      │   │ - 100% offline file forensics     │  │
+│  └───────────────────────────────┘   └───────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Detailed Implementation Steps
+
+### A. Typed Error Boundaries & Result Envelopes (`src/utils/errors.ts`)
+1. Create a structured error domain:
+   - `FileSystemError`: Permission denied, abort/cancel, path invalid, storage quota.
+   - `GeneratorError`: Invalid column spec, circular calculation rule, memory ceiling.
+   - `ApiPrefetchError`: Timeout, rate limit, CORS block, bad HTTP response.
+2. Define a clean `Result<T, E>` pattern (`ok(val)` / `err(error)`) for robust edge case handling without untyped rejections.
+
+### B. Extract Generation Orchestration (`src/hooks/useDatasetGenerator.ts`)
+1. Move batch generation, streaming generation, cancellation tokens, row rate estimation, and multi-file writing out of `App.tsx` into `useDatasetGenerator`:
+   - Inputs: columns, format, output destination, directory handle, action config, table name.
+   - State: `isGenerating`, `progress`, `recordsGenerated`, `currentThroughput`, `error`.
+   - Actions: `startBatchGeneration(count)`, `startStreaming(intervalMs, targetCount)`, `stopGeneration()`.
+2. Ensure race condition safety: clean up timers and file streams when unmounted or aborted.
+
+### C. Decompose `FolderMonitorModal.tsx` & Extract `useFolderMonitor.ts`
+1. Create `src/hooks/useFolderMonitor.ts`:
+   - Manages periodic polling (every 3s), file diffing (added, modified, removed), analysis trigger, and event buffer.
+2. Break down `FolderMonitorModal.tsx` into modular sub-components:
+   - `src/components/folderMonitor/FolderMonitorRecommendationsTab.tsx`
+   - `src/components/folderMonitor/FolderMonitorMetricsTab.tsx`
+   - `src/components/folderMonitor/FolderMonitorSchemaTab.tsx`
+   - `src/components/folderMonitor/FolderMonitorEventsTab.tsx`
+3. Reduce `FolderMonitorModal.tsx` from 1,050+ lines to ~200 lines of clean container orchestration.
+
+### D. Enforce Strict Boundary Guards in Generation Engine
+1. In `src/utils/generator.ts`:
+   - Add boundary checks for `Int`, `Float`, `DateTime`, `Sequence`, and `Calculation` types to prevent `NaN`, infinite loops, or out-of-range dates when rules contain malformed inputs.
+   - Prevent division by zero and circular dependencies in calculation expressions.
+2. In `src/utils/export.ts`:
+   - Validate multi-file index formatting and template substitution so empty templates cleanly default to `{tableName}_{index}.{ext}`.
+
+### E. Frontend Design Standards
+1. Replace metadata pills in header strips with clean unboxed typographic labels separated by `·`.
+2. Ensure interactive tabs remain functional segmented buttons while static counts remain quiet text.
 
 ---
 
 ## 4. Verification & Validation Steps
-1. **Directory Selection & Drop Test**:
-   - Drag and drop a real local folder with CSV/JSON files into the monitor.
-   - Verify all real files appear in the Discovered Files table with actual file sizes and snippets.
-2. **Schema & Strategy Detection**:
-   - Verify detected columns and suggested output strategies match the real files.
-3. **Live Polling Test**:
-   - Verify that adding a new file to the folder triggers real change detection.
-4. **Mock Elimination Verification**:
-   - Verify zero references to mock scenarios or "+ Simulate Incoming File" exist in the UI.
-5. **Applet Compilation & Linting**:
-   - Run `compile_applet` and `lint_applet` to confirm clean compilation and zero lint errors.
-   - Run Vitest suite to ensure existing folder analyzer and directory selection tests pass.
+
+1. **Unit Testing (`vitest run`)**:
+   - Maintain 100% pass rate across all existing test suites.
+   - Add unit tests for typed error boundaries (`errors.test.ts`) and generator boundary guards.
+2. **Compilation & Static Analysis**:
+   - `npx tsc --noEmit` (`lint_applet`) to ensure zero TypeScript errors or missing types.
+   - `npm run build` (`compile_applet`) to confirm clean Vite bundle creation.
+3. **End-to-End Workflow Verification**:
+   - Batch generation: generate 5,000 rows across CSV, JSON, and Parquet/SQL.
+   - Streaming generation: stream with 150ms interval, pause/resume, and stop safely.
+   - Folder monitor: open modal, inspect real folder, test tab switching, and apply recommendations.

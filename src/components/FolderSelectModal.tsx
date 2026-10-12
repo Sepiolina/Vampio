@@ -21,7 +21,8 @@ import {
   isTauri,
   isEmbeddedIframe,
   createVirtualDirectoryHandle,
-  requestDirectoryHandle,
+  pickDirectory,
+  pickDirectoryViaHtmlInput,
 } from '../utils/fileSystem';
 
 interface Props {
@@ -55,16 +56,14 @@ export const FolderSelectModal: React.FC<Props> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(initialErrorNotice || null);
   const [selectedHtmlFilesCount, setSelectedHtmlFilesCount] = useState<number | null>(null);
 
-  const htmlDirInputRef = useRef<HTMLInputElement>(null);
-
-  // Trigger Native OS Folder Dialog (Tauri Desktop)
+  // Trigger Native OS Folder Dialog (Tauri Desktop or supported browser)
   const handleNativeBrowse = async () => {
     setIsLoadingNative(true);
     setErrorMessage(null);
     try {
-      const handle = await requestDirectoryHandle();
-      if (handle) {
-        onSelectFolder(handle, handle.name);
+      const result = await pickDirectory({ allowFallback: false });
+      if (result) {
+        onSelectFolder(result.handle, result.name);
         onClose();
       }
     } catch (err: any) {
@@ -105,24 +104,23 @@ export const FolderSelectModal: React.FC<Props> = ({
     onClose();
   };
 
-  // Handle HTML Directory selection via <input webkitdirectory />
-  const handleHtmlDirSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const firstPath = (files[0] as any).webkitRelativePath || '';
-    const rootName = firstPath.split('/')[0] || 'Selected_Folder';
-    setSelectedHtmlFilesCount(files.length);
-    setFolderNameInput(rootName);
-
-    const handle = {
-      kind: 'virtual-dir',
-      name: rootName,
-      path: rootName,
-      htmlFileList: files,
-    };
-    onSelectFolder(handle, rootName);
-    onClose();
+  // Handle HTML Directory selection via centralized engine
+  const handleHtmlDirBrowse = async () => {
+    setIsLoadingNative(true);
+    setErrorMessage(null);
+    try {
+      const result = await pickDirectoryViaHtmlInput();
+      if (result) {
+        setSelectedHtmlFilesCount(result.files.length);
+        setFolderNameInput(result.name);
+        onSelectFolder(result.handle, result.name);
+        onClose();
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Could not access directory');
+    } finally {
+      setIsLoadingNative(false);
+    }
   };
 
   // Open App in New Tab to escape iframe restrictions
@@ -356,21 +354,11 @@ export const FolderSelectModal: React.FC<Props> = ({
                   </p>
                 </div>
 
-                <input
-                  ref={htmlDirInputRef}
-                  type="file"
-                  /* @ts-ignore */
-                  webkitdirectory=""
-                  directory=""
-                  multiple
-                  className="hidden"
-                  onChange={handleHtmlDirSelect}
-                />
-
                 <button
                   type="button"
-                  onClick={() => htmlDirInputRef.current?.click()}
-                  className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-accent/20 transition cursor-pointer"
+                  onClick={handleHtmlDirBrowse}
+                  disabled={isLoadingNative}
+                  className="w-full py-3 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-accent/20 transition cursor-pointer disabled:opacity-50"
                 >
                   <Upload size={16} />
                   <span>Choose Local Directory (HTML5)</span>

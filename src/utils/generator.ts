@@ -250,13 +250,15 @@ export class GeneratorEngine {
       case 'Sequence': {
         const key = col.id || col.name;
         let current = this.sequenceState.get(key);
+        const parts = rule.split(',').map((p) => p.trim());
+        const start = parts[0] ? parseInt(parts[0], 10) : 1;
+        const step = parts[1] ? parseInt(parts[1], 10) : 1;
+        const validStep = isNaN(step) || step === 0 ? 1 : step;
         if (current === undefined) {
-          // Parse start value from rule
-          const start = parseInt(rule, 10);
           current = isNaN(start) ? 1 : start;
         }
         const val = current;
-        this.sequenceState.set(key, current + 1);
+        this.sequenceState.set(key, current + validStep);
         return val;
       }
 
@@ -264,8 +266,9 @@ export class GeneratorEngine {
         const parts = rule.split(',').map((p) => p.trim());
         const min = parts[0] ? parseInt(parts[0], 10) : 1;
         const max = parts[1] ? parseInt(parts[1], 10) : 100;
-        const lo = isNaN(min) ? 1 : min;
-        const hi = isNaN(max) ? 100 : max;
+        let lo = isNaN(min) ? 1 : min;
+        let hi = isNaN(max) ? 100 : max;
+        if (lo > hi) [lo, hi] = [hi, lo];
         return Math.floor(Math.random() * (hi - lo + 1)) + lo;
       }
 
@@ -274,8 +277,9 @@ export class GeneratorEngine {
         const min = parts[0] ? parseFloat(parts[0]) : 0.0;
         const max = parts[1] ? parseFloat(parts[1]) : 100.0;
         const decimals = parts[2] ? parseInt(parts[2], 10) : 2;
-        const lo = isNaN(min) ? 0.0 : min;
-        const hi = isNaN(max) ? 100.0 : max;
+        let lo = isNaN(min) ? 0.0 : min;
+        let hi = isNaN(max) ? 100.0 : max;
+        if (lo > hi) [lo, hi] = [hi, lo];
         const dec = isNaN(decimals) ? 2 : Math.min(Math.max(decimals, 0), 8);
         const val = Math.random() * (hi - lo) + lo;
         return Number(val.toFixed(dec));
@@ -294,7 +298,7 @@ export class GeneratorEngine {
 
       case 'Boolean': {
         const pct = parseFloat(rule);
-        const ratio = !isNaN(pct) && pct >= 0 && pct <= 100 ? pct / 100 : 0.5;
+        const ratio = !isNaN(pct) ? Math.min(Math.max(pct, 0), 100) / 100 : 0.5;
         return Math.random() < ratio;
       }
 

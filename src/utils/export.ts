@@ -454,3 +454,26 @@ export function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
+
+export interface DatasetDownloadResult {
+  content: string | Uint8Array;
+  blob: Blob;
+  sizeBytes: number;
+}
+
+export function downloadDataset(
+  specs: ColumnSpec[],
+  rows: Record<string, unknown>[],
+  format: ExportFormat,
+  _filename?: string,
+  tableName: string = 'synthetic_data',
+  customJsonConfig?: CustomJsonConfig
+): DatasetDownloadResult {
+  const content = formatDataset(specs, rows, format, tableName, customJsonConfig);
+  const mimeType = getMimeType(format);
+  const blob = content instanceof Uint8Array
+    ? new Blob([content], { type: mimeType })
+    : new Blob([content], { type: mimeType });
+  const sizeBytes = blob.size;
+  return { content, blob, sizeBytes };
+}
