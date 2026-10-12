@@ -142,6 +142,55 @@ export function formatSingleFileUnit(
 }
 
 /**
+ * Resolves a multi-file filename pattern with placeholders.
+ * Handles {filename}, {tableName}, {table}, {index}, {seq}, {ext}, {extension}, {format}.
+ * Also guarantees the resulting filename has a valid extension matching the export format.
+ */
+export function resolveMultiFilename(
+  pattern: string = '{filename}_{index}.{ext}',
+  baseName: string = 'record',
+  index: number = 1,
+  format: string = 'csv',
+  padLength: number = 5
+): string {
+  const cleanBase = baseName || 'record';
+  const cleanExt = (format || 'csv').replace(/^\./, '').toLowerCase();
+  const indexStr = String(index).padStart(padLength, '0');
+
+  let resolved = pattern || '{filename}_{index}.{ext}';
+
+  // 1. Replace base name variants (case-insensitive and global)
+  resolved = resolved.replace(/\{(?:filename|table|tableName)\}/gi, cleanBase);
+
+  // 2. Replace index variants (e.g. {index}, {idx}, {seq}, {i})
+  resolved = resolved.replace(/\{(?:index|idx|seq|i)\}/gi, indexStr);
+
+  // 3. Replace extension variants:
+  // First handle `.{ext}`, `.{extension}`, `.{format}`
+  resolved = resolved.replace(/\.\{(?:ext|extension|format)\}/gi, `.${cleanExt}`);
+  // Then handle `{ext}`, `{extension}`, `{format}` without leading dot
+  resolved = resolved.replace(/\{(?:ext|extension|format)\}/gi, cleanExt);
+
+  // 4. Handle double-dot accidental typos like `..csv`
+  resolved = resolved.replace(/\.+/g, '.');
+
+  // 5. If any unreplaced `.{ext}` or `{ext}` persists due to weird casing or typos:
+  resolved = resolved.replace(/\.\{ext\}/gi, `.${cleanExt}`);
+  resolved = resolved.replace(/\{ext\}/gi, cleanExt);
+
+  // 6. If the pattern does not end with any file extension (or ends with a trailing dot or separator),
+  // ensure the correct format extension is attached
+  const validExtensions = ['csv', 'tsv', 'json', 'jsonl', 'txt', 'xml', 'sql', 'xlsx', 'xls'];
+  const hasKnownExt = validExtensions.some((ext) => resolved.toLowerCase().endsWith(`.${ext}`));
+
+  if (!hasKnownExt) {
+    resolved = `${resolved.replace(/\.+$/, '')}.${cleanExt}`;
+  }
+
+  return resolved;
+}
+
+/**
  * Excel builder using SheetJS (XLSX / XLS)
  */
 export function formatExcelDataset(

@@ -22,6 +22,7 @@ import {
   getMimeType, 
   formatBytes,
   formatSingleFileUnit,
+  resolveMultiFilename,
   appendRowsToWorkbook,
   appendRowsToTextFile,
   createZipArchive
@@ -1098,11 +1099,7 @@ export default function App() {
           for (let fileIdx = 0; fileIdx * rowsPerFile < allRows.length; fileIdx++) {
             const chunk = allRows.slice(fileIdx * rowsPerFile, (fileIdx + 1) * rowsPerFile);
             const formattedContent = formatSingleFileUnit(columns, chunk, format, tableName, activeWorkspace?.customJsonConfig);
-            const indexStr = String(fileIdx + 1).padStart(5, '0');
-            const fileItemName = pattern
-              .replace('{filename}', baseName)
-              .replace('{index}', indexStr)
-              .replace('{ext}', ext);
+            const fileItemName = resolveMultiFilename(pattern, baseName, fileIdx + 1, ext, 5);
             fileEntries.push({ filename: fileItemName, content: formattedContent });
           }
 

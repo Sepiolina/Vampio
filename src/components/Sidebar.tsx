@@ -12,7 +12,7 @@ import {
   ColumnSpec
 } from '../types';
 import { testActionEndpoint } from '../utils/actionDispatcher';
-import { formatBytes } from '../utils/export';
+import { formatBytes, resolveMultiFilename } from '../utils/export';
 import { AnimatedTabs } from './AnimatedTabs';
 import { useI18n } from '../i18n';
 import { 
@@ -661,7 +661,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
                 <select
                   value={format}
-                  onChange={(e) => setFormat(e.target.value as ExportFormat)}
+                  onChange={(e) => {
+                    const newFmt = e.target.value as ExportFormat;
+                    setFormat(newFmt);
+                    setMultiFileConfig((prev) => {
+                      const currentPattern = prev.filenamePattern || '{filename}_{index}.{ext}';
+                      const knownExts = ['json', 'jsonl', 'txt', 'csv', 'tsv', 'xml', 'sql', 'xlsx', 'xls'];
+                      const regex = new RegExp(`\\.(${knownExts.join('|')})$`, 'i');
+                      if (regex.test(currentPattern)) {
+                        return { ...prev, filenamePattern: currentPattern.replace(regex, `.${newFmt}`) };
+                      }
+                      return prev;
+                    });
+                  }}
                   className="bg-secondary px-2 py-1.5 text-xs text-accent font-mono font-bold rounded-md border border-border-subtle focus:outline-none cursor-pointer"
                 >
                   <option value="json">.json</option>
@@ -678,18 +690,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* Naming Template Pattern */}
-            <div className="space-y-1">
-              <span className="text-[10px] text-content-muted block font-medium">Pattern Template:</span>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-content-muted font-medium">Pattern Template:</span>
+                <span className="text-[9px] text-content-muted font-mono">
+                  Tokens: &#123;filename&#125;, &#123;index&#125;, .&#123;ext&#125;
+                </span>
+              </div>
               <input
                 type="text"
                 value={multiFileConfig.filenamePattern}
                 onChange={(e) => setMultiFileConfig((prev) => ({ ...prev, filenamePattern: e.target.value }))}
                 placeholder="{filename}_{index}.{ext}"
-                className="w-full px-2 py-1 bg-secondary border border-border-subtle rounded text-[11px] font-mono text-content focus:outline-none"
+                className="w-full px-2 py-1 bg-secondary border border-border-subtle rounded text-[11px] font-mono text-content focus:outline-none focus:border-accent"
               />
-              <span className="text-[9px] text-content-muted block font-mono">
-                Sample: {filename}_00001.{format}
-              </span>
+              <div className="flex items-center justify-between pt-0.5 text-[9px] font-mono">
+                <span className="text-content-muted truncate max-w-[210px]" title="Rendered file output name preview">
+                  Sample: <strong className="text-accent">{resolveMultiFilename(multiFileConfig.filenamePattern || '{filename}_{index}.{ext}', filename || 'record', 1, format)}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMultiFileConfig((prev) => ({ ...prev, filenamePattern: '{filename}_{index}.{ext}' }))}
+                  className="text-accent hover:underline cursor-pointer"
+                  title="Reset to standard pattern"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
 
             {/* Packaging Delivery Notice */}

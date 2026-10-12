@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDataset } from '../utils/export';
+import { formatDataset, resolveMultiFilename } from '../utils/export';
 import { ColumnSpec } from '../types';
 
 describe('formatDataset', () => {
@@ -90,6 +90,25 @@ describe('formatDataset', () => {
     expect(Array.isArray(parsed.data)).toBe(true);
     expect(parsed.data).toHaveLength(3);
     expect(parsed.data[0].name).toBe('Alice Smith');
+  });
+
+  it('correctly resolves multi-file filenames and replaces {ext} with .csv instead of literal .{ext}', () => {
+    // Exact user scenario: pattern is '{filename}_{index}.{ext}' and format is configured as 'csv'
+    const filename1 = resolveMultiFilename('{filename}_{index}.{ext}', 'sales_report', 1, 'csv');
+    expect(filename1).toBe('sales_report_00001.csv');
+    expect(filename1).not.toContain('{ext}');
+
+    // Subsequent index check
+    const filename2 = resolveMultiFilename('{filename}_{index}.{ext}', 'sales_report', 42, 'csv');
+    expect(filename2).toBe('sales_report_00042.csv');
+
+    // Case-insensitive test
+    const filenameUpper = resolveMultiFilename('{FILENAME}_{INDEX}.{EXT}', 'order_event', 5, 'csv');
+    expect(filenameUpper).toBe('order_event_00005.csv');
+
+    // Missing extension in pattern still gets .csv
+    const filenameNoExt = resolveMultiFilename('{filename}_{index}', 'events', 1, 'csv');
+    expect(filenameNoExt).toBe('events_00001.csv');
   });
 });
 

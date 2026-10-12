@@ -2,7 +2,7 @@ import { ColumnSpec, ExportFormat } from '../types';
 import { isTauri as coreIsTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
-import { downloadFile, createZipArchive } from './export';
+import { downloadFile, createZipArchive, resolveMultiFilename, formatSingleFileUnit } from './export';
 
 /**
  * Robustly checks if running inside the Tauri native desktop application (.exe, macOS, Linux).
@@ -374,28 +374,16 @@ export async function createMultiFileStreamWriter(
   const flushCurrentFile = async () => {
     if (currentFileRows.length === 0) return;
     fileIndex += 1;
-    const numStr = String(fileIndex).padStart(6, '0');
-    const outFilename = filenameTemplate
-      .replace('{index}', numStr)
-      .replace('{filename}', tableName);
+    const outFilename = resolveMultiFilename(
+      filenameTemplate,
+      tableName,
+      fileIndex,
+      format,
+      6
+    );
 
-    // Format rows
-    let content: string | Uint8Array;
-    if (currentFileRows.length === 1 && format === 'json') {
-      content = JSON.stringify(currentFileRows[0], null, 2);
-    } else if (currentFileRows.length === 1 && format === 'txt') {
-      const colNames = columns.map((c) => c.name);
-      content = colNames.map((c) => `${c}: ${currentFileRows[0][c] ?? ''}`).join('\n');
-    } else {
-      const colNames = columns.map((c) => c.name);
-      if (format === 'csv') {
-        const header = colNames.map(escapeCsv).join(',');
-        const lines = currentFileRows.map((r) => colNames.map((n) => escapeCsv(r[n])).join(','));
-        content = [header, ...lines].join('\n');
-      } else {
-        content = currentFileRows.map((r) => JSON.stringify(r)).join('\n');
-      }
-    }
+    // Format rows using standard multi-file formatter (supports all formats & custom JSON)
+    const content = formatSingleFileUnit(columns, currentFileRows, format, tableName);
 
     if (isVirtualDir) {
       virtualEntries.push({ filename: outFilename, content });
