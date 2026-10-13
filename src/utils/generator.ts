@@ -167,6 +167,10 @@ export class GeneratorEngine {
               skippedColumns.set(col.name, false);
               row[col.name] = val;
             }
+            if (!(col.name in row)) {
+              // Unrecognised action: don't leave the column missing from the row
+              actionTaken = false;
+            }
             break; // First matching case wins
           }
         }
@@ -370,8 +374,9 @@ export class GeneratorEngine {
       return Math.floor(target.getTime() / 1000).toString();
     }
 
+    const padNum = (n: number) => n.toString().padStart(2, '0');
     if (rule.toLowerCase() === 'date' || rule === 'YYYY-MM-DD') {
-      return target.toISOString().split('T')[0];
+      return `${target.getFullYear()}-${padNum(target.getMonth() + 1)}-${padNum(target.getDate())}`;
     }
 
     if (rule.toLowerCase() === 'time') {
@@ -404,12 +409,15 @@ export class GeneratorEngine {
     let hasWeights = false;
 
     for (const item of items) {
-      if (item.includes(':')) {
-        const [v, w] = item.split(':').map((s) => s.trim());
-        const weight = parseFloat(w);
-        if (!isNaN(weight) && weight > 0) {
+      const colonIdx = item.lastIndexOf(':');
+      if (colonIdx > 0) {
+        const v = item.slice(0, colonIdx).trim();
+        const w = item.slice(colonIdx + 1).trim();
+        // The weight is the LAST ":number". A purely numeric suffix is always read as a weight
+        // (so "10:30" means value "10" with weight 30); non-numeric suffixes stay part of the value.
+        if (/^\d+(\.\d+)?$/.test(w) && parseFloat(w) > 0) {
           hasWeights = true;
-          weighted.push({ val: v, weight });
+          weighted.push({ val: v, weight: parseFloat(w) });
           continue;
         }
       }
@@ -420,7 +428,7 @@ export class GeneratorEngine {
       const totalWeight = weighted.reduce((acc, curr) => acc + curr.weight, 0);
       let randomVal = Math.random() * totalWeight;
       for (const entry of weighted) {
-        if (randomVal <= entry.weight) {
+        if (randomVal < entry.weight) {
           return entry.val;
         }
         randomVal -= entry.weight;
@@ -442,27 +450,35 @@ export class GeneratorEngine {
   ): number | string {
     if (!formula) return 0;
     try {
-      // Replace tokens like {ColumnName} with numeric values
-      let expr = formula;
-      const tokenRegex = /\{([^}]+)\}/g;
-      expr = expr.replace(tokenRegex, (_, colName) => {
+      // Replace {ColumnName} tokens with numeric literals. Values are wrapped in
+      // parentheses so negatives never form "--" / "+-" sequences (e.g. 3-{b} with b=-5).
+      const expr = formula.replace(/\{([^}]+)\}/g, (_, colName) => {
         const val = rowContext[colName];
-        if (val === null || val === undefined) return '0';
+        if (val === null || val === undefined || val === '') return '(0)';
         const num = Number(val);
-        return isNaN(num) ? '0' : num.toString();
+        return Number.isFinite(num) ? `(${num})` : '(0)';
       });
 
-      // Sanitization check: only allow numbers, math operators, parens, Math functions, commas, spaces
-      if (!/^[0-9+\-*/().,% Math\.minmaxroundceilfloorsqrtabs\s]+$/.test(expr)) {
-        return 'CALC_INVALID_CHARS';
+      // Strict token whitelist: numbers, operators, parentheses, commas and a fixed
+      // set of Math.* functions. Anything else is rejected before evaluation.
+      const ALLOWED_FUNCS = new Set(['min', 'max', 'round', 'ceil', 'floor', 'sqrt', 'abs', 'pow']);
+      const tokenRe = /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+)|(Math\.([a-z]+))|([+\-*/%(),])|(\*\*))/y;
+      let pos = 0;
+      let out = '';
+      while (pos < expr.length) {
+        if (/^\s*$/.test(expr.slice(pos))) break;
+        tokenRe.lastIndex = pos;
+        const m = tokenRe.exec(expr);
+        if (!m) return 'CALC_INVALID_CHARS';
+        if (m[2] && !ALLOWED_FUNCS.has(m[3])) return 'CALC_INVALID_CHARS';
+        out += m[0];
+        pos = tokenRe.lastIndex;
       }
 
-      // Safe evaluated math expression
       // eslint-disable-next-line no-new-func
-      const func = new Function(`return (${expr});`);
-      const res = func();
+      const res = new Function(`"use strict"; return (${out});`)();
       if (typeof res === 'number') {
-        if (isNaN(res) || !isFinite(res)) return 0;
+        if (!Number.isFinite(res)) return 0;
         return Number(res.toFixed(4));
       }
       return 'CALC_ERR';

@@ -67,11 +67,13 @@ export function matchesTriggerCondition(
       if ((targetLower === '0' || targetLower === 'false') && (rowLower === '0' || rowLower === 'false')) return false;
       return true;
     case 'greater_than': {
+      if (rowStr.trim() === '' || cleanTarget === '') return false; // Number('') === 0 would match wrongly
       const numRow = Number(rawVal);
       const numTarget = Number(cleanTarget);
       return !isNaN(numRow) && !isNaN(numTarget) && numRow > numTarget;
     }
     case 'less_than': {
+      if (rowStr.trim() === '' || cleanTarget === '') return false;
       const numRow = Number(rawVal);
       const numTarget = Number(cleanTarget);
       return !isNaN(numRow) && !isNaN(numTarget) && numRow < numTarget;
@@ -96,6 +98,20 @@ export function filterRowsForAction(
   return rows.filter((r) => matchesTriggerCondition(r, condition));
 }
 
+/** btoa() throws on non-Latin1 characters; encode as UTF-8 first (RFC 7617). */
+function toBase64Utf8(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+/** GET/HEAD requests cannot carry a body: fetch() throws a TypeError if one is supplied. */
+function methodAllowsBody(method?: string): boolean {
+  const m = (method || 'POST').toUpperCase();
+  return m !== 'GET' && m !== 'HEAD';
+}
+
 /**
  * Builds HTTP Headers object from ActionConfig
  */
@@ -109,7 +125,7 @@ export function buildActionHeaders(config: ActionConfig): Record<string, string>
   if (config.authType === 'bearer' && config.authToken) {
     headers['Authorization'] = `Bearer ${config.authToken.trim()}`;
   } else if (config.authType === 'basic' && (config.basicUser || config.basicPass)) {
-    const creds = btoa(`${config.basicUser || ''}:${config.basicPass || ''}`);
+    const creds = toBase64Utf8(`${config.basicUser || ''}:${config.basicPass || ''}`);
     headers['Authorization'] = `Basic ${creds}`;
   } else if (config.authType === 'api_key' && config.apiKeyHeader && config.apiKeyValue) {
     headers[config.apiKeyHeader.trim()] = config.apiKeyValue.trim();
@@ -233,7 +249,7 @@ export async function dispatchActionRequest(
       const response = await fetch(config.endpointUrl.trim(), {
         method: config.method || 'POST',
         headers,
-        body: payloadStr,
+        ...(methodAllowsBody(config.method) ? { body: payloadStr } : {}),
         signal: controller.signal
       });
 
@@ -356,7 +372,7 @@ export async function testActionEndpoint(
     const res = await fetch(config.endpointUrl.trim(), {
       method: config.method || 'POST',
       headers,
-      body: payload,
+      ...(methodAllowsBody(config.method) ? { body: payload } : {}),
       signal: controller.signal
     });
 

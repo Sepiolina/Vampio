@@ -80,7 +80,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isUnsavedPromptOpen, setIsUnsavedPromptOpen] = useState<boolean>(false);
   const [pendingTargetWorkspaceId, setPendingTargetWorkspaceId] = useState<string | null>(null);
 
-  const autoSaveTimeoutRef = useRef<number | null>(null);
+  // One debounce timer per workspace: a single shared timer silently dropped the pending save of a
+  // workspace if you edited another one within the debounce window.
+  const autoSaveTimersRef = useRef<Map<string, number>>(new Map());
+  const workspacesRef = useRef<WorkspaceSession[]>([]);
+  // Assigned during render (not in an effect): child effects run before the provider's own effects,
+  // so an effect-synced ref could be stale when a child reacts to a freshly created workspace.
+  workspacesRef.current = workspaces;
+
+  useEffect(() => {
+    const timers = autoSaveTimersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
 
   // Initialize workspaces and settings from IndexedDB
   useEffect(() => {
@@ -100,7 +114,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setWorkspaces(list);
 
         // Check if there is a previously active workspace stored in localStorage
-        const storedActiveId = localStorage.getItem('vampio_active_workspace_id');
+        let storedActiveId: string | null = null;
+        try {
+          storedActiveId = localStorage.getItem('vampio_active_workspace_id');
+        } catch {
+          // storage unavailable (restricted environment)
+        }
         const validActive = list.find((w) => w.id === storedActiveId);
         setActiveWorkspaceId(validActive ? validActive.id : list[0].id);
         setIsInitialized(true);
@@ -121,7 +140,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Sync active workspace ID to local storage for instant restore on refresh
   useEffect(() => {
     if (activeWorkspaceId) {
-      localStorage.setItem('vampio_active_workspace_id', activeWorkspaceId);
+      try {
+        localStorage.setItem('vampio_active_workspace_id', activeWorkspaceId);
+      } catch {
+        // storage unavailable
+      }
     }
   }, [activeWorkspaceId]);
 
@@ -161,34 +184,33 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Update active workspace properties
   const updateActiveWorkspace = useCallback((updates: Partial<WorkspaceSession>) => {
-    setWorkspaces((prev) => {
-      const index = prev.findIndex((w) => w.id === activeWorkspaceId);
-      if (index === -1) return prev;
+    const current = workspacesRef.current.find((w) => w.id === activeWorkspaceId);
+    if (!current) return;
 
-      const current = prev[index];
-      const isDirty = savePolicy !== 'auto';
-      const updated: WorkspaceSession = {
-        ...current,
-        ...updates,
-        isDirty,
-        updatedAt: Date.now()
-      };
+    const updated: WorkspaceSession = {
+      ...current,
+      ...updates,
+      isDirty: savePolicy !== 'auto',
+      updatedAt: Date.now()
+    };
 
-      const next = [...prev];
-      next[index] = updated;
+    // Keep the ref in sync immediately so back-to-back updates compose instead of overwriting each other
+    workspacesRef.current = workspacesRef.current.map((w) => (w.id === updated.id ? updated : w));
+    setWorkspaces((prev) => prev.map((w) => (w.id === updated.id ? updated : w)));
 
-      // Auto-save logic
-      if (savePolicy === 'auto') {
-        if (autoSaveTimeoutRef.current) {
-          clearTimeout(autoSaveTimeoutRef.current);
-        }
-        autoSaveTimeoutRef.current = window.setTimeout(() => {
-          saveWorkspaceToStorage(updated).catch(() => {});
-        }, 300);
-      }
-
-      return next;
-    });
+    if (savePolicy === 'auto') {
+      const timers = autoSaveTimersRef.current;
+      const existing = timers.get(updated.id);
+      if (existing) clearTimeout(existing);
+      timers.set(
+        updated.id,
+        window.setTimeout(() => {
+          timers.delete(updated.id);
+          const latest = workspacesRef.current.find((w) => w.id === updated.id) || updated;
+          saveWorkspaceToStorage(latest).catch(() => {});
+        }, 300)
+      );
+    }
   }, [activeWorkspaceId, savePolicy]);
 
   // Update custom JSON payload configuration
@@ -229,13 +251,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Confirm Switch Without Save
   const confirmSwitchWithoutSave = () => {
     if (pendingTargetWorkspaceId) {
-      // Discard dirty state in memory by reloading from storage if available
-      loadAllWorkspaces().then((stored) => {
-        setWorkspaces(stored);
-        if (pendingTargetWorkspaceId) {
-          setActiveWorkspaceId(pendingTargetWorkspaceId);
-        }
-      });
+      const targetId = pendingTargetWorkspaceId;
+      const leavingId = activeWorkspaceId;
+      // Revert ONLY the workspace being left to its last saved state. Reloading everything would
+      // also throw away unrelated tabs and could replace state with defaults if storage is empty.
+      loadAllWorkspaces()
+        .then((stored) => {
+          const saved = stored.find((w) => w.id === leavingId);
+          if (saved) {
+            setWorkspaces((prev) => prev.map((w) => (w.id === leavingId ? { ...saved, isDirty: false } : w)));
+          }
+        })
+        .catch(() => {})
+        .finally(() => setActiveWorkspaceId(targetId));
     }
     setIsUnsavedPromptOpen(false);
     setPendingTargetWorkspaceId(null);
@@ -301,23 +329,28 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteWorkspace = async (id: string) => {
     await deleteWorkspaceFromStorage(id);
 
-    setWorkspaces((prev) => {
-      const remaining = prev.filter((w) => w.id !== id);
-      if (remaining.length === 0) {
-        const fresh = createDefaultWorkspace();
-        saveWorkspaceToStorage(fresh).catch(() => {});
-        setActiveWorkspaceId(fresh.id);
-        return [fresh];
-      }
+    const prev = workspacesRef.current;
+    const pendingTimer = autoSaveTimersRef.current.get(id);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer); // don't resurrect a deleted workspace via a queued autosave
+      autoSaveTimersRef.current.delete(id);
+    }
 
-      if (id === activeWorkspaceId) {
-        // Find adjacent workspace
-        const delIndex = prev.findIndex((w) => w.id === id);
-        const nextIndex = delIndex > 0 ? delIndex - 1 : 0;
-        setActiveWorkspaceId(remaining[nextIndex]?.id || remaining[0].id);
-      }
-      return remaining;
-    });
+    const remaining = prev.filter((w) => w.id !== id);
+    if (remaining.length === 0) {
+      const fresh = createDefaultWorkspace();
+      saveWorkspaceToStorage(fresh).catch(() => {});
+      setWorkspaces([fresh]);
+      setActiveWorkspaceId(fresh.id);
+      return;
+    }
+
+    setWorkspaces(remaining);
+    if (id === activeWorkspaceId) {
+      const delIndex = prev.findIndex((w) => w.id === id);
+      const nextIndex = delIndex > 0 ? delIndex - 1 : 0;
+      setActiveWorkspaceId(remaining[nextIndex]?.id || remaining[0].id);
+    }
   };
 
   // Import as New Workspace

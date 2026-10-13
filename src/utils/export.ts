@@ -3,6 +3,22 @@ import { renderCustomJsonTemplate } from './customJsonTemplate';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 
+/** Valid XML element name from an arbitrary column name (cannot start with a digit/dash). */
+export function toXmlTag(name: string): string {
+  let tag = name.replace(/[^a-zA-Z0-9_]/g, '_') || 'field';
+  if (/^[0-9-]/.test(tag)) tag = `_${tag}`;
+  return tag;
+}
+
+function quoteSqlIdent(name: string): string {
+  return `\`${name.replace(/`/g, '``')}\``;
+}
+
+function sanitizeTsvCell(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  return String(val).replace(/[\t\r\n]/g, ' ');
+}
+
 export function formatDataset(
   specs: ColumnSpec[],
   rows: Record<string, unknown>[],
@@ -22,16 +38,8 @@ export function formatDataset(
     }
 
     case 'tsv': {
-      const header = colNames.join('\t');
-      const lines = rows.map((row) =>
-        colNames
-          .map((name) => {
-            const val = row[name];
-            if (val === null || val === undefined) return '';
-            return String(val).replace(/\t|\n/g, ' ');
-          })
-          .join('\t')
-      );
+      const header = colNames.map(sanitizeTsvCell).join('\t');
+      const lines = rows.map((row) => colNames.map((name) => sanitizeTsvCell(row[name])).join('\t'));
       return [header, ...lines].join('\n');
     }
 
@@ -51,14 +59,14 @@ export function formatDataset(
     }
 
     case 'sql': {
-      const escapedCols = colNames.map((c) => `\`${c}\``).join(', ');
+      const escapedCols = colNames.map(quoteSqlIdent).join(', ');
       const cleanTable = tableName.replace(/[^a-zA-Z0-9_]/g, '_') || 'synthetic_records';
       
       const statements = rows.map((row) => {
         const values = colNames.map((c) => {
           const val = row[c];
           if (val === null || val === undefined) return 'NULL';
-          if (typeof val === 'number') return isNaN(val) ? 'NULL' : val.toString();
+          if (typeof val === 'number') return Number.isFinite(val) ? val.toString() : 'NULL';
           if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
           const str = String(val).replace(/'/g, "''");
           return `'${str}'`;
@@ -88,7 +96,7 @@ export function formatDataset(
         for (const col of colNames) {
           const val = row[col];
           const valStr = val === null || val === undefined ? '' : escapeXml(String(val));
-          const cleanTag = col.replace(/[^a-zA-Z0-9_]/g, '_') || 'field';
+          const cleanTag = toXmlTag(col);
           lines.push(`    <${cleanTag}>${valStr}</${cleanTag}>`);
         }
         lines.push(`  </record>`);
@@ -153,7 +161,7 @@ export function resolveMultiFilename(
   format: string = 'csv',
   padLength: number = 5
 ): string {
-  const cleanBase = baseName || 'record';
+  const cleanBase = (baseName || 'record').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/^\.+/, '') || 'record';
   const cleanExt = (format || 'csv').replace(/^\./, '').toLowerCase();
   const indexStr = String(index).padStart(padLength, '0');
 
@@ -284,32 +292,28 @@ export function appendRowsToTextFile(
   }
 
   if (format === 'tsv') {
-    let lines = newRows.map((row) =>
-      colNames
-        .map((name) => {
-          const val = row[name];
-          if (val === null || val === undefined) return '';
-          return String(val).replace(/\t|\n/g, ' ');
-        })
-        .join('\t')
-    );
+    let lines = newRows.map((row) => colNames.map((name) => sanitizeTsvCell(row[name])).join('\t'));
     if (!skipDuplicateHeaders) {
-      lines = [colNames.join('\t'), ...lines];
+      lines = [colNames.map(sanitizeTsvCell).join('\t'), ...lines];
     }
     const trimmed = existingContent.trimEnd();
     return trimmed ? `${trimmed}\n${lines.join('\n')}` : lines.join('\n');
   }
 
   if (format === 'json') {
-    try {
-      const parsed = JSON.parse(existingContent);
-      if (Array.isArray(parsed)) {
-        return JSON.stringify([...parsed, ...newRows], null, 2);
-      }
-    } catch {
-      // fallback
+    if (!existingContent.trim()) {
+      return JSON.stringify(newRows, null, 2);
     }
-    return JSON.stringify(newRows, null, 2);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(existingContent);
+    } catch {
+      throw new Error('Existing JSON file is not valid JSON, refusing to overwrite it. Fix the file or choose a different output file.');
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error('Existing JSON file is not a top-level array, so new rows cannot be appended safely.');
+    }
+    return JSON.stringify([...parsed, ...newRows], null, 2);
   }
 
   if (format === 'jsonl') {
@@ -332,14 +336,9 @@ export function appendRowsToTextFile(
       .map((row) => {
         const fields = colNames
           .map((col) => {
-            const safeTag = col.replace(/[^a-zA-Z0-9_]/g, '_');
+            const safeTag = toXmlTag(col);
             const val = row[col] === null || row[col] === undefined ? '' : String(row[col]);
-            const escaped = val
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;');
-            return `    <${safeTag}>${escaped}</${safeTag}>`;
+            return `    <${safeTag}>${escapeXml(val)}</${safeTag}>`;
           })
           .join('\n');
         return `  <record>\n${fields}\n  </record>`;
@@ -347,24 +346,27 @@ export function appendRowsToTextFile(
       .join('\n');
 
     const trimmed = existingContent.trim();
-    if (trimmed.includes('</dataset>')) {
-      return trimmed.replace('</dataset>', `${newRecordsXml}\n</dataset>`);
+    const closeIdx = trimmed.lastIndexOf('</dataset>');
+    if (closeIdx !== -1) {
+      // Splice by index: String.replace would interpret "$&", "$1" ... inside the data
+      return `${trimmed.slice(0, closeIdx).trimEnd()}\n${newRecordsXml}\n</dataset>`;
     } else {
       return `<?xml version="1.0" encoding="UTF-8"?>\n<dataset>\n${newRecordsXml}\n</dataset>`;
     }
   }
 
   if (format === 'sql') {
-    const cleanTable = tableName || 'synthetic_records';
+    const cleanTable = (tableName || '').replace(/[^a-zA-Z0-9_]/g, '_') || 'synthetic_records';
+    const quotedCols = colNames.map(quoteSqlIdent).join(', ');
     const lines = newRows.map((row) => {
       const vals = colNames.map((col) => {
         const val = row[col];
         if (val === null || val === undefined) return 'NULL';
-        if (typeof val === 'number') return isNaN(val) ? 'NULL' : String(val);
+        if (typeof val === 'number') return Number.isFinite(val) ? String(val) : 'NULL';
         if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
         return `'${String(val).replace(/'/g, "''")}'`;
       });
-      return `INSERT INTO ${cleanTable} (${colNames.join(', ')}) VALUES (${vals.join(', ')});`;
+      return `INSERT INTO ${cleanTable} (${quotedCols}) VALUES (${vals.join(', ')});`;
     });
     const trimmed = existingContent.trimEnd();
     return trimmed ? `${trimmed}\n${lines.join('\n')}` : lines.join('\n');
@@ -448,10 +450,10 @@ export function getMimeType(format: ExportFormat): string {
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(sizes.length - 1, Math.max(0, Math.floor(Math.log(bytes) / Math.log(k))));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
@@ -471,9 +473,7 @@ export function downloadDataset(
 ): DatasetDownloadResult {
   const content = formatDataset(specs, rows, format, tableName, customJsonConfig);
   const mimeType = getMimeType(format);
-  const blob = content instanceof Uint8Array
-    ? new Blob([content], { type: mimeType })
-    : new Blob([content], { type: mimeType });
+  const blob = new Blob([content as BlobPart], { type: mimeType });
   const sizeBytes = blob.size;
   return { content, blob, sizeBytes };
 }

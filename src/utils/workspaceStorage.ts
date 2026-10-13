@@ -263,7 +263,8 @@ function loadFromLocalStorageBackup(): WorkspaceSession[] {
     if (!storage) return [];
     const raw = storage.getItem(LOCALSTORAGE_BACKUP_KEY);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }

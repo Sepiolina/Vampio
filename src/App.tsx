@@ -959,8 +959,13 @@ export default function App() {
 
   // Batch Generation
   const handleStartBatch = async () => {
+    if (isGeneratingBatch) return;
     if (columns.length === 0) {
       setStatusMessage('Error: Add at least one column to generate data.');
+      return;
+    }
+    if (!Number.isFinite(count) || count < 1) {
+      setStatusMessage('Error: Row count must be at least 1.');
       return;
     }
 
@@ -1029,7 +1034,7 @@ export default function App() {
           : Math.max(0, (appendConfig.manualStartOffset || 1) - 1))
       : 0;
 
-    const processChunk = async () => {
+    const processChunkInner = async () => {
       const remaining = count - generated;
       const thisBatch = Math.min(CHUNK_SIZE, remaining);
 
@@ -1040,7 +1045,7 @@ export default function App() {
       setBatchProgress(Math.floor((generated / count) * 100));
 
       if (generated < count) {
-        setTimeout(processChunk, 0);
+        setTimeout(() => { void processChunk(); }, 0);
       } else {
         const elapsed = performance.now() - startTime;
         const elapsedSec = elapsed / 1000;
@@ -1290,11 +1295,22 @@ export default function App() {
       }
     };
 
+    const processChunk = async () => {
+      try {
+        await processChunkInner();
+      } catch (err: any) {
+        console.error('Batch generation failed:', err);
+        setStatusMessage(`Generation failed: ${err?.message || String(err)}`);
+        setIsGeneratingBatch(false);
+      }
+    };
+
     setTimeout(processChunk, 10);
   };
 
   // Continuous Streaming Mode
   const handleStartContinuous = async () => {
+    if (streamingTimerRef.current !== null) return;
     if (columns.length === 0) {
       setStatusMessage('Error: Add at least one column before streaming.');
       return;
@@ -1335,7 +1351,8 @@ export default function App() {
             columns,
             format,
             multiFileConfig.rowsPerFile || 1,
-            tableName
+            tableName,
+            filename || tableName
           );
           multiStreamWriterRef.current = activeMultiWriter;
         } catch (err: any) {
@@ -1380,10 +1397,14 @@ export default function App() {
     setStatusMessage(`Stream Active [${destLabel}${actionAddonLabel}] at ${intervalMs}ms...`);
 
     streamingTimerRef.current = window.setInterval(async () => {
+      if (streamingTimerRef.current === null) return; // stopped while a tick was queued
       const rowIndex = streamingRowCountRef.current;
       const newRow = streamEngine.generateRow(columns, rowIndex);
       streamingRowCountRef.current += 1;
-      continuousBufferRef.current.push(newRow);
+      // Only keep rows in memory when there is no disk writer; otherwise long streams leak memory
+      if (!activeMultiWriter && !activeStreamWriter) {
+        continuousBufferRef.current.push(newRow);
+      }
 
       if (activeMultiWriter) {
         try {

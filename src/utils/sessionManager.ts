@@ -111,7 +111,7 @@ export function addRecentFile(file: Omit<RecentFileRecord, 'id' | 'timestamp'>) 
   try {
     const record: RecentFileRecord = {
       ...file,
-      id: `file_${Date.now()}`,
+      id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       timestamp: Date.now(),
     };
     const raw = localStorage.getItem(RECENT_FILES_KEY);
@@ -186,6 +186,9 @@ export function exportSchemaJSON(columns: ColumnSpec[], tableName: string): void
   const a = document.createElement('a');
   a.href = url;
   a.download = `${tableName || 'schema'}_blueprint.json`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  document.body.removeChild(a);
+  // Revoking synchronously can cancel the download in some browsers
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

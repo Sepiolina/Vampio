@@ -103,6 +103,10 @@ export function useDatasetGenerator({
   const streamWriterRef = useRef<StreamFileWriter | null>(null);
   const multiWriterRef = useRef<MultiFileStreamWriter | null>(null);
   const batchCancelledRef = useRef<boolean>(false);
+  // Ref mirror: the setInterval callback closes over the first render's state, so reading
+  // `isStreamingPaused` there never saw updates and Pause did nothing.
+  const isPausedRef = useRef<boolean>(false);
+  const streamRowsRef = useRef<number>(0);
 
   // Format bytes helper
   const formatBytes = (bytes: number) => {
@@ -128,6 +132,11 @@ export function useDatasetGenerator({
   const startBatch = useCallback(async () => {
     if (columns.length === 0) {
       setStatusMessage('Error: Add at least one column to generate data.');
+      return;
+    }
+
+    if (!Number.isFinite(count) || count < 1) {
+      setStatusMessage('Error: Row count must be at least 1.');
       return;
     }
 
@@ -175,7 +184,7 @@ export function useDatasetGenerator({
         : Math.max(0, (appendConfig.manualStartOffset || 1) - 1)
       : 0;
 
-    const processChunk = async () => {
+    const processChunkInner = async () => {
       if (batchCancelledRef.current) {
         setIsGeneratingBatch(false);
         setStatusMessage('Generation cancelled by user.');
@@ -192,7 +201,7 @@ export function useDatasetGenerator({
       setBatchProgress(Math.floor((generated / count) * 100));
 
       if (generated < count) {
-        setTimeout(processChunk, 0);
+        setTimeout(() => { void processChunk(); }, 0);
       } else {
         const elapsed = performance.now() - startTime;
         const elapsedSec = elapsed / 1000;
@@ -393,6 +402,15 @@ export function useDatasetGenerator({
       }
     };
 
+    const processChunk = async () => {
+      try {
+        await processChunkInner();
+      } catch (err: any) {
+        setStatusMessage(`Generation failed: ${err?.message || String(err)}`);
+        setIsGeneratingBatch(false);
+      }
+    };
+
     setTimeout(processChunk, 10);
   }, [
     columns,
@@ -426,9 +444,15 @@ export function useDatasetGenerator({
       return;
     }
 
+    if (streamIntervalRef.current) return; // already streaming
+
     let activeDir = directoryHandle;
     if (outputDestination === 'folder' && !activeDir) {
       activeDir = await resolveActiveDirectory();
+    }
+    if (!activeDir) {
+      // Live streaming always needs a (possibly virtual) directory target
+      activeDir = createVirtualDirectoryHandle(selectedFolderName || filename || 'stream_dataset');
     }
 
     const fullFilename = `${filename || 'stream_dataset'}.${format}`;
@@ -442,7 +466,8 @@ export function useDatasetGenerator({
           columns,
           format,
           multiFileConfig.rowsPerFile || 1,
-          tableName
+          tableName,
+          filename || tableName
         );
       } else {
         streamWriterRef.current = await createStreamFileWriter(
@@ -462,23 +487,27 @@ export function useDatasetGenerator({
     let currentRows = 0;
     const startTime = performance.now();
 
+    isPausedRef.current = false;
+    streamRowsRef.current = 0;
     setIsGeneratingStream(true);
     setIsStreamingPaused(false);
     setStreamRowsGenerated(0);
     setStatusMessage(`Streaming live synthetic data to "${activeDir.name}"...`);
 
     streamIntervalRef.current = setInterval(async () => {
-      if (isStreamingPaused) return;
+      if (isPausedRef.current || !streamIntervalRef.current) return;
 
+      const rowIndex = currentRows; // 0-based, consistent with batch mode
       currentRows += 1;
+      streamRowsRef.current = currentRows;
       setStreamRowsGenerated(currentRows);
-      const row = streamEngine.generateRow(columns, currentRows);
+      const row = streamEngine.generateRow(columns, rowIndex);
 
       try {
         if (isMultiFile && multiWriterRef.current) {
           await multiWriterRef.current.writeRow(row);
         } else if (streamWriterRef.current) {
-          await streamWriterRef.current.writeRow(row, currentRows);
+          await streamWriterRef.current.writeRow(row, rowIndex);
         }
       } catch (err: any) {
         console.warn('Stream write row error:', err);
@@ -510,14 +539,14 @@ export function useDatasetGenerator({
     directoryHandle,
     selectedFolderName,
     multiFileConfig,
-    isStreamingPaused,
   ]);
 
   // Pause / Resume Streaming
   const pauseStream = useCallback(() => {
-    setIsStreamingPaused((prev) => !prev);
-    setStatusMessage((prev) =>
-      prev.includes('Paused') ? 'Resumed synthetic data streaming.' : 'Paused streaming synthetic data.'
+    isPausedRef.current = !isPausedRef.current;
+    setIsStreamingPaused(isPausedRef.current);
+    setStatusMessage(
+      isPausedRef.current ? 'Paused streaming synthetic data.' : 'Resumed synthetic data streaming.'
     );
   }, []);
 
@@ -528,6 +557,7 @@ export function useDatasetGenerator({
       streamIntervalRef.current = null;
     }
 
+    isPausedRef.current = false;
     setIsGeneratingStream(false);
     setIsStreamingPaused(false);
 
@@ -544,9 +574,9 @@ export function useDatasetGenerator({
       console.warn('Error closing stream writer:', err);
     }
 
-    setStatusMessage(`Streaming finalized. Total rows emitted: ${streamRowsGenerated.toLocaleString()}`);
+    setStatusMessage(`Streaming finalized. Total rows emitted: ${streamRowsRef.current.toLocaleString()}`);
     setStats((prev) => ({ ...prev, isGenerating: false }));
-  }, [streamRowsGenerated]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {

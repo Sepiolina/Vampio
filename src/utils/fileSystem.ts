@@ -2,7 +2,7 @@ import { ColumnSpec, ExportFormat } from '../types';
 import { isTauri as coreIsTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
-import { downloadFile, createZipArchive, resolveMultiFilename, formatSingleFileUnit } from './export';
+import { downloadFile, createZipArchive, resolveMultiFilename, formatSingleFileUnit, toXmlTag } from './export';
 
 /**
  * Robustly checks if running inside the Tauri native desktop application (.exe, macOS, Linux).
@@ -168,7 +168,7 @@ export function pickDirectoryViaHtmlInput(): Promise<DirectorySelectionResult | 
         if (!resolved && (!input.files || input.files.length === 0)) {
           handleCancel();
         }
-      }, 1000);
+      }, 2500);
     };
     window.addEventListener('focus', onFocus, { once: true });
 
@@ -318,7 +318,7 @@ export function pickFiles(options: FileSelectionOptions = {}): Promise<File[]> {
         if (!resolved && (!input.files || input.files.length === 0)) {
           handleCancel();
         }
-      }, 1000);
+      }, 2500);
     };
     window.addEventListener('focus', onFocus, { once: true });
 
@@ -443,6 +443,24 @@ export async function requestDirectoryHandle(): Promise<FileSystemDirectoryHandl
   return result ? result.handle : null;
 }
 
+/**
+ * Normalises a user-supplied relative filename so it can never escape the chosen directory
+ * ("../", absolute paths, drive letters, backslashes).
+ */
+export function sanitizeRelativeFilename(filename: string): string {
+  const segments = String(filename)
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((seg) => seg.replace(/[:*?"<>|\x00-\x1f]/g, '_').trim())
+    .filter((seg) => seg !== '' && seg !== '.' && seg !== '..');
+  return segments.join('/') || 'output';
+}
+
+function joinTauriPath(dirPath: string, filename: string): string {
+  const base = dirPath.replace(/[\\/]+$/, '');
+  return `${base}/${sanitizeRelativeFilename(filename)}`;
+}
+
 export async function writeBatchToDirectory(
   dirHandle: FileSystemDirectoryHandle | any,
   filename: string,
@@ -455,7 +473,7 @@ export async function writeBatchToDirectory(
       : new Blob([content]).size;
 
   if (dirHandle.kind === 'tauri-dir') {
-    const filePath = `${dirHandle.path}/${filename}`;
+    const filePath = joinTauriPath(dirHandle.path, filename);
     if (typeof content === 'string') {
       await writeTextFile(filePath, content);
     } else {
@@ -542,10 +560,16 @@ export async function createStreamFileWriter(
   format: ExportFormat,
   tableName: string = 'synthetic_records'
 ): Promise<StreamFileWriter> {
+  if (!dirHandle) {
+    throw new Error('No output folder selected for streaming.');
+  }
+  if (format === 'xlsx' || format === 'xls') {
+    throw new Error('Excel formats cannot be streamed row-by-row. Use CSV/JSONL for live streaming, or batch mode for Excel.');
+  }
   let writable: FileSystemWritableFileStream | null = null;
   const isTauriDir = dirHandle.kind === 'tauri-dir';
   const isVirtualDir = dirHandle.kind === 'virtual-dir';
-  const filePath = isTauriDir ? `${dirHandle.path}/${filename}` : filename;
+  const filePath = isTauriDir ? joinTauriPath(dirHandle.path, filename) : filename;
   let accumulatedVirtualContent = '';
 
   if (isTauriDir) {
@@ -563,6 +587,7 @@ export async function createStreamFileWriter(
   let bytesWritten = 0;
   let buffer = '';
   let flushTimer: any = null;
+  let rowsWritten = 0; // own counter: the JSON comma logic must not depend on caller indexing
 
   const flushBuffer = async () => {
     if (buffer.length > 0) {
@@ -583,7 +608,7 @@ export async function createStreamFileWriter(
   if (format === 'csv') {
     buffer += colNames.map(escapeCsv).join(',') + '\n';
   } else if (format === 'tsv') {
-    buffer += colNames.join('\t') + '\n';
+    buffer += colNames.map(sanitizeTsvCell).join('\t') + '\n';
   } else if (format === 'json') {
     buffer += '[\n';
   } else if (format === 'xml') {
@@ -591,16 +616,12 @@ export async function createStreamFileWriter(
   }
 
   return {
-    writeRow: async (row: Record<string, unknown>, rowIndex: number) => {
+    writeRow: async (row: Record<string, unknown>, _rowIndex?: number) => {
       let rowStr = '';
       if (format === 'csv') {
         rowStr = colNames.map((n) => escapeCsv(row[n])).join(',') + '\n';
       } else if (format === 'tsv') {
-        rowStr = colNames.map((n) => {
-          const val = row[n];
-          if (val === null || val === undefined) return '';
-          return String(val).replace(/\t|\n/g, ' ');
-        }).join('\t') + '\n';
+        rowStr = colNames.map((n) => sanitizeTsvCell(row[n])).join('\t') + '\n';
       } else if (format === 'jsonl') {
         rowStr = JSON.stringify(row) + '\n';
       } else if (format === 'txt') {
@@ -610,25 +631,27 @@ export async function createStreamFileWriter(
         rowStr = '  <record>\n';
         for (const col of colNames) {
           const val = row[col];
-          const valStr = val === null || val === undefined ? '' : String(val);
-          rowStr += `    <${col}>${valStr}</${col}>\n`;
+          const valStr = val === null || val === undefined ? '' : escapeXmlText(String(val));
+          const tag = toXmlTag(col);
+          rowStr += `    <${tag}>${valStr}</${tag}>\n`;
         }
         rowStr += '  </record>\n';
       } else if (format === 'sql') {
         const values = colNames.map((c) => {
           const val = row[c];
           if (val === null || val === undefined) return 'NULL';
-          if (typeof val === 'number') return isNaN(val) ? 'NULL' : val.toString();
+          if (typeof val === 'number') return Number.isFinite(val) ? val.toString() : 'NULL';
           if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
           const str = String(val).replace(/'/g, "''");
           return `'${str}'`;
         });
-        const escapedCols = colNames.map((c) => `\`${c}\``).join(', ');
+        const escapedCols = colNames.map((c) => `\`${c.replace(/`/g, '``')}\``).join(', ');
         rowStr = `INSERT INTO ${cleanTable} (${escapedCols}) VALUES (${values.join(', ')});\n`;
       } else if (format === 'json') {
-        rowStr = (rowIndex > 0 ? ',\n' : '') + '  ' + JSON.stringify(row);
+        rowStr = (rowsWritten > 0 ? ',\n' : '') + '  ' + JSON.stringify(row);
       }
 
+      rowsWritten += 1;
       buffer += rowStr;
 
       // Periodic or size-based flush
@@ -637,7 +660,11 @@ export async function createStreamFileWriter(
       } else if (!flushTimer) {
         flushTimer = setTimeout(async () => {
           flushTimer = null;
-          await flushBuffer();
+          try {
+            await flushBuffer();
+          } catch (err) {
+            console.warn('Stream background flush failed:', err);
+          }
         }, 150);
       }
     },
@@ -688,8 +715,13 @@ export async function createMultiFileStreamWriter(
   columns: ColumnSpec[],
   format: ExportFormat,
   rowsPerFile: number = 1,
-  tableName: string = 'synthetic_records'
+  tableName: string = 'synthetic_records',
+  baseName?: string
 ): Promise<MultiFileStreamWriter> {
+  if (!dirHandle) {
+    throw new Error('No output folder selected for multi-file streaming.');
+  }
+  const safeRowsPerFile = Math.max(1, Math.floor(rowsPerFile) || 1);
   let fileIndex = 0;
   let currentFileRows: Record<string, unknown>[] = [];
   let totalBytesWritten = 0;
@@ -701,7 +733,7 @@ export async function createMultiFileStreamWriter(
     fileIndex += 1;
     const outFilename = resolveMultiFilename(
       filenameTemplate,
-      tableName,
+      baseName || tableName,
       fileIndex,
       format,
       6
@@ -723,7 +755,7 @@ export async function createMultiFileStreamWriter(
   return {
     writeRow: async (row: Record<string, unknown>) => {
       currentFileRows.push(row);
-      if (currentFileRows.length >= rowsPerFile) {
+      if (currentFileRows.length >= safeRowsPerFile) {
         await flushCurrentFile();
       }
     },
@@ -741,6 +773,20 @@ export async function createMultiFileStreamWriter(
     getBytesWritten: () => totalBytesWritten,
     getFilesCount: () => fileIndex,
   };
+}
+
+function sanitizeTsvCell(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  return String(val).replace(/[\t\r\n]/g, ' ');
+}
+
+function escapeXmlText(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function escapeCsv(val: unknown): string {

@@ -159,25 +159,82 @@ export function validateJsonTemplate(
 }
 
 /**
+ * True when `offset` in `text` falls inside a JSON string literal
+ * (an odd number of unescaped double quotes precede it).
+ */
+function isInsideJsonString(text: string, offset: number): boolean {
+  let inString = false;
+  for (let i = 0; i < offset; i++) {
+    const ch = text[i];
+    if (ch === '\\' && inString) {
+      i++;
+      continue;
+    }
+    if (ch === '"') inString = !inString;
+  }
+  return inString;
+}
+
+/** Escapes a value so it can be embedded inside an existing JSON string literal. */
+function toJsonStringContent(value: unknown): string {
+  const text = typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value);
+  return JSON.stringify(text).slice(1, -1);
+}
+
+/**
+ * Single-pass placeholder substitution.
+ *
+ * - "{{name}}" (placeholder is the whole JSON value) -> raw JSON literal for that value
+ * - {{name}} inside a larger string -> escaped text, so quotes/newlines in data can't break the JSON
+ * - {{name}} outside a string -> raw JSON literal
+ *
+ * Because everything is replaced in ONE pass, text that happens to look like a placeholder
+ * inside substituted data (e.g. a name column containing "{{count}}") is never re-expanded.
+ * `lookup` returns `undefined` for unknown names, which leaves the placeholder untouched.
+ */
+function substitutePlaceholders(
+  template: string,
+  lookup: (name: string) => { json: string; text: string } | undefined,
+  onUnknown?: (inString: boolean) => string | undefined
+): string {
+  return template.replace(
+    /"\{\{([^{}]+)\}\}"|\{\{([^{}]+)\}\}/g,
+    (match: string, quotedName: string | undefined, bareName: string | undefined, offset: number) => {
+      const name = (quotedName ?? bareName) as string;
+      const found = lookup(name);
+      if (!found) {
+        if (onUnknown) {
+          const replacement = onUnknown(quotedName === undefined && isInsideJsonString(template, offset));
+          if (replacement !== undefined) return replacement;
+        }
+        return match;
+      }
+      if (quotedName !== undefined) return found.json;
+      return isInsideJsonString(template, offset) ? found.text : found.json;
+    }
+  );
+}
+
+function valueEntry(value: unknown): { json: string; text: string } {
+  return {
+    json: JSON.stringify(value === undefined ? null : value),
+    text: toJsonStringContent(value),
+  };
+}
+
+/**
  * Interpolates single row with {{column_name}} placeholders
  */
 function interpolateRowTemplate(
   rowTemplate: string,
   row: Record<string, unknown>
 ): Record<string, unknown> {
-  let renderedStr = rowTemplate;
-
-  // Substitute each column
-  for (const [key, value] of Object.entries(row)) {
-    const escapedValue = JSON.stringify(value ?? null);
-    // Replace "{{col}}"
-    renderedStr = renderedStr.replaceAll(`"{{${key}}}"`, escapedValue);
-    // Replace {{col}}
-    renderedStr = renderedStr.replaceAll(`{{${key}}}`, escapedValue);
-  }
-
-  // Clean up any remaining unpopulated {{var}} placeholders
-  renderedStr = renderedStr.replace(/\{\{[^}]+\}\}/g, 'null');
+  const renderedStr = substitutePlaceholders(
+    rowTemplate,
+    (name) => (Object.prototype.hasOwnProperty.call(row, name) ? valueEntry(row[name]) : undefined),
+    // Unpopulated placeholders become null (or an empty string inside a string literal)
+    (inString) => (inString ? '' : 'null')
+  );
 
   try {
     return JSON.parse(renderedStr);
@@ -199,6 +256,7 @@ export function renderCustomJsonTemplate(
   const tableName = metadata.tableName || 'dataset';
   const timestamp = metadata.timestamp || new Date().toISOString();
   const epochMs = Date.now();
+  const indent = config.prettyPrint !== false ? 2 : undefined;
 
   // If a rowTemplate is specified, transform each row
   let effectiveRows: Record<string, unknown>[] = rows;
@@ -206,47 +264,32 @@ export function renderCustomJsonTemplate(
     effectiveRows = rows.map((r) => interpolateRowTemplate(config.rowTemplate!, r));
   }
 
-  const recordsJson = JSON.stringify(effectiveRows, null, config.prettyPrint !== false ? 2 : undefined);
-  const singleRecordJson = JSON.stringify(effectiveRows[0] || {}, null, config.prettyPrint !== false ? 2 : undefined);
+  const recordsJson = JSON.stringify(effectiveRows, null, indent);
+  const singleRecordJson = JSON.stringify(effectiveRows[0] || {}, null, indent);
+  const firstRow = effectiveRows[0] || {};
 
-  let result = rawTemplate;
-
-  // 1. Substitute structural variables (replace quoted and unquoted instances)
-  // "{{records}}" -> JSON array string (without outer extra quotes)
-  result = result.replaceAll('"{{records}}"', recordsJson);
-  result = result.replaceAll('{{records}}', recordsJson);
-
-  // "{{record}}" (single entry)
-  result = result.replaceAll('"{{record}}"', singleRecordJson);
-  result = result.replaceAll('{{record}}', singleRecordJson);
-
-  // 2. Substitute numeric primitives
-  // "{{count}}" -> numeric count or quoted count
-  // If written as "{{count}}", preserve as number if possible or string
-  result = result.replaceAll('"{{count}}"', String(count));
-  result = result.replaceAll('{{count}}', String(count));
-
-  result = result.replaceAll('"{{epochMs}}"', String(epochMs));
-  result = result.replaceAll('{{epochMs}}', String(epochMs));
-
-  // 3. Substitute strings
-  result = result.replaceAll('{{tableName}}', tableName);
-  result = result.replaceAll('{{timestamp}}', timestamp);
-
-  // If single row and column placeholders exist at root level
-  if (effectiveRows.length > 0) {
-    const firstRow = effectiveRows[0];
-    for (const [col, val] of Object.entries(firstRow)) {
-      const valStr = JSON.stringify(val ?? null);
-      result = result.replaceAll(`"{{${col}}}"`, valStr);
-      result = result.replaceAll(`{{${col}}}`, String(val ?? ''));
+  const result = substitutePlaceholders(rawTemplate, (name) => {
+    switch (name) {
+      case 'records':
+        return { json: recordsJson, text: toJsonStringContent(recordsJson) };
+      case 'record':
+        return { json: singleRecordJson, text: toJsonStringContent(singleRecordJson) };
+      case 'count':
+        return { json: String(count), text: String(count) };
+      case 'epochMs':
+        return { json: String(epochMs), text: String(epochMs) };
+      case 'tableName':
+        return valueEntry(tableName);
+      case 'timestamp':
+        return valueEntry(timestamp);
+      default:
+        return Object.prototype.hasOwnProperty.call(firstRow, name) ? valueEntry(firstRow[name]) : undefined;
     }
-  }
+  });
 
   // Format with consistent indentation if valid JSON
   try {
-    const parsed = JSON.parse(result);
-    return JSON.stringify(parsed, null, config.prettyPrint !== false ? 2 : undefined);
+    return JSON.stringify(JSON.parse(result), null, indent);
   } catch {
     // If not strictly parsable (user typing halfway), return interpolated string
     return result;

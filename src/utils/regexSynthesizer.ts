@@ -36,6 +36,9 @@ export function expandCharacterSet(setStr: string, isNegated: boolean = false): 
       if (esc === 'd') pool += '0123456789';
       else if (esc === 'w') pool += 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_';
       else if (esc === 's') pool += ' ';
+      else if (esc === 't') pool += '\t';
+      else if (esc === 'n') pool += '\n';
+      else if (esc === 'r') pool += '\r';
       else pool += esc;
       i += 2;
       continue;
@@ -80,6 +83,40 @@ export function expandCharacterSet(setStr: string, isNegated: boolean = false): 
 }
 
 /**
+ * Splits a pattern on top-level "|" only (ignores pipes inside groups, classes or escapes).
+ */
+function splitTopLevelAlternatives(pattern: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let inClass = false;
+  let current = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === '\\') {
+      current += ch + (pattern[i + 1] ?? '');
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (ch === ']') inClass = false;
+      current += ch;
+      continue;
+    }
+    if (ch === '[') inClass = true;
+    else if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (ch === '|' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts;
+}
+
+/**
  * Parses quantifier syntax like {3}, {2,5}, {2,}, +, *, ?
  */
 function parseQuantifier(
@@ -91,44 +128,45 @@ function parseQuantifier(
   }
 
   const char = pattern[startIndex];
+  let result: { repeatCount: number; nextIndex: number } | null = null;
 
   if (char === '{') {
     const closeIdx = pattern.indexOf('}', startIndex);
     if (closeIdx !== -1) {
       const quantContent = pattern.slice(startIndex + 1, closeIdx).trim();
-      let count = 1;
-
-      if (quantContent.includes(',')) {
-        const parts = quantContent.split(',').map((s) => s.trim());
-        const min = parseInt(parts[0], 10) || 0;
-        const max = parts[1] ? parseInt(parts[1], 10) : min + 3;
-        const lo = Math.max(0, min);
-        const hi = Math.max(lo, isNaN(max) ? lo + 3 : max);
-        count = Math.floor(Math.random() * (hi - lo + 1)) + lo;
-      } else {
-        count = parseInt(quantContent, 10) || 1;
+      // Only a real quantifier ({n}, {n,}, {n,m}, {,m}); anything else is a literal "{"
+      if (/^\d*(,\d*)?$/.test(quantContent) && quantContent !== '' && quantContent !== ',') {
+        let count: number;
+        if (quantContent.includes(',')) {
+          const [minStr, maxStr] = quantContent.split(',').map((x) => x.trim());
+          const lo = minStr ? parseInt(minStr, 10) : 0;
+          const hi = maxStr ? Math.max(lo, parseInt(maxStr, 10)) : lo + 3;
+          count = Math.floor(Math.random() * (hi - lo + 1)) + lo;
+        } else {
+          count = parseInt(quantContent, 10); // {0} must yield zero repetitions
+        }
+        result = { repeatCount: count, nextIndex: closeIdx + 1 };
       }
-
-      return { repeatCount: count, nextIndex: closeIdx + 1 };
     }
+  } else if (char === '+') {
+    result = { repeatCount: Math.floor(Math.random() * 3) + 1, nextIndex: startIndex + 1 };
+  } else if (char === '*') {
+    result = { repeatCount: Math.floor(Math.random() * 4), nextIndex: startIndex + 1 };
+  } else if (char === '?') {
+    result = { repeatCount: Math.random() < 0.5 ? 0 : 1, nextIndex: startIndex + 1 };
   }
 
-  if (char === '+') {
-    // 1 to 3 times
-    return { repeatCount: Math.floor(Math.random() * 3) + 1, nextIndex: startIndex + 1 };
+  if (!result) {
+    return { repeatCount: 1, nextIndex: startIndex };
   }
 
-  if (char === '*') {
-    // 0 to 3 times
-    return { repeatCount: Math.floor(Math.random() * 4), nextIndex: startIndex + 1 };
+  // Swallow lazy ("+?", "*?", "{n,m}?") and possessive ("++") modifiers so they are
+  // not emitted as literal characters.
+  const follow = pattern[result.nextIndex];
+  if (follow === '?' || follow === '+') {
+    result.nextIndex += 1;
   }
-
-  if (char === '?') {
-    // 0 or 1 time
-    return { repeatCount: Math.random() < 0.5 ? 0 : 1, nextIndex: startIndex + 1 };
-  }
-
-  return { repeatCount: 1, nextIndex: startIndex };
+  return result;
 }
 
 /**
@@ -145,9 +183,20 @@ export function generateRegexString(pattern: string): string {
   }
 
   let cleanPattern = trimmed;
-  // Strip leading ^ and trailing $ if present
+  // Strip leading ^ and trailing $ if present (but keep an escaped "\\$")
   if (cleanPattern.startsWith('^')) cleanPattern = cleanPattern.slice(1);
-  if (cleanPattern.endsWith('$')) cleanPattern = cleanPattern.slice(0, -1);
+  if (cleanPattern.endsWith('$')) {
+    let backslashes = 0;
+    for (let k = cleanPattern.length - 2; k >= 0 && cleanPattern[k] === '\\'; k--) backslashes++;
+    if (backslashes % 2 === 0) cleanPattern = cleanPattern.slice(0, -1);
+  }
+
+  // Top-level alternation: "cat|dog" or "^a|b$"
+  const topAlternatives = splitTopLevelAlternatives(cleanPattern);
+  if (topAlternatives.length > 1) {
+    const chosen = topAlternatives[Math.floor(Math.random() * topAlternatives.length)];
+    return generateRegexString(chosen);
+  }
 
   let result = '';
   let i = 0;
@@ -177,17 +226,27 @@ export function generateRegexString(pattern: string): string {
 
       if (closeIdx !== -1) {
         let groupInner = cleanPattern.slice(i + 1, closeIdx);
-        // Strip non-capturing group prefix (?:...)
+        let isAssertion = false;
+        // Strip non-capturing / named group prefixes; lookarounds produce no output
         if (groupInner.startsWith('?:')) {
           groupInner = groupInner.slice(2);
+        } else if (/^\?(=|!|<=|<!)/.test(groupInner)) {
+          isAssertion = true;
+        } else {
+          const named = groupInner.match(/^\?P?<([A-Za-z_][A-Za-z0-9_]*)>/);
+          if (named) groupInner = groupInner.slice(named[0].length);
         }
 
-        const options = groupInner.split('|');
-        const chosenOption = options[Math.floor(Math.random() * options.length)] || '';
+        // Depth-aware split so nested groups like (a(b|c)|d) keep their own pipes
+        const options = splitTopLevelAlternatives(groupInner);
 
         const quant = parseQuantifier(cleanPattern, closeIdx + 1);
-        for (let r = 0; r < quant.repeatCount; r++) {
-          result += generateRegexString(chosenOption);
+        if (!isAssertion) {
+          for (let r = 0; r < quant.repeatCount; r++) {
+            // Pick an option per repetition, like a real regex match would
+            const chosenOption = options[Math.floor(Math.random() * options.length)] || '';
+            result += generateRegexString(chosenOption);
+          }
         }
 
         i = quant.nextIndex;
@@ -232,10 +291,22 @@ export function generateRegexString(pattern: string): string {
     // 3. Escape sequences: \d, \w, \s, \t, etc.
     if (char === '\\' && i + 1 < cleanPattern.length) {
       const esc = cleanPattern[i + 1];
+
+      // Zero-width assertions (\b, \B) emit nothing
+      if (esc === 'b' || esc === 'B') {
+        i += 2;
+        continue;
+      }
+
       const quant = parseQuantifier(cleanPattern, i + 2);
 
       let pool = '';
       if (esc === 'd') pool = '0123456789';
+      else if (esc === 'D') pool = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      else if (esc === 'W') pool = '!@#$%^&*-+=.,;:';
+      else if (esc === 'S') pool = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      else if (esc === 'n') pool = '\n';
+      else if (esc === 'r') pool = '\r';
       else if (esc === 'w') pool = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_';
       else if (esc === 's') pool = ' ';
       else if (esc === 't') pool = '\t';
