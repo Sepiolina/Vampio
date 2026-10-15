@@ -30,20 +30,15 @@ import {
 import { parseExcelOrCsvFile } from './utils/schemaExtractor';
 import { 
   pickDirectory,
-  requestDirectoryHandle, 
   writeBatchToDirectory, 
   createStreamFileWriter, 
   createMultiFileStreamWriter,
   writeMultipleFilesToDirectory,
   StreamFileWriter,
   MultiFileStreamWriter,
-  isTauri,
-  isEmbeddedIframe,
-  isFileSystemAccessSupported,
   createVirtualDirectoryHandle
 } from './utils/fileSystem';
 import { addRecentFile, addRecentFolder, getRecentFolders, saveCurrentSessionAuto } from './utils/sessionManager';
-import { PRESET_SCHEMAS } from './data/presets';
 import { Header, WorkspaceTab } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ColumnCard } from './components/ColumnCard';
@@ -75,11 +70,9 @@ import { useI18n } from './i18n';
 
 import { 
   Plus, 
-  Search, 
   SlidersHorizontal, 
   Layers,
   Sparkles,
-  Columns,
   FileSpreadsheet,
   ArrowUpToLine,
   ArrowDownToLine,
@@ -89,12 +82,10 @@ import {
   CopyPlus,
   Trash2,
   Upload,
-  Globe,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
 
-const INITIAL_DEMO: ColumnSpec[] = PRESET_SCHEMAS[0].columns;
 
 export default function App() {
   const { t } = useI18n();
@@ -300,7 +291,6 @@ export default function App() {
     importAsNewWorkspace,
     displayMode,
     isInitialized: isWorkspaceInitialized,
-    savePolicy: workspaceSavePolicy,
     isCustomJsonModalOpen,
     setIsCustomJsonModalOpen
   } = useWorkspace();
@@ -442,7 +432,7 @@ export default function App() {
   ]);
 
   // User Role & Workspace Mode
-  const { role, setRole, isRoleModalOpen, setIsRoleModalOpen } = useUserRole();
+  const { role, isRoleModalOpen, setIsRoleModalOpen } = useUserRole();
   const [isBundleImportModalOpen, setIsBundleImportModalOpen] = useState(false);
   const [profileBannerInfo, setProfileBannerInfo] = useState<{
     folderName: string;

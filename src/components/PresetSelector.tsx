@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PresetSchema, ColumnSpec } from '../types';
 import { PRESET_SCHEMAS } from '../data/presets';
-import { X, Layers, ArrowRight, Download, Upload, CheckCircle2, Search } from 'lucide-react';
+import { X, Layers, ArrowRight, Download, Upload, Search } from 'lucide-react';
 import { AnimatedTabs } from './AnimatedTabs';
 
 interface Props {

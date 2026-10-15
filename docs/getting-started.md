@@ -7,8 +7,8 @@ This guide walks you through launching VAMPIO, configuring synthetic data schema
 ## 🛠️ Installation & Local Development
 
 ### Prerequisites
-- Node.js (v18+)
-- npm or bun
+- Node.js 20 or newer
+- npm
 - **Rust Toolchain** (For native desktop compilation)
 
 ### Setup Commands
@@ -41,11 +41,14 @@ The application is structured into three primary operational views accessible vi
 ## ⚡ Quick Workflows
 
 ### 1. Starting from a Preset Blueprint
-Click the **Presets** button in the header navigation to load pre-configured domain schemas:
-- **E-Commerce Orders**: Transaction IDs, customers, line items, SKU codes, prices, and timestamps.
-- **Healthcare Records**: Patient IDs, blood types, vital statistics, medical codes (ICD-10).
-- **Financial Transactions**: IBANs, currency codes, debit/credit flags, timestamps.
-- **SaaS User Accounts**: UUIDs, usernames, emails, subscription tiers, and activity dates.
+Click the **Presets** button in the header strip to load a pre-configured schema:
+- **Hardware & Logistics**: sequences, hex MAC addresses, float ranges and a dependent weight calculation.
+- **E-Commerce Orders**: order IDs, customers, quantities, pricing, discounts and statuses.
+- **IoT Fleet Telemetry**: device IDs, packet sequence, sensor readings and firmware hashes.
+- **Web Server Access Logs**: trace IDs, client IPs, methods, status codes and latency.
+- **User Accounts Directory**: directory-style user records.
+
+![Presets](./screenshots/presets.png)
 
 ### 2. Drag-and-Drop Excel / CSV Schema Extraction
 To generate synthetic data matching an existing real-world spreadsheet:
@@ -65,12 +68,19 @@ To generate synthetic data matching an existing real-world spreadsheet:
 
 ### 4. Generating & Exporting Data
 Open the **Generation Deck** in the bottom bar or right sidebar:
-- **Batch Mode**: Enter row count (e.g. `1,000` to `1,000,000` rows) and click **Export Dataset**.
+- **Batch Mode**: Enter row count (quick picks: 500, 1k, 5k, 25k, 100k, or a custom value) and click **Generate**.
 - **Continuous Mode**: Toggle streaming to continuously write records at controlled intervals (e.g. `100ms`).
-- **Export Formats**:
-  - **CSV**: Comma-separated values with quoted fields and headers.
-  - **JSON**: Formatted JSON array of record objects.
-  - **SQL**: Database DDL (`CREATE TABLE`) followed by batch `INSERT INTO` statements.
+- **Export Formats**: CSV, TSV, JSON, JSON Lines, SQL (`CREATE TABLE` plus batched `INSERT`), XML, TXT, and Excel (`.xlsx`/`.xls`).
 - **Destination**:
   - Direct download (`.csv`, `.json`, `.sql`).
   - **Save to Local Folder**: Uses Tauri's native File System APIs (on desktop) or the Web File System Access API (on browser) to stream chunks directly to disk with zero cloud uploads.
+
+
+---
+
+## Next steps
+
+- [Interface Tour](./user-interface.md) for annotated screenshots
+- [Custom Types & Scripting](./custom-types-and-scripting.md)
+- [Workspaces & Actions](./workspaces-and-actions.md)
+- [Operator Mode](./operator-mode.md)

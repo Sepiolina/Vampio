@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ExportFormat } from '../types';
-import { Search, Check, ChevronDown, FileCode, FileSpreadsheet, Database, Braces, Sparkles, Layers } from 'lucide-react';
+import { Search, Check, ChevronDown, FileCode, FileSpreadsheet, Database, Braces, Layers } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export interface FormatOption {

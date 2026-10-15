@@ -15,10 +15,7 @@ import {
   validateCsvHeaders,
   applySanitizedHeadersToWorkbook,
   HeaderValidationReport,
-  HeaderIssue,
-  HeaderColumnMapping,
   ExpectedNamingConvention,
-  HeaderSeverity,
 } from '../utils/schemaExtractor';
 import {
   X,
@@ -35,8 +32,6 @@ import {
   AlertCircle,
   AlertTriangle,
   FileText,
-  HelpCircle,
-  Plus,
   RefreshCw,
   Sliders,
   ArrowLeftRight,
@@ -117,7 +112,6 @@ export const OfflineExtractorModal: React.FC<Props> = ({
   const [rowFocusInput, setRowFocusInput] = useState<string>('1-500');
   const [columnFocusInput, setColumnFocusInput] = useState<string>('*');
   const [selectedColumnNames, setSelectedColumnNames] = useState<string[]>([]);
-  const [columnSearchQuery, setColumnSearchQuery] = useState<string>('');
   const [showDataPreview, setShowDataPreview] = useState<boolean>(false);
 
   // Extraction Options

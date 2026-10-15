@@ -85,19 +85,6 @@ export function matchesTriggerCondition(
   }
 }
 
-/**
- * Filters rows based on trigger condition if enabled
- */
-export function filterRowsForAction(
-  rows: Record<string, unknown>[],
-  condition?: ActionTriggerCondition
-): Record<string, unknown>[] {
-  if (!condition || !condition.enabled || !condition.column?.trim()) {
-    return rows;
-  }
-  return rows.filter((r) => matchesTriggerCondition(r, condition));
-}
-
 /** btoa() throws on non-Latin1 characters; encode as UTF-8 first (RFC 7617). */
 function toBase64Utf8(text: string): string {
   const bytes = new TextEncoder().encode(text);

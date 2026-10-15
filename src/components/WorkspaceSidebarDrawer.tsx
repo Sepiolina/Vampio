@@ -1,19 +1,14 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  X, 
   Plus, 
   Search, 
   Copy, 
   Trash2, 
   Edit2, 
-  Check, 
-  Folder, 
-  FileText, 
   Layers, 
   Download,
   Settings2,
   Clock,
-  Sparkles,
   PanelLeftClose,
   PanelLeftOpen
 } from 'lucide-react';

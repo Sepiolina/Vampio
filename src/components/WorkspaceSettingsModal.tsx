@@ -4,16 +4,12 @@ import {
   Settings2, 
   Save, 
   Layout, 
-  Sliders, 
   Check, 
   Download, 
   Upload, 
-  Command, 
-  AlertCircle,
-  FolderSync
+  Command
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
-import { WorkspaceSavePolicy, WorkspaceDisplayMode } from '../types';
 import { exportWorkspacesAsJson } from '../utils/workspaceStorage';
 
 export const WorkspaceSettingsModal: React.FC = () => {

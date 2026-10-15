@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { GeneratorEngine } from '../utils/generator';
 import { generateRegexString } from '../utils/regexSynthesizer';
 import { formatDataset } from '../utils/export';
-import { renderCustomJsonTemplate, validateJsonTemplate, JSON_TEMPLATE_PRESETS } from '../utils/customJsonTemplate';
+import { renderCustomJsonTemplate, JSON_TEMPLATE_PRESETS } from '../utils/customJsonTemplate';
 import { matchesTriggerCondition, buildActionHeaders, formatActionPayload, defaultActionConfig } from '../utils/actionDispatcher';
 import { ColumnSpec } from '../types';
 
@@ -86,7 +86,6 @@ describe('smoke: custom json templates', () => {
     const rows = [{id:1,name:'a "b"'},{id:2,name:'c\nd'}];
     for (const p of JSON_TEMPLATE_PRESETS) {
       const cfg: any = { template: (p as any).template, ...(p as any).config };
-      const v: any = validateJsonTemplate(cfg.template, ...([] as any));
       const out = renderCustomJsonTemplate(cfg, rows, { tableName: 't', count: 2 } as any);
       expect(() => JSON.parse(out), p.id ?? (p as any).name).not.toThrow();
     }

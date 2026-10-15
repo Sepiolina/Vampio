@@ -5,8 +5,6 @@ import {
   getActiveCustomColumnTypes,
   toggleCustomTypeActive,
   setCustomTypeActive,
-  deleteCustomColumnType,
-  clearAllCustomTypes,
   CustomColumnType
 } from '../utils/customTypesManager';
 

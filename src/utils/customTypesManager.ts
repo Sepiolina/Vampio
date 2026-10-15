@@ -2,8 +2,7 @@ import { generateRegexString } from './regexSynthesizer';
 import {
   createScriptContext,
   executeJavaScriptScript,
-  executeLuaScript,
-  ScriptContext
+  executeLuaScript
 } from './scriptEngine';
 import {
   FIRST_NAMES,
@@ -18,8 +17,7 @@ import {
 import {
   RestApiColumnConfig,
   getSynchronousRestApiValue,
-  parseRestApiConfig,
-  serializeRestApiConfig
+  parseRestApiConfig
 } from './restApiManager';
 
 export type CustomTypeBaseMode =
@@ -415,9 +413,6 @@ return string.format("%s (%s)", hex, tone)`,
   }
 ];
 
-// Alias for backward compatibility
-export const BUILTIN_CUSTOM_TYPES = EXAMPLE_PRESET_TYPES;
-
 const STORAGE_KEY = 'vampio_user_custom_types_v2';
 
 export function getExamplePresetTypes(): CustomColumnType[] {
@@ -447,11 +442,6 @@ export function getCustomColumnTypes(): CustomColumnType[] {
     console.error('Failed to load custom column types:', err);
     return [];
   }
-}
-
-export function isCustomTypeInstalled(id: string): boolean {
-  const current = getCustomColumnTypes();
-  return current.some(t => t.id === id || t.name.toLowerCase() === id.toLowerCase());
 }
 
 export function installExamplePreset(preset: CustomColumnType): void {
@@ -516,10 +506,6 @@ export function deleteCustomColumnType(id: string): void {
   const current = getCustomColumnTypes();
   const updated = current.filter(t => t.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-}
-
-export function resetCustomColumnTypesToDefault(): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
 }
 
 export function clearAllCustomTypes(): void {

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   FolderSearch, 
   FolderCheck, 
@@ -9,16 +8,13 @@ import {
   Copy, 
   Check, 
   RefreshCw, 
-  AlertCircle, 
   ShieldAlert, 
   ShieldCheck, 
   Code2, 
   Sparkles, 
   Globe, 
   Languages, 
-  Cpu, 
   ArrowRight, 
-  Layers,
   FileSpreadsheet
 } from 'lucide-react';
 import { 
@@ -32,7 +28,7 @@ import {
   generateWorkspaceProfileBundle,
   VampioWorkspaceProfileBundle
 } from '../utils/folderBehaviorAnalyzer';
-import { pickDirectory, isFileSystemAccessSupported } from '../utils/fileSystem';
+import { pickDirectory } from '../utils/fileSystem';
 import { useUserRole } from '../context/UserRoleContext';
 import { useI18n, LanguageSelectDropdown } from '../i18n';
 

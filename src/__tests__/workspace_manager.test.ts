@@ -7,8 +7,7 @@ import {
   loadWorkspaceSettings,
   saveWorkspaceSettings,
   exportWorkspacesAsJson,
-  getRandomColorTag,
-  DEFAULT_SETTINGS
+  getRandomColorTag
 } from '../utils/workspaceStorage';
 import { WorkspaceSession } from '../types';
 

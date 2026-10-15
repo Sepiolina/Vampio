@@ -14,36 +14,9 @@ import {
   GripVertical,
   AlertCircle, 
   Link2, 
-  Sparkles, 
-  Hash, 
-  Calculator, 
-  Clock, 
-  Type, 
-  ShieldCheck, 
-  Binary, 
-  Globe,
-  Plus,
-  GitBranch,
-  X,
-  HelpCircle,
-  Layers
+  Plus
 } from 'lucide-react';
 
-const COL_TYPES: { type: ColumnType; icon: React.ComponentType<{ size: number; className?: string }> }[] = [
-  { type: 'Sequence', icon: Hash },
-  { type: 'Entity', icon: Globe },
-  { type: 'REST_API', icon: Globe },
-  { type: 'Set/Enum', icon: Sparkles },
-  { type: 'Int', icon: Hash },
-  { type: 'Float', icon: Calculator },
-  { type: 'DateTime', icon: Clock },
-  { type: 'UUID', icon: ShieldCheck },
-  { type: 'Calculation', icon: Calculator },
-  { type: 'Boolean', icon: Binary },
-  { type: 'RegEx', icon: Type },
-  { type: 'String', icon: Type },
-  { type: 'Blob/Hex', icon: Binary },
-];
 
 interface Props {
   col: ColumnSpec;
@@ -60,7 +33,6 @@ interface Props {
 export const ColumnCard: React.FC<Props> = ({
   col,
   index,
-  totalColumns,
   columns,
   onUpdate,
   onRemove,
@@ -73,24 +45,6 @@ export const ColumnCard: React.FC<Props> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const otherColumns = columns.filter((c) => c.id !== col.id).map((c) => c.name);
 
-  const getColTypeLabel = (type: ColumnType): string => {
-    switch (type) {
-      case 'Sequence': return t('schema.typeSequence');
-      case 'Entity': return t('schema.typeEntity');
-      case 'REST_API': return t('schema.typeRestApi');
-      case 'Set/Enum': return t('schema.typeSetEnum');
-      case 'Int': return t('schema.typeInt');
-      case 'Float': return t('schema.typeFloat');
-      case 'DateTime': return t('schema.typeDateTime');
-      case 'UUID': return t('schema.typeUUID');
-      case 'Calculation': return t('schema.typeCalculation');
-      case 'Boolean': return t('schema.typeBoolean');
-      case 'RegEx': return t('schema.typeRegEx');
-      case 'String': return t('schema.typeString');
-      case 'Blob/Hex': return t('schema.typeBlobHex');
-      default: return type;
-    }
-  };
 
   // Check duplicate name
   const isDuplicateName = columns.some(
@@ -98,13 +52,7 @@ export const ColumnCard: React.FC<Props> = ({
   );
 
   const customTypes = getCustomColumnTypes();
-  const activeCustomTypes = customTypes.filter((t) => t.isActive !== false);
   const examplePresets = getExamplePresetTypes();
-  const matchedCustomType = customTypes.find(
-    (t) => t.id === col.type || t.id === col.customTypeId
-  ) || examplePresets.find(
-    (t) => t.id === col.type || t.id === col.customTypeId
-  );
 
   const getDefaultRuleForType = (newType: ColumnType): string => {
     if (newType.startsWith('custom:') || newType.startsWith('example:')) {
@@ -137,8 +85,6 @@ export const ColumnCard: React.FC<Props> = ({
     }
   };
 
-  const currentTypeMeta = COL_TYPES.find((t) => t.type === col.type);
-  const TypeIcon = matchedCustomType ? Sparkles : (currentTypeMeta ? currentTypeMeta.icon : Sparkles);
 
   const handleAddCase = (
     operator: DependencyCase['operator'] = 'equals',

@@ -1,22 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   Globe,
-  ArrowRight,
   Play,
   Check,
   X,
   RefreshCw,
-  Layers,
   Plus,
   Trash2,
-  Database,
   Code2,
   Sparkles,
-  ExternalLink,
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  Eye,
   Settings2,
   Table,
   CheckSquare,
@@ -30,7 +22,6 @@ import {
   CURATED_REST_API_PRESETS,
   executeRestApiFetch,
   discoverJsonSchemaFields,
-  parseRestApiConfig,
   serializeRestApiConfig,
   RestApiPreset
 } from '../utils/restApiManager';
@@ -55,7 +46,6 @@ export const RestApiConfigModal: React.FC<RestApiConfigModalProps> = ({
   currentConfig,
   onSaveColumnConfig,
   columnName = 'api_field',
-  existingColumns = [],
   onImportRowColumns,
   initialTab = 'column'
 }) => {
@@ -236,7 +226,6 @@ export const RestApiConfigModal: React.FC<RestApiConfigModalProps> = ({
     }
 
     // Determine root array path from rowDiscoveryRawData / URL
-    const isRootArray = url.includes('[].');
     const newColumns: ColumnSpec[] = selected.map((f, idx) => {
       const colId = Date.now().toString() + Math.random().toString(36).substring(2, 6) + idx;
       // Configure each column to pull from this API with its specific jsonPath
@@ -262,7 +251,7 @@ export const RestApiConfigModal: React.FC<RestApiConfigModalProps> = ({
 
     let transformedRows: Record<string, unknown>[] | undefined = undefined;
     if (includeRows && rowDiscoveryRawData.length > 0) {
-      transformedRows = rowDiscoveryRawData.map((item: any, rowIdx) => {
+      transformedRows = rowDiscoveryRawData.map((item: any) => {
         const rowObj: Record<string, unknown> = {};
         for (const f of selected) {
           // extract from item

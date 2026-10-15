@@ -4,9 +4,7 @@ import {
   Clock, 
   AlertCircle, 
   RefreshCw, 
-  Activity, 
-  ExternalLink,
-  ChevronRight
+  Activity
 } from 'lucide-react';
 import { 
   parseRestApiConfig, 
@@ -28,7 +26,6 @@ export const RestApiLatencyBadge: React.FC<RestApiLatencyBadgeProps> = ({
   columnId,
   rule,
   config,
-  compact = true,
   className = ''
 }) => {
   const { t } = useI18n();

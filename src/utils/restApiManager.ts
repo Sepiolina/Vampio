@@ -538,23 +538,6 @@ export function computeCacheKey(url: string, method: string = 'GET', headers?: R
 }
 
 /**
- * Retrieves cached response data directly by URL and method if available and valid.
- */
-export function getCachedApiResponse(
-  url: string,
-  method: string = 'GET',
-  headers?: RestApiHeader[],
-  body?: string
-): unknown | undefined {
-  const cacheKey = computeCacheKey(url, method, headers, body);
-  const cached = apiResponseCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.data;
-  }
-  return undefined;
-}
-
-/**
  * Stores data into the API response cache.
  */
 export function setCachedApiResponse(
@@ -1024,35 +1007,4 @@ export function getRegisteredRowApiSources(): RestApiRowConfig[] {
     }
   } catch {}
   return [];
-}
-
-/**
- * Saves a registered Row API source.
- */
-export function saveRowApiSource(source: RestApiRowConfig): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    const list = getRegisteredRowApiSources();
-    const idx = list.findIndex((s) => s.id === source.id);
-    let updated: RestApiRowConfig[];
-    if (idx >= 0) {
-      updated = [...list];
-      updated[idx] = source;
-    } else {
-      updated = [source, ...list];
-    }
-    localStorage.setItem(REST_API_ROW_SOURCES_KEY, JSON.stringify(updated));
-  } catch {}
-}
-
-/**
- * Deletes a registered Row API source.
- */
-export function deleteRowApiSource(id: string): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    const list = getRegisteredRowApiSources();
-    const updated = list.filter((s) => s.id !== id);
-    localStorage.setItem(REST_API_ROW_SOURCES_KEY, JSON.stringify(updated));
-  } catch {}
 }

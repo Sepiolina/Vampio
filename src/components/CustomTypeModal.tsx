@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   X,
   Plus,
@@ -13,17 +13,12 @@ import {
   RefreshCw,
   Layers,
   FileCode,
-  Tag,
   Copy,
-  ExternalLink,
   Info,
-  HelpCircle,
-  Play,
   BookmarkPlus,
   CheckCircle2,
   SlidersHorizontal,
   FolderDown,
-  FileSpreadsheet,
   Code,
   Terminal,
   Cpu,
@@ -34,7 +29,7 @@ import {
   Zap,
   Database
 } from 'lucide-react';
-import { AnimatedTabs, TabItem } from './AnimatedTabs';
+import { AnimatedTabs } from './AnimatedTabs';
 import { HighlightedCodeEditor } from './HighlightedCodeEditor';
 import { BaseEngineEditor } from './BaseEngineEditor';
 import {
@@ -52,7 +47,6 @@ import {
   deleteCustomColumnType,
   toggleCustomTypeActive,
   setCustomTypeActive,
-  getActiveCustomColumnTypes,
   exportCustomColumnTypesJSON,
   importCustomColumnTypes,
   generateCustomTypeValue,

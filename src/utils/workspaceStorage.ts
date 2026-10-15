@@ -1,12 +1,6 @@
 import { 
   WorkspaceSession, 
-  WorkspaceSettings, 
-  WorkspaceSavePolicy, 
-  WorkspaceDisplayMode,
-  ColumnSpec,
-  ExportFormat,
-  OutputDestination,
-  OutputStrategy
+  WorkspaceSettings
 } from '../types';
 
 const DB_NAME = 'vampio_workspaces_db';
@@ -50,7 +44,7 @@ function openDB(): Promise<IDBDatabase> {
     try {
       const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onupgradeneeded = (e) => {
+      request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains(STORE_WORKSPACES)) {
           db.createObjectStore(STORE_WORKSPACES, { keyPath: 'id' });

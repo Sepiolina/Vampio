@@ -12,16 +12,13 @@ import {
   X, 
   ChevronDown, 
   Check, 
-  ExternalLink,
   Code2,
-  Cpu,
-  Layers,
   Zap,
   ListOrdered
 } from 'lucide-react';
 import { ColumnType } from '../types';
 import { useI18n } from '../i18n';
-import { getCustomColumnTypes, getExamplePresetTypes, CustomColumnType } from '../utils/customTypesManager';
+import { getCustomColumnTypes, getExamplePresetTypes } from '../utils/customTypesManager';
 import { serializeRestApiConfig } from '../utils/restApiManager';
 
 export type TypeCategory = 'all' | 'standard' | 'custom' | 'api' | 'advanced';

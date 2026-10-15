@@ -5,7 +5,6 @@ import { downloadFile } from '../utils/export';
 import { 
   X, 
   Trash2, 
-  Download, 
   RefreshCw, 
   CheckCircle2, 
   AlertTriangle, 
@@ -15,11 +14,9 @@ import {
   Check, 
   ChevronDown, 
   ChevronRight,
-  ExternalLink,
   RotateCcw,
   Zap,
   Filter,
-  Layers,
   FileSpreadsheet,
   FileCode
 } from 'lucide-react';
@@ -247,7 +244,6 @@ export const ActionLogModal: React.FC<Props> = ({
                 const isExpanded = expandedLogId === log.id;
                 const isSuccess = log.status === 'success';
                 const isError = log.status === 'error';
-                const isRetrying = log.status === 'retrying';
 
                 return (
                   <div

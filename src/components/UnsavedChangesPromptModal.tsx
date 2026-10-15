@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { AlertCircle, Save, Trash2, X } from 'lucide-react';
+import { AlertCircle, Save, Trash2 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 
 export const UnsavedChangesPromptModal: React.FC = () => {

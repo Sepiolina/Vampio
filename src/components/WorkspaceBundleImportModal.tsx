@@ -6,14 +6,8 @@ import {
   FileCode, 
   CheckCircle2, 
   AlertCircle, 
-  FolderCheck, 
   Sparkles, 
-  Languages, 
-  FileText, 
-  ShieldCheck, 
-  ShieldAlert, 
-  ArrowRight,
-  Database
+  ArrowRight
 } from 'lucide-react';
 import { 
   VampioWorkspaceProfileBundle, 

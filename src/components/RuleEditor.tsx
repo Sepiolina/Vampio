@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ColumnSpec, EntitySubtype } from '../types';
-import { Sparkles, Hash, Calculator, Clock, Code2, Tag, Sliders, RefreshCw, Layers, X, Check, Code, Terminal, AlertCircle, Upload, Database, Globe, Play } from 'lucide-react';
-import { getCustomColumnTypes, getExamplePresetTypes, generateCustomTypeValue, CustomColumnType, getRegisteredCustomEntities, CustomEntityDataset } from '../utils/customTypesManager';
+import { Sparkles, Hash, Calculator, Code2, Sliders, RefreshCw, X, Check, Code, Terminal, AlertCircle, Upload, Globe } from 'lucide-react';
+import { getCustomColumnTypes, getExamplePresetTypes, generateCustomTypeValue, getRegisteredCustomEntities } from '../utils/customTypesManager';
 import { CustomEntityModal } from './CustomEntityModal';
 import { RestApiConfigModal } from './RestApiConfigModal';
 import { RestApiLatencyBadge } from './RestApiLatencyBadge';

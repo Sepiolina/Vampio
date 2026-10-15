@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Layers, ArrowRight, CornerDownLeft, Check, Plus } from 'lucide-react';
+import { Search, CornerDownLeft, Plus } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { COLOR_TAGS } from '../utils/workspaceStorage';
 

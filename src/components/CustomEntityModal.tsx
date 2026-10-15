@@ -10,8 +10,6 @@ import {
   X,
   Sparkles,
   Dices,
-  RefreshCw,
-  AlertCircle,
   Database,
   Layers,
   ArrowRight

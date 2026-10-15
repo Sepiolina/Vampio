@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ColumnSpec, ColumnType, EntitySubtype } from '../types';
+import { ColumnType, EntitySubtype } from '../types';
 
 export interface ExtractedColumnResult {
   id: string;
@@ -1764,21 +1764,3 @@ function detectFloatPrecision(values: string[]): number {
   return maxDecimals;
 }
 
-function detectCommonPattern(values: string[]): string | null {
-  const sample = values.slice(0, 20);
-  if (sample.length < 3) return null;
-
-  // Check [A-Z]{2,4}-\d{3,5}
-  if (sample.every((s) => /^[A-Z]{2,4}-\d{3,6}$/.test(s))) {
-    const letters = sample[0].split('-')[0].length;
-    const digits = sample[0].split('-')[1].length;
-    return `[A-Z]{${letters}}-\\d{${digits}}`;
-  }
-
-  // Check 5-digit postal code
-  if (sample.every((s) => /^\d{5}$/.test(s))) {
-    return '\\d{5}';
-  }
-
-  return null;
-}

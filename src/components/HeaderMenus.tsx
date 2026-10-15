@@ -5,30 +5,22 @@ import {
   FolderOpen,
   FolderPlus,
   FileText,
-  Clock,
   Save,
   RotateCcw,
   Download,
   Upload,
-  Settings,
   Sliders,
-  ChevronRight,
   Sparkles,
   HelpCircle,
   Keyboard,
   Info,
-  Check,
   Trash2,
-  Database,
   Layers,
   FileSpreadsheet,
   FolderLock,
   X,
-  ExternalLink,
   ChevronDown,
-  Wand2,
   FileCode,
-  Tag,
   Globe,
   Activity,
   Plus,
@@ -38,11 +30,11 @@ import { ColumnSpec, ExportFormat } from '../types';
 import { AnimatedTabs } from './AnimatedTabs';
 import { FormatSelectDropdown } from './FormatSelectDropdown';
 import { CustomTypeModal, CustomTypeModalTab } from './CustomTypeModal';
-import { useI18n, LanguageSelectDropdown, FlagIcon } from '../i18n';
+import { useI18n, FlagIcon } from '../i18n';
 import { useUserRole } from '../context/UserRoleContext';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { exportWorkspacesAsJson } from '../utils/workspaceStorage';
-import { getCustomColumnTypes, CustomColumnType, exportCustomColumnTypesJSON } from '../utils/customTypesManager';
+import { getCustomColumnTypes, CustomColumnType } from '../utils/customTypesManager';
 import {
   getLatestSession,
   getSavedSessions,
@@ -100,7 +92,6 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
   onOpenOfflineExtractor,
   onOpenFolderMonitor,
   onOpenImportBundle,
-  onOpenRestApi,
   setStatusMessage
 }) => {
   const { t, locale, setLocale, availableLocales } = useI18n();

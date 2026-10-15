@@ -6,9 +6,6 @@ import {
   Code2, 
   CheckCircle2, 
   ArrowRight, 
-  Layers, 
-  FolderSearch, 
-  Sliders, 
   ShieldCheck, 
   Zap, 
   X 

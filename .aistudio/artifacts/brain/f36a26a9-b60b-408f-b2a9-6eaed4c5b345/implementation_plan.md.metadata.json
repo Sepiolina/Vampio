@@ -1,6 +1,0 @@
-{
-  "summary":  "Architectural plan to refine code quality, separate orchestration from business logic into domain hooks (useDatasetGenerator, useFolderMonitor), decompose monolithic modals into focused sub-components, and introduce strict boundary guards with typed error envelopes.",
-  "updatedAt":  "2026-10-12T10:11:24.197416334Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

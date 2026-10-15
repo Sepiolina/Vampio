@@ -1,12 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { 
   WorkspaceSession, 
-  WorkspaceSettings, 
   WorkspaceSavePolicy, 
   WorkspaceDisplayMode,
   ColumnSpec,
   ExportFormat,
-  OutputDestination,
   OutputStrategy,
   MultiFileConfig,
   AppendConfig,

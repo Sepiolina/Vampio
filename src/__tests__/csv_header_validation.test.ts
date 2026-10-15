@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   validateCsvHeaders,
   sanitizeAllHeaders,
-  sanitizeHeaderName,
   toNamingConvention,
   detectCsvDelimiter,
   applySanitizedHeadersToWorkbook,

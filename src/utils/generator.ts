@@ -1,4 +1,4 @@
-import { ColumnSpec, EntitySubtype } from '../types';
+import { ColumnSpec } from '../types';
 import { getCustomColumnTypes, getExamplePresetTypes, generateCustomTypeValue, getRegisteredCustomEntities } from './customTypesManager';
 import { getSynchronousRestApiValue, parseRestApiConfig } from './restApiManager';
 import { generateRegexString } from './regexSynthesizer';

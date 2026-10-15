@@ -5,14 +5,12 @@ import { ColumnSpec, ThemeId } from '../types';
 import { 
   Activity, 
   ChevronDown, 
-  ChevronRight, 
   BarChart2, 
   TrendingUp, 
   PieChart as PieIcon, 
   Grid3X3, 
   ShieldAlert, 
-  SlidersHorizontal,
-  Radio
+  SlidersHorizontal
 } from 'lucide-react';
 import { THEME_OPTIONS } from './Header';
 
@@ -70,9 +68,6 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
   }, [data, windowSize, vizMode]);
 
   // Selected column specification
-  const currentColumnSpec = useMemo(() => {
-    return columns.find(c => c.name === selectedColumn) || columns[0];
-  }, [columns, selectedColumn]);
 
   // Render the active D3 visualization
   useEffect(() => {

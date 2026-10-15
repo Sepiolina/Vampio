@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { getCustomColumnTypes, getExamplePresetTypes } from '../utils/customTypesManager';
 import { serializeRestApiConfig } from '../utils/restApiManager';
 
 describe('Column Type Selection & Categorization Architecture', () => {

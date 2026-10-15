@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Layers, 
   ChevronDown, 
   Check, 
   Columns, 
@@ -9,7 +8,6 @@ import {
   Split, 
   Radio,
   RefreshCw,
-  FileSpreadsheet,
   Sun,
   Moon,
   Activity

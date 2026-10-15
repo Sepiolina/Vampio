@@ -5,14 +5,11 @@ import {
   X, 
   Search, 
   Copy, 
-  FileCode, 
   Sparkles, 
   Check, 
   Save, 
   FolderInput, 
-  Edit3, 
-  ChevronDown, 
-  Layers 
+  ChevronDown
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { WorkspaceSession } from '../types';
@@ -27,9 +24,7 @@ interface Props {
 
 export const WorkspaceTabBar: React.FC<Props> = ({
   onOpenImportBundle,
-  onOpenPresets,
-  onOpenFolderMonitor
-}) => {
+  onOpenPresets}) => {
   const {
     workspaces,
     activeWorkspaceId,

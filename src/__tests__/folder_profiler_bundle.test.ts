@@ -4,7 +4,6 @@ import {
   detectLanguages,
   detectDelimiter,
   detectFileLock,
-  detectFileForensics,
   generateWorkspaceProfileBundle,
   exportWorkspaceProfileBundleJson,
   validateAndParseWorkspaceBundle,

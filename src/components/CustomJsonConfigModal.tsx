@@ -7,11 +7,9 @@ import {
   Copy, 
   Sparkles, 
   RotateCcw, 
-  Layers, 
   FileCode, 
   Variable, 
   CheckCircle2,
-  Sliders,
   Braces
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
@@ -58,7 +56,6 @@ export const CustomJsonConfigModal: React.FC<Props> = ({
   const [rowTemplate, setRowTemplate] = useState<string>(currentConfig.rowTemplate || '');
   const [useRowTemplate, setUseRowTemplate] = useState<boolean>(Boolean(currentConfig.rowTemplate?.trim()));
   const [prettyPrint, setPrettyPrint] = useState<boolean>(currentConfig.prettyPrint !== false);
-  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
   const [copySuccess, setCopySuccess] = useState<boolean>(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,7 +68,6 @@ export const CustomJsonConfigModal: React.FC<Props> = ({
       setRowTemplate(currentConfig.rowTemplate || '');
       setUseRowTemplate(Boolean(currentConfig.rowTemplate?.trim()));
       setPrettyPrint(currentConfig.prettyPrint !== false);
-      setActiveTab('editor');
     }
   }, [isOpen, currentConfig]);
 
@@ -110,7 +106,7 @@ export const CustomJsonConfigModal: React.FC<Props> = ({
         ];
 
     return [
-      cols.reduce((acc, c, idx) => {
+      cols.reduce((acc, c) => {
         if (c.name.toLowerCase().includes('id')) acc[c.name] = 101;
         else if (c.name.toLowerCase().includes('email')) acc[c.name] = 'alice@example.com';
         else if (c.name.toLowerCase().includes('name')) acc[c.name] = 'Alice Johnson';
@@ -119,7 +115,7 @@ export const CustomJsonConfigModal: React.FC<Props> = ({
         else acc[c.name] = `Sample ${c.name} 1`;
         return acc;
       }, {} as Record<string, unknown>),
-      cols.reduce((acc, c, idx) => {
+      cols.reduce((acc, c) => {
         if (c.name.toLowerCase().includes('id')) acc[c.name] = 102;
         else if (c.name.toLowerCase().includes('email')) acc[c.name] = 'bob@example.com';
         else if (c.name.toLowerCase().includes('name')) acc[c.name] = 'Bob Smith';

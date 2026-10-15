@@ -38,8 +38,6 @@ import {
   Settings2,
   FileCode,
   Upload,
-  Database,
-  Dices,
   ExternalLink
 } from 'lucide-react';
 
@@ -60,7 +58,6 @@ export const BaseEngineEditor: React.FC<BaseEngineEditorProps> = ({
   rule,
   onRuleChange
 }) => {
-  const [showAdvanced, setShowAdvanced] = useState(true);
   const [showRawJson, setShowRawJson] = useState(false);
 
   // Subtype navigation items
@@ -295,7 +292,7 @@ const IntSubtypeEditor: React.FC<{
   config: IntAdvancedConfig;
   onChange: (cfg: IntAdvancedConfig) => void;
   onApplyPreset: (cfg: BaseEngineConfig) => void;
-}> = ({ config, onChange, onApplyPreset }) => {
+}> = ({ config, onChange }) => {
   const [openAdv, setOpenAdv] = useState(true);
 
   return (

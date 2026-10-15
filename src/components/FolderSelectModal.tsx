@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Folder,
@@ -11,9 +11,7 @@ import {
   X,
   AlertTriangle,
   HardDrive,
-  Sparkles,
   History,
-  FileCode2,
   CheckCircle2,
   Upload,
 } from 'lucide-react';
@@ -54,7 +52,6 @@ export const FolderSelectModal: React.FC<Props> = ({
   const [manualPathInput, setManualPathInput] = useState<string>('');
   const [isLoadingNative, setIsLoadingNative] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(initialErrorNotice || null);
-  const [selectedHtmlFilesCount, setSelectedHtmlFilesCount] = useState<number | null>(null);
 
   // Trigger Native OS Folder Dialog (Tauri Desktop or supported browser)
   const handleNativeBrowse = async () => {
@@ -111,7 +108,6 @@ export const FolderSelectModal: React.FC<Props> = ({
     try {
       const result = await pickDirectoryViaHtmlInput();
       if (result) {
-        setSelectedHtmlFilesCount(result.files.length);
         setFolderNameInput(result.name);
         onSelectFolder(result.handle, result.name);
         onClose();
