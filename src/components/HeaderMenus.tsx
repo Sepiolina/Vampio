@@ -374,9 +374,9 @@ export const HeaderMenus: React.FC<HeaderMenusProps> = ({
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      {recentFolders.map((f) => (
+                      {recentFolders.map((f, idx) => (
                         <button
-                          key={f.name}
+                          key={`${f.path || f.name}-${idx}`}
                           type="button"
                           onClick={() => {
                             onSelectFolder();

@@ -49,6 +49,7 @@ interface Props {
   currentStrategy: OutputStrategy;
   currentFormat: ExportFormat;
   currentColumnsCount: number;
+  currentColumns?: ColumnSpec[];
 }
 
 type MonitorTab = 'recommendations' | 'metrics' | 'schema' | 'live_events';
@@ -62,6 +63,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
   onApplyRecommendations,
   currentStrategy,
   currentFormat,
+  currentColumns,
 }) => {
   const [activeTab, setActiveTab] = useState<MonitorTab>('recommendations');
   const [hasApplied, setHasApplied] = useState(false);
@@ -71,6 +73,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
     initialDirectoryHandle: currentDirectoryHandle,
     initialFolderName: currentFolderName,
     onSelectLockedFolder,
+    currentColumns,
   });
 
   // Close on Escape key press
@@ -99,8 +102,8 @@ export const FolderMonitorModal: React.FC<Props> = ({
       targetFile: monitor.analysis.suggestedMode.suggestedTargetFile,
       columns: monitor.analysis.suggestedTemplate.columns,
       tableName: monitor.analysis.suggestedTemplate.tableName,
-      batchCount: 1000,
-      intervalMs: 150,
+      batchCount: monitor.analysis.suggestedMode.suggestedBatchCount || 1000,
+      intervalMs: monitor.analysis.suggestedMode.suggestedIntervalMs || 150,
       generationMode:
         monitor.analysis.suggestedMode.outputStrategy === 'append_existing'
           ? 'Continuous'
@@ -122,8 +125,8 @@ export const FolderMonitorModal: React.FC<Props> = ({
       targetFile: monitor.analysis.suggestedMode.suggestedTargetFile,
       columns: [],
       tableName: monitor.analysis.suggestedTemplate.tableName,
-      batchCount: 1000,
-      intervalMs: 150,
+      batchCount: monitor.analysis.suggestedMode.suggestedBatchCount || 1000,
+      intervalMs: monitor.analysis.suggestedMode.suggestedIntervalMs || 150,
       generationMode: 'Batch',
     });
     setHasApplied(true);
@@ -139,8 +142,8 @@ export const FolderMonitorModal: React.FC<Props> = ({
       filename: monitor.analysis.suggestedTemplate.tableName,
       columns: monitor.analysis.suggestedTemplate.columns,
       tableName: monitor.analysis.suggestedTemplate.tableName,
-      batchCount: 1000,
-      intervalMs: 150,
+      batchCount: monitor.analysis.suggestedMode.suggestedBatchCount || 1000,
+      intervalMs: monitor.analysis.suggestedMode.suggestedIntervalMs || 150,
       generationMode: 'Batch',
     });
     setHasApplied(true);
@@ -202,7 +205,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
                     </h2>
                     <span className="text-[11px] font-mono text-emerald-500 flex items-center gap-1">
                       <ShieldCheck size={12} />
-                      100% Offline · Zero Mock · Real Files Only
+                      100% Local File Analysis
                     </span>
                   </div>
                   <p className="text-xs text-content-muted">

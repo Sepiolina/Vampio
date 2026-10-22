@@ -409,9 +409,9 @@ export const FolderSelectModal: React.FC<Props> = ({
                   <span>Recently Used Folders:</span>
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {recentFolders.map((rf) => (
+                  {recentFolders.map((rf, idx) => (
                     <button
-                      key={rf}
+                      key={`${rf}-${idx}`}
                       type="button"
                       onClick={() => {
                         if (isDesktop && (rf.includes('/') || rf.includes('\\'))) {

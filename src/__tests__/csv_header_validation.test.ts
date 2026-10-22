@@ -182,4 +182,37 @@ describe('CSV Header Format Validation & Anomaly Detection', () => {
     expect(updated.sheets.Sheet1.rows).toHaveLength(2);
     expect(updated.sheets.Sheet1.rows[0]).toEqual(['101', 'a@b.com', 'foo']);
   });
+
+  it('deduplicates unexpectedExtra and missingExpected when CSV has repetitive step headers', () => {
+    const rawHeaders = [
+      'Wait',
+      'SYSTEM_STOP',
+      'Wait',
+      'Measurement_Select_Switch',
+      'SYSTEM_STOP',
+      'Check_RY30_3_OFF',
+      'Check_RY30_3_OFF',
+      'CN36_Drain_Pump_OFF',
+      'Wait',
+    ];
+    const expectedHeaders = ['id', 'user_id', 'id'];
+
+    const report = validateCsvHeaders(rawHeaders, { expectedHeaders });
+
+    // unexpectedExtra should only contain unique header names
+    expect(report.unexpectedExtra).toEqual([
+      'Wait',
+      'SYSTEM_STOP',
+      'Measurement_Select_Switch',
+      'Check_RY30_3_OFF',
+      'CN36_Drain_Pump_OFF',
+    ]);
+    const setOfExtras = new Set(report.unexpectedExtra);
+    expect(setOfExtras.size).toBe(report.unexpectedExtra.length);
+
+    // missingExpected should only contain unique header names
+    expect(report.missingExpected).toEqual(['id', 'user_id']);
+    const setOfMissing = new Set(report.missingExpected);
+    expect(setOfMissing.size).toBe(report.missingExpected.length);
+  });
 });

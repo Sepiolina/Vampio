@@ -11,11 +11,14 @@ import {
 import { useFilePicker } from './useFilePicker';
 import { DirectorySelectionResult } from '../utils/fileSystem';
 
+import { ColumnSpec } from '../types';
+
 export interface UseFolderMonitorProps {
   isOpen: boolean;
   initialDirectoryHandle: any | null;
   initialFolderName: string | null;
   onSelectLockedFolder: (dirHandle: any, folderName: string) => void;
+  currentColumns?: ColumnSpec[];
 }
 
 export function useFolderMonitor({
@@ -23,6 +26,7 @@ export function useFolderMonitor({
   initialDirectoryHandle,
   initialFolderName,
   onSelectLockedFolder,
+  currentColumns,
 }: UseFolderMonitorProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [folderHandle, setFolderHandle] = useState<any | null>(initialDirectoryHandle);
@@ -56,7 +60,7 @@ export function useFolderMonitor({
     try {
       const discovered = await readFilesFromHtmlFileList(files);
       setDiscoveredFiles(discovered);
-      const result = analyzeFolderFiles(discovered, sourceName);
+      const result = analyzeFolderFiles(discovered, sourceName, currentColumns);
       setAnalysis(result);
       if (discovered.length > 0) setSelectedFileForPreview(discovered[0]);
       addEvent('info', `Ingested ${discovered.length} real files from "/${sourceName}"`);
@@ -68,7 +72,7 @@ export function useFolderMonitor({
     } finally {
       setIsLoading(false);
     }
-  }, [addEvent]);
+  }, [addEvent, currentColumns]);
 
   // Scan folder handle
   const scanFolderHandle = useCallback(async (handle: any, name: string) => {
@@ -78,7 +82,7 @@ export function useFolderMonitor({
     try {
       const files = await readFolderFromDirectoryHandle(handle);
       setDiscoveredFiles(files);
-      const result = analyzeFolderFiles(files, name);
+      const result = analyzeFolderFiles(files, name, currentColumns);
       setAnalysis(result);
       if (files.length > 0) {
         setSelectedFileForPreview(files[0]);
@@ -191,7 +195,7 @@ export function useFolderMonitor({
 
         if (hasChanges) {
           setDiscoveredFiles(freshFiles);
-          const freshAnalysis = analyzeFolderFiles(freshFiles, folderName || 'target_folder');
+          const freshAnalysis = analyzeFolderFiles(freshFiles, folderName || 'target_folder', currentColumns);
           setAnalysis(freshAnalysis);
         }
       } catch (pollErr: any) {
@@ -202,7 +206,7 @@ export function useFolderMonitor({
     return () => {
       if (monitoringTimerRef.current) clearInterval(monitoringTimerRef.current);
     };
-  }, [isOpen, isLiveMonitoring, folderHandle, discoveredFiles, folderName, addEvent]);
+  }, [isOpen, isLiveMonitoring, folderHandle, discoveredFiles, folderName, addEvent, currentColumns]);
 
   return {
     isLoading: isLoading || filePicker.isLoading,

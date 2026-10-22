@@ -36,8 +36,8 @@ export const FolderMonitorSchemaTab: React.FC<FolderMonitorSchemaTabProps> = ({ 
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle/50 font-mono text-[11px]">
-            {analysis.extractedColumns.map((col) => (
-              <tr key={col.name} className="hover:bg-tertiary/40">
+            {analysis.extractedColumns.map((col, idx) => (
+              <tr key={(col as any).id || `${col.name}-${idx}`} className="hover:bg-tertiary/40">
                 <td className="p-2.5 pl-4 font-bold text-content">{col.name}</td>
                 <td className="p-2.5">
                   <span className="px-2 py-0.5 rounded bg-accent/15 text-accent text-[10px] font-bold">

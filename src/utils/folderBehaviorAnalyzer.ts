@@ -1,7 +1,8 @@
 import { ColumnSpec, ColumnType, ExportFormat, OutputStrategy, PresetSchema } from '../types';
 import { PRESET_SCHEMAS } from '../data/presets';
 import { isTauri } from './fileSystem';
-import { readDir, readFile } from '@tauri-apps/plugin-fs';
+import { readDir, readFile, stat } from '@tauri-apps/plugin-fs';
+import * as XLSX from 'xlsx';
 
 export interface DiscoveredFolderFile {
   name: string;
@@ -146,7 +147,7 @@ export interface VampioWorkspaceProfileBundle {
 export async function readFolderFromDirectoryHandle(
   dirHandle: FileSystemDirectoryHandle | any,
   sampleContentLimitBytes: number = 65536,
-  maxFilesToReadContent: number = 5
+  maxFilesToReadContent: number = 25
 ): Promise<DiscoveredFolderFile[]> {
   const discovered: DiscoveredFolderFile[] = [];
 
@@ -162,10 +163,23 @@ export async function readFolderFromDirectoryHandle(
           let rawBytes: Uint8Array | undefined = undefined;
           let isLocked = false;
           let lockReason = '';
+          let fileSize = 0;
+          let lastModified = Date.now();
+          const ext = getExtension(entry.name).toLowerCase();
+          const isStructured = ['csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'xls', 'sql', 'xml', 'log', 'txt'].includes(ext);
 
-          if (discovered.length < maxFilesToReadContent) {
+          try {
+            const fileStat = await stat(filePath);
+            fileSize = fileStat.size;
+            if (fileStat.mtime) {
+              lastModified = new Date(fileStat.mtime).getTime();
+            }
+          } catch {}
+
+          if (discovered.length < maxFilesToReadContent || isStructured) {
             try {
               const fullBytes = await readFile(filePath);
+              if (!fileSize) fileSize = fullBytes.byteLength;
               rawBytes = fullBytes.slice(0, sampleContentLimitBytes);
               // Decode with TextDecoder
               sampleContent = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
@@ -177,8 +191,8 @@ export async function readFolderFromDirectoryHandle(
 
           discovered.push({
             name: entry.name,
-            size: rawBytes ? rawBytes.byteLength : 0,
-            lastModified: Date.now(),
+            size: fileSize || (rawBytes ? rawBytes.byteLength : 0),
+            lastModified,
             relativePath: filePath,
             sampleContent: sampleContent || undefined,
             rawBytes,
@@ -221,9 +235,11 @@ export async function readFolderFromDirectoryHandle(
           const file = await entry.getFile();
           let sampleContent = '';
           let rawBytes: Uint8Array | undefined = undefined;
+          const ext = getExtension(file.name).toLowerCase();
+          const isStructured = ['csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'xls', 'sql', 'xml', 'log', 'txt'].includes(ext);
 
           // Read content for the first few files to analyze headers/structure
-          if (discovered.length < maxFilesToReadContent) {
+          if (discovered.length < maxFilesToReadContent || isStructured) {
             try {
               const slice = file.slice(0, sampleContentLimitBytes);
               const buffer = await slice.arrayBuffer();
@@ -271,7 +287,7 @@ export async function readFolderFromDirectoryHandle(
  */
 export async function readFilesFromHtmlFileList(
   fileList: FileList | File[],
-  maxFilesToReadContent: number = 5,
+  maxFilesToReadContent: number = 25,
   sampleContentLimitBytes: number = 65536
 ): Promise<DiscoveredFolderFile[]> {
   const files: File[] = Array.from(fileList);
@@ -283,8 +299,10 @@ export async function readFilesFromHtmlFileList(
     let rawBytes: Uint8Array | undefined = undefined;
     let isLocked = false;
     let lockReason = '';
+    const ext = getExtension(file.name).toLowerCase();
+    const isStructured = ['csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'xls', 'sql', 'xml', 'log', 'txt'].includes(ext);
 
-    if (i < maxFilesToReadContent) {
+    if (i < maxFilesToReadContent || isStructured) {
       try {
         const slice = file.slice(0, sampleContentLimitBytes);
         const buffer = await slice.arrayBuffer();
@@ -320,7 +338,8 @@ export async function readFilesFromHtmlFileList(
  */
 export function analyzeFolderFiles(
   files: DiscoveredFolderFile[],
-  folderName: string = 'locked_folder'
+  folderName: string = 'locked_folder',
+  existingWorkspaceColumns?: ColumnSpec[]
 ): FolderAnalysisResult {
   const totalFiles = files.length;
   let totalSizeBytes = 0;
@@ -401,22 +420,51 @@ export function analyzeFolderFiles(
   // 4. File naming pattern detection (regex heuristics)
   const namingPattern = detectNamingPattern(files.map((f) => f.name));
 
-  // 5. Content sampling & schema sniffing
-  const sampleCandidate = files.find((f) => f.sampleContent && f.sampleContent.trim().length > 0) || files[0];
+  // 5. Content sampling & schema sniffing across candidate files
+  // Prioritize structured data files (.csv, .tsv, .json, .jsonl, .xlsx, .log, etc.)
+  const structuredExtensions = new Set(['csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'xls', 'sql', 'xml', 'log']);
+  const validFiles = files.filter(
+    (f) => !f.name.startsWith('.') && !f.name.toLowerCase().includes('thumbs.db') && !f.name.toLowerCase().includes('desktop.ini')
+  );
+
+  const sortedCandidates = [...validFiles].sort((a, b) => {
+    const aExt = getExtension(a.name).toLowerCase();
+    const bExt = getExtension(b.name).toLowerCase();
+    const aStruct = structuredExtensions.has(aExt) ? 1 : 0;
+    const bStruct = structuredExtensions.has(bExt) ? 1 : 0;
+    if (aStruct !== bStruct) return bStruct - aStruct;
+    const aContent = (a.sampleContent || a.rawBytes) ? 1 : 0;
+    const bContent = (b.sampleContent || b.rawBytes) ? 1 : 0;
+    return bContent - aContent;
+  });
+
   let extractedColumns: ExtractedFolderColumn[] = [];
+  let sampleCandidate: DiscoveredFolderFile | undefined = undefined;
   let sampleFileUsed: string | undefined = undefined;
 
-  if (sampleCandidate && sampleCandidate.sampleContent) {
-    sampleFileUsed = sampleCandidate.name;
-    extractedColumns = sniffColumnsFromContent(sampleCandidate.name, sampleCandidate.sampleContent);
+  for (const cand of sortedCandidates) {
+    if (cand.sampleContent || cand.rawBytes) {
+      const cols = sniffColumnsFromContent(cand.name, cand.sampleContent || '', cand.rawBytes);
+      if (cols.length > 0) {
+        extractedColumns = cols;
+        sampleCandidate = cand;
+        sampleFileUsed = cand.name;
+        break;
+      }
+    }
   }
 
-  // Fallback: If no sample content available but files exist, infer from filenames
+  // Fallback candidate if no columns found yet
+  if (!sampleCandidate && validFiles.length > 0) {
+    sampleCandidate = validFiles.find((f) => f.sampleContent) || validFiles[0];
+  }
+
+  // Fallback: If no sample content available but files exist, infer from folder context
   if (extractedColumns.length === 0 && totalFiles > 0) {
     extractedColumns = inferDefaultColumnsFromFolderContext(folderName, dominantFormat);
   }
 
-  // 6. Suggest Set Mode
+  // 6. Suggest Set Mode & Template
   const metrics: FolderBehaviorMetrics = {
     totalFiles,
     totalSizeBytes,
@@ -432,7 +480,13 @@ export function analyzeFolderFiles(
   };
 
   const suggestedMode = deriveModeSuggestion(metrics, sortedFiles, folderName);
-  const suggestedTemplate = deriveTemplateSuggestion(extractedColumns, files, folderName);
+  const suggestedTemplate = deriveTemplateSuggestion(
+    extractedColumns,
+    files,
+    folderName,
+    sampleFileUsed,
+    existingWorkspaceColumns
+  );
   const forensics = detectFileForensics(files, metrics, sampleCandidate);
 
   return {
@@ -529,16 +583,72 @@ function deriveModeSuggestion(
 
 /**
  * Derives matching preset or synthesizes a custom schema based on extracted column names and domain cues.
+ * Real extracted columns from user files ALWAYS take absolute precedence over canned presets.
  */
 function deriveTemplateSuggestion(
   extractedColumns: ExtractedFolderColumn[],
   files: DiscoveredFolderFile[],
-  folderName: string
+  folderName: string,
+  sampleFileUsed?: string,
+  existingWorkspaceColumns?: ColumnSpec[]
 ): SuggestedTemplateConfig {
+  // RULE 1: If real extracted columns exist from file content, build an auto-synthesized custom template!
+  // Real files ALWAYS beat generic canned presets!
+  if (extractedColumns.length > 0) {
+    const seenNames = new Set<string>();
+    const customCols: ColumnSpec[] = extractedColumns.map((c, i) => {
+      const baseName = c.name || `field_${i + 1}`;
+      let uniqueName = baseName;
+      let counter = 1;
+      while (seenNames.has(uniqueName.toLowerCase())) {
+        uniqueName = `${baseName}_${counter++}`;
+      }
+      seenNames.add(uniqueName.toLowerCase());
+
+      return {
+        id: `col_${Date.now()}_${i + 1}_${Math.random().toString(36).slice(2, 6)}`,
+        name: uniqueName,
+        type: c.inferredType,
+        rule: c.inferredRule,
+        skip_pct: 0,
+        condition: '',
+      };
+    });
+
+    const fileBase = sampleFileUsed ? sampleFileUsed.replace(/\.[^.]+$/, '') : folderName;
+    const cleanBase = cleanIdentifier(fileBase) || cleanIdentifier(folderName) || 'ingested';
+
+    return {
+      type: 'custom_extracted',
+      presetName: `Custom: ${cleanBase}_Schema`,
+      category: 'Extracted Schema',
+      confidence: 98,
+      reason: `Synthesized from ${extractedColumns.length} fields detected in "${sampleFileUsed || folderName}".`,
+      matchedKeywords: extractedColumns.map((c) => c.name),
+      columns: customCols,
+      tableName: `${cleanBase}_records`,
+    };
+  }
+
+  // RULE 2: If no columns could be extracted from folder files, but the user already has active workspace columns:
+  // Preserve their active schema instead of imposing the default demo logistics preset!
+  if (existingWorkspaceColumns && existingWorkspaceColumns.length > 0) {
+    return {
+      type: 'custom_extracted',
+      presetName: 'Current Active Workspace Columns',
+      category: 'Workspace Preserved',
+      confidence: 90,
+      reason: `No structured headers found in monitored folder. Preserved your active workspace fields (${existingWorkspaceColumns.length} columns).`,
+      matchedKeywords: existingWorkspaceColumns.map((c) => c.name),
+      columns: existingWorkspaceColumns,
+      tableName: cleanIdentifier(folderName) || 'active_workspace',
+    };
+  }
+
+  // RULE 3: Only when folder is empty and workspace has no columns, check domain signatures or starter fallback
   const colNames = extractedColumns.map((c) => c.name.toLowerCase());
   const combinedText = [folderName, ...files.map((f) => f.name), ...colNames].join(' ').toLowerCase();
 
-  // 1. Check Pre-built Domain Signatures
   const domainScores: Array<{ preset: PresetSchema; score: number; matchedKeywords: string[] }> = [];
 
   for (const preset of PRESET_SCHEMAS) {
@@ -548,7 +658,7 @@ function deriveTemplateSuggestion(
     // Check column matches
     for (const pCol of preset.columns) {
       const pName = pCol.name.toLowerCase();
-      if (colNames.some((c) => c === pName || c.includes(pName) || pName.includes(c))) {
+      if (colNames.some((c) => c === pName || (pName.length > 3 && c.includes(pName)))) {
         score += 25;
         matchedKeywords.push(pCol.name);
       }
@@ -585,29 +695,6 @@ function deriveTemplateSuggestion(
     };
   }
 
-  // If real extracted columns exist from file content, build an auto-synthesized custom template!
-  if (extractedColumns.length >= 2) {
-    const customCols: ColumnSpec[] = extractedColumns.map((c, i) => ({
-      id: `gen_${i + 1}`,
-      name: c.name,
-      type: c.inferredType,
-      rule: c.inferredRule,
-      skip_pct: 0,
-      condition: '',
-    }));
-
-    return {
-      type: 'custom_extracted',
-      presetName: `Custom: ${cleanIdentifier(folderName) || 'Folder'}_Schema`,
-      category: 'Folder Inferred',
-      confidence: 94,
-      reason: `Synthesized custom template directly from ${extractedColumns.length} fields detected inside folder files.`,
-      matchedKeywords: extractedColumns.map((c) => c.name),
-      columns: customCols,
-      tableName: `${cleanIdentifier(folderName) || 'ingested'}_records`,
-    };
-  }
-
   // Fallback: Default to Hardware & Logistics demo preset
   const fallback = PRESET_SCHEMAS[0];
   return {
@@ -624,22 +711,76 @@ function deriveTemplateSuggestion(
 }
 
 /**
- * Sniffs column headers and types from sample file text (CSV, TSV, JSON, JSONL, SQL, LOG)
+ * Sniffs column headers and types from sample file text (CSV, TSV, JSON, JSONL, SQL, LOG, XLSX)
  */
-function sniffColumnsFromContent(filename: string, content: string): ExtractedFolderColumn[] {
+function sniffColumnsFromContent(
+  filename: string,
+  content: string,
+  rawBytes?: Uint8Array
+): ExtractedFolderColumn[] {
   const ext = getExtension(filename).toLowerCase();
-  const trimmed = content.trim();
 
-  // 1. JSON Array or Single JSON Object
-  if (ext === 'json' || trimmed.startsWith('[') || trimmed.startsWith('{')) {
+  // 1. Excel (.xlsx / .xls) binary parsing
+  if ((ext === 'xlsx' || ext === 'xls') && rawBytes && rawBytes.length > 0) {
+    try {
+      const wb = XLSX.read(rawBytes, { type: 'array' });
+      const firstSheetName = wb.SheetNames[0];
+      if (firstSheetName) {
+        const sheet = wb.Sheets[firstSheetName];
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (rows.length > 0) {
+          const rawHeaderRow = rows[0] || [];
+          const headers: string[] = [];
+          for (let i = 0; i < rawHeaderRow.length; i++) {
+            const h = rawHeaderRow[i];
+            const str = h !== null && h !== undefined ? String(h).trim() : '';
+            if (str || i < rawHeaderRow.length - 1) {
+              headers.push(str || `Column_${i + 1}`);
+            }
+          }
+          if (headers.length > 0) {
+            const dataRows = rows.slice(1, 10);
+            const seenNames = new Set<string>();
+            return headers.map((header, colIdx) => {
+              const sampleVals = dataRows
+                .map((r) => (r && r[colIdx] !== undefined && r[colIdx] !== null ? String(r[colIdx]) : ''))
+                .filter((v) => v.length > 0);
+              const { type, rule } = inferColumnTypeFromSamples(header, sampleVals);
+              const sanitized = sanitizeColumnName(header);
+              let uniqueName = sanitized;
+              let counter = 1;
+              while (seenNames.has(uniqueName.toLowerCase())) {
+                uniqueName = `${sanitized}_${counter++}`;
+              }
+              seenNames.add(uniqueName.toLowerCase());
+
+              return {
+                name: uniqueName,
+                inferredType: type,
+                inferredRule: rule,
+                sampleValues: sampleVals.slice(0, 3),
+              };
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Excel parse note:', e);
+    }
+  }
+
+  const cleaned = content.replace(/^\uFEFF/, '').trim();
+  if (!cleaned) return [];
+
+  // 2. JSON Array or Single JSON Object
+  if (ext === 'json' || cleaned.startsWith('[') || cleaned.startsWith('{')) {
     try {
       let data: any = null;
-      if (trimmed.startsWith('[')) {
-        data = JSON.parse(trimmed.slice(0, 30000) + (trimmed.endsWith(']') ? '' : ']'));
-      } else if (trimmed.startsWith('{')) {
-        // Find end of first object
-        const firstEnd = trimmed.indexOf('\n}\n');
-        const chunk = firstEnd > 0 ? trimmed.slice(0, firstEnd + 3) : trimmed;
+      if (cleaned.startsWith('[')) {
+        data = JSON.parse(cleaned.slice(0, 50000) + (cleaned.endsWith(']') ? '' : ']'));
+      } else if (cleaned.startsWith('{')) {
+        const firstEnd = cleaned.indexOf('\n}\n');
+        const chunk = firstEnd > 0 ? cleaned.slice(0, firstEnd + 3) : cleaned;
         data = JSON.parse(chunk);
       }
 
@@ -653,11 +794,11 @@ function sniffColumnsFromContent(filename: string, content: string): ExtractedFo
     }
   }
 
-  // 2. JSON Lines (.jsonl / .ndjson)
-  if (ext === 'jsonl' || ext === 'ndjson' || (trimmed.startsWith('{') && trimmed.includes('\n{'))) {
-    const lines = trimmed.split('\n').filter((l) => l.trim().startsWith('{'));
+  // 3. JSON Lines (.jsonl / .ndjson)
+  if (ext === 'jsonl' || ext === 'ndjson' || (cleaned.startsWith('{') && cleaned.includes('\n{'))) {
+    const lines = cleaned.split(/\r?\n/).filter((l) => l.trim().startsWith('{'));
     const parsedObjects: any[] = [];
-    for (const l of lines.slice(0, 8)) {
+    for (const l of lines.slice(0, 10)) {
       try {
         parsedObjects.push(JSON.parse(l));
       } catch {}
@@ -667,20 +808,61 @@ function sniffColumnsFromContent(filename: string, content: string): ExtractedFo
     }
   }
 
-  // 3. CSV / TSV / Delimited
-  const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  // 4. CSV / TSV / Delimited
+  const lines = cleaned.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length > 0) {
     const firstLine = lines[0];
-    const delimiter = ext === 'tsv' || firstLine.includes('\t') ? '\t' : ',';
-    const headers = splitDelimitedLine(firstLine, delimiter);
 
-    if (headers.length >= 2 && headers.every((h) => h.length > 0 && h.length < 60)) {
-      const dataRows = lines.slice(1, 6).map((l) => splitDelimitedLine(l, delimiter));
-      return headers.map((header, colIdx) => {
-        const sampleValues = dataRows.map((r) => r[colIdx] || '').filter((v) => v.length > 0);
-        const { type, rule } = inferColumnTypeFromSamples(header, sampleValues);
+    // Delimiter detection across comma, semicolon, tab, pipe
+    let delimiter = ',';
+    if (ext === 'tsv') {
+      delimiter = '\t';
+    } else {
+      const counts: Record<string, number> = {
+        ',': (firstLine.match(/,/g) || []).length,
+        ';': (firstLine.match(/;/g) || []).length,
+        '\t': (firstLine.match(/\t/g) || []).length,
+        '|': (firstLine.match(/\|/g) || []).length,
+      };
+      let best = ',';
+      let maxCount = 0;
+      for (const [delim, count] of Object.entries(counts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          best = delim;
+        }
+      }
+      if (maxCount > 0) {
+        delimiter = best;
+      }
+    }
+
+    const rawHeaders = splitDelimitedLine(firstLine, delimiter);
+    // Trim trailing empty headers that result from trailing commas/delimiters
+    while (rawHeaders.length > 0 && rawHeaders[rawHeaders.length - 1] === '') {
+      rawHeaders.pop();
+    }
+
+    if (rawHeaders.length >= 1) {
+      const dataRows = lines.slice(1, 10).map((l) => splitDelimitedLine(l, delimiter));
+      const seenNames = new Set<string>();
+
+      return rawHeaders.map((header, colIdx) => {
+        const cleanH = header || `Column_${colIdx + 1}`;
+        const sampleValues = dataRows
+          .map((r) => r[colIdx] || '')
+          .filter((v) => v.length > 0);
+        const { type, rule } = inferColumnTypeFromSamples(cleanH, sampleValues);
+        const baseSanitized = sanitizeColumnName(cleanH);
+        let uniqueName = baseSanitized;
+        let counter = 1;
+        while (seenNames.has(uniqueName.toLowerCase())) {
+          uniqueName = `${baseSanitized}_${counter++}`;
+        }
+        seenNames.add(uniqueName.toLowerCase());
+
         return {
-          name: sanitizeColumnName(header),
+          name: uniqueName,
           inferredType: type,
           inferredRule: rule,
           sampleValues: sampleValues.slice(0, 3),
@@ -696,13 +878,22 @@ function extractColumnsFromObjects(objects: Record<string, any>[]): ExtractedFol
   const keysSet = new Set<string>();
   objects.forEach((obj) => Object.keys(obj || {}).forEach((k) => keysSet.add(k)));
 
+  const seenNames = new Set<string>();
   return Array.from(keysSet).map((key) => {
     const samples = objects
       .map((o) => (o[key] !== undefined && o[key] !== null ? String(o[key]) : ''))
       .filter((s) => s.length > 0);
     const { type, rule } = inferColumnTypeFromSamples(key, samples);
+    const baseSanitized = sanitizeColumnName(key);
+    let uniqueName = baseSanitized;
+    let counter = 1;
+    while (seenNames.has(uniqueName.toLowerCase())) {
+      uniqueName = `${baseSanitized}_${counter++}`;
+    }
+    seenNames.add(uniqueName.toLowerCase());
+
     return {
-      name: sanitizeColumnName(key),
+      name: uniqueName,
       inferredType: type,
       inferredRule: rule,
       sampleValues: samples.slice(0, 3),

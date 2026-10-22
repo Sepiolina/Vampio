@@ -588,8 +588,8 @@ export const ActionConfigModal: React.FC<Props> = ({
                       className="col-span-5 h-7 px-2 bg-primary rounded border border-border-subtle font-mono text-xs text-content"
                     >
                       {sampleColumns.length > 0 ? (
-                        sampleColumns.map((c) => (
-                          <option key={c.id || c.name} value={c.name}>{c.name}</option>
+                        sampleColumns.map((c, idx) => (
+                          <option key={c.id || `${c.name}-${idx}`} value={c.name}>{c.name}</option>
                         ))
                       ) : (
                         <option value="error">error</option>

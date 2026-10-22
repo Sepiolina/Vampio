@@ -363,9 +363,9 @@ export const CustomJsonConfigModal: React.FC<Props> = ({
               </button>
 
               {/* Column Fields */}
-              {effectiveColumns.slice(0, 6).map((col) => (
+              {effectiveColumns.slice(0, 6).map((col, idx) => (
                 <button
-                  key={col.name}
+                  key={col.id || `${col.name}-${idx}`}
                   type="button"
                   onClick={() => insertPlaceholder(`"{{${col.name}}}"`)}
                   className="px-1.5 py-0.5 rounded-md bg-primary hover:bg-tertiary border border-border-subtle/80 text-content-muted hover:text-content font-mono text-[10px] transition cursor-pointer"

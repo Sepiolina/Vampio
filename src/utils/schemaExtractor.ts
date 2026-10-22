@@ -482,19 +482,26 @@ export function validateCsvHeaders(
     const rawSet = new Set(rawHeadersList.map((h) => h.trim().toLowerCase()));
     const expectedSet = new Set(expectedHeaders.map((h) => h.trim().toLowerCase()));
 
+    const seenExpected = new Set<string>();
     expectedHeaders.forEach((exp) => {
-      const expNorm = exp.trim().toLowerCase();
+      const trimmed = exp.trim();
+      const expNorm = trimmed.toLowerCase();
+      if (!expNorm || seenExpected.has(expNorm)) return;
+      seenExpected.add(expNorm);
       if (rawSet.has(expNorm)) {
-        matchedExpected.push(exp);
+        matchedExpected.push(trimmed);
       } else {
-        missingExpected.push(exp);
+        missingExpected.push(trimmed);
       }
     });
 
+    const seenExtra = new Set<string>();
     rawHeadersList.forEach((raw) => {
-      const rawNorm = raw.trim().toLowerCase();
-      if (rawNorm && !expectedSet.has(rawNorm)) {
-        unexpectedExtra.push(raw.trim());
+      const trimmed = raw.trim();
+      const rawNorm = trimmed.toLowerCase();
+      if (rawNorm && !expectedSet.has(rawNorm) && !seenExtra.has(rawNorm)) {
+        seenExtra.add(rawNorm);
+        unexpectedExtra.push(trimmed);
       }
     });
 
@@ -1009,10 +1016,13 @@ export function extractFieldArchitecture(
     : headers;
 
   const results: ExtractedColumnResult[] = [];
+  const seenColNames = new Map<string, number>();
 
-  for (const header of targetHeaders) {
-    const colIndex = headers.indexOf(header);
-    if (colIndex === -1) continue;
+  for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+    const header = headers[colIndex];
+    if (effectiveSelectedCols && effectiveSelectedCols.length > 0 && !effectiveSelectedCols.includes(header)) {
+      continue;
+    }
 
     // Extract all values for this column
     const rawValues = rows.map((r) => r[colIndex]);
@@ -1047,9 +1057,15 @@ export function extractFieldArchitecture(
       finalRule = pattern.rule;
     }
 
+    const baseName = cleanHeader || `field_${results.length + 1}`;
+    const lowerName = baseName.toLowerCase();
+    const count = (seenColNames.get(lowerName) || 0) + 1;
+    seenColNames.set(lowerName, count);
+    const finalName = count > 1 ? `${baseName}_${count}` : baseName;
+
     results.push({
-      id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
-      name: cleanHeader || `field_${results.length + 1}`,
+      id: `col_${Date.now()}_${colIndex}_${Math.random().toString(36).substring(2, 7)}`,
+      name: finalName,
       originalName: header,
       type: finalType,
       rule: finalRule,

@@ -59,7 +59,7 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
           <div className="space-y-1.5 max-w-md">
             <h3 className="text-base font-bold text-content">Drag &amp; Drop Target Folder Here</h3>
             <p className="text-xs text-content-muted leading-relaxed">
-              Drop any real local folder or multi-file set directly here to begin live analysis. The monitor reads 100% genuine local files with zero simulation.
+              Drop any local folder or dataset files directly here to inspect file structure, detect schemas, and configure ingestion.
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
@@ -174,13 +174,10 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-content">
+              <div className="flex items-center gap-2 min-w-0">
+                <h3 className="text-sm font-bold text-content break-words" title={analysis.suggestedTemplate.presetName}>
                   {analysis.suggestedTemplate.presetName}
                 </h3>
-                <span className="px-2 py-0.5 rounded text-[10px] bg-primary text-content-muted border border-border-subtle">
-                  {analysis.suggestedTemplate.category}
-                </span>
               </div>
 
               <p className="text-xs text-content-muted leading-relaxed">
@@ -193,9 +190,9 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
                   Included Columns ({analysis.suggestedTemplate.columns.length}):
                 </span>
                 <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
-                  {analysis.suggestedTemplate.columns.map((c) => (
+                  {analysis.suggestedTemplate.columns.map((c, idx) => (
                     <span
-                      key={c.id || c.name}
+                      key={c.id || `${c.name}-${idx}`}
                       className="px-1.5 py-0.5 rounded bg-primary border border-border-subtle text-[10px] font-mono text-content flex items-center gap-1"
                     >
                       <span className="text-accent font-semibold">{c.name}</span>

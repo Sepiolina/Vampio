@@ -84,9 +84,9 @@ export const FolderMonitorMetricsTab: React.FC<FolderMonitorMetricsTabProps> = (
               No files found in selected directory.
             </div>
           ) : (
-            discoveredFiles.map((file) => (
+            discoveredFiles.map((file, idx) => (
               <div
-                key={file.name}
+                key={`${file.name}-${idx}`}
                 onClick={() => onSelectFileForPreview(file)}
                 className={`px-4 py-2 flex items-center justify-between text-xs cursor-pointer transition ${
                   selectedFileForPreview?.name === file.name

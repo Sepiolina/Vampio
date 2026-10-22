@@ -43,7 +43,7 @@ export const ColumnCard: React.FC<Props> = ({
   const { t } = useI18n();
   const [showAdvanced, setShowAdvanced] = useState(Boolean(col.condition || (col.skip_pct && col.skip_pct > 0)));
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const otherColumns = columns.filter((c) => c.id !== col.id).map((c) => c.name);
+  const otherColumns = Array.from(new Set(columns.filter((c) => c.id !== col.id).map((c) => c.name)));
 
 
   // Check duplicate name
@@ -311,8 +311,8 @@ export const ColumnCard: React.FC<Props> = ({
                 className="bg-secondary px-2.5 py-1 rounded-md border border-border-subtle text-xs text-content font-mono font-bold focus:outline-none focus:border-accent cursor-pointer"
               >
                 <option value="">{t('schema.noneIndependent')}</option>
-                {otherColumns.map((c) => (
-                  <option key={c} value={c}>
+                {otherColumns.map((c, idx) => (
+                  <option key={`${c}-${idx}`} value={c}>
                     {c}
                   </option>
                 ))}

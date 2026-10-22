@@ -76,7 +76,7 @@ export function AnimatedTabs<T extends string = string>({
               <span className="relative z-10">{tab.label}</span>
               {tab.badge !== undefined && (
                 <motion.span
-                  key={String(tab.badge)}
+                  key={`${tab.id}-${tab.badge}`}
                   initial={{ scale: 0.85 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
@@ -153,7 +153,7 @@ export function AnimatedTabs<T extends string = string>({
               <span className="relative z-10">{tab.label}</span>
               {tab.badge !== undefined && (
                 <motion.span
-                  key={String(tab.badge)}
+                  key={`${tab.id}-${tab.badge}`}
                   initial={{ scale: 0.85 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
@@ -223,7 +223,7 @@ export function AnimatedTabs<T extends string = string>({
             <span className="relative z-10">{tab.label}</span>
             {tab.badge !== undefined && (
               <motion.span
-                key={String(tab.badge)}
+                key={`${tab.id}-${tab.badge}`}
                 initial={{ scale: 0.85 }}
                 animate={{ scale: 1 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}

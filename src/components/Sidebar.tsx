@@ -1008,8 +1008,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onChange={(e) => setAppendConfig((prev) => ({ ...prev, targetSheetName: e.target.value }))}
                         className="w-full px-2 py-1 rounded bg-primary border border-border-subtle text-xs font-mono text-content focus:outline-none"
                       >
-                        {importedContext.sheetNames.map((sn) => (
-                          <option key={sn} value={sn}>{sn}</option>
+                        {importedContext.sheetNames.map((sn, idx) => (
+                          <option key={`${sn}-${idx}`} value={sn}>{sn}</option>
                         ))}
                       </select>
                     ) : (

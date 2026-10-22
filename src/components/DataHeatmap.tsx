@@ -794,6 +794,7 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
       const fillRate = Math.round(((displayData.length - nullCount) / (displayData.length || 1)) * 100);
 
       return {
+        id: col.id,
         name: col.name,
         type: col.type,
         fillRate,
@@ -981,9 +982,9 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
                     className="w-full h-full max-h-[260px] overflow-y-auto pr-1 animate-in fade-in duration-150"
                   >
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2 py-1">
-                      {columnHealthMetrics.map(metric => (
+                      {columnHealthMetrics.map((metric, idx) => (
                         <div 
-                          key={metric.name}
+                          key={metric.id || `${metric.name}-${idx}`}
                           className="bg-primary border border-border-subtle rounded-lg p-2.5 sm:p-3 shadow-xs flex flex-col justify-between min-w-0"
                         >
                           <div className="min-w-0">

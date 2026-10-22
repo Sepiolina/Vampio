@@ -1552,12 +1552,27 @@ export default function App() {
   };
 
   const handleImportSchema = (importedCols: ColumnSpec[], importedTableName?: string) => {
-    setColumns(importedCols);
+    const seenNames = new Set<string>();
+    const deduplicated = importedCols.map((c, idx) => {
+      let uniqueName = c.name || `field_${idx + 1}`;
+      let counter = 1;
+      while (seenNames.has(uniqueName.toLowerCase())) {
+        uniqueName = `${c.name || 'field'}_${counter++}`;
+      }
+      seenNames.add(uniqueName.toLowerCase());
+      return {
+        ...c,
+        id: c.id || `col_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+        name: uniqueName,
+      };
+    });
+
+    setColumns(deduplicated);
     if (importedTableName) {
       setTableName(importedTableName);
       setFilename(importedTableName);
     }
-    setStatusMessage(`Imported schema with ${importedCols.length} columns`);
+    setStatusMessage(`Imported schema with ${deduplicated.length} columns`);
   };
 
   const handleApplyExtractedSchema = (
@@ -1576,21 +1591,39 @@ export default function App() {
 
     if (append) {
       const existingNames = new Set(columns.map((c) => c.name.toLowerCase()));
-      const filtered = extractedCols.map((c) => {
-        let uniqueName = c.name;
+      const filtered = extractedCols.map((c, idx) => {
+        let uniqueName = c.name || `field_${idx + 1}`;
         let counter = 1;
         while (existingNames.has(uniqueName.toLowerCase())) {
-          uniqueName = `${c.name}_${counter++}`;
+          uniqueName = `${c.name || 'field'}_${counter++}`;
         }
         existingNames.add(uniqueName.toLowerCase());
-        return { ...c, name: uniqueName };
+        return {
+          ...c,
+          id: c.id || `col_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+          name: uniqueName,
+        };
       });
       setColumns([...columns, ...filtered]);
       setStatusMessage(
         `Appended ${filtered.length} extracted field patterns to schema (Offline Engine)`
       );
     } else {
-      setColumns(extractedCols);
+      const seenNames = new Set<string>();
+      const deduplicated = extractedCols.map((c, idx) => {
+        let uniqueName = c.name || `field_${idx + 1}`;
+        let counter = 1;
+        while (seenNames.has(uniqueName.toLowerCase())) {
+          uniqueName = `${c.name || 'field'}_${counter++}`;
+        }
+        seenNames.add(uniqueName.toLowerCase());
+        return {
+          ...c,
+          id: c.id || `col_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+          name: uniqueName,
+        };
+      });
+      setColumns(deduplicated);
       if (extractedTableName) {
         setTableName(extractedTableName);
         setFilename(extractedTableName);
@@ -1598,7 +1631,7 @@ export default function App() {
       setStatusMessage(
         importContext
           ? `Extracted pattern from "${importContext.filename}" (${importContext.totalRows.toLocaleString()} rows). Continuation set from row #${importContext.startingRowNumber}.`
-          : `Extracted & applied ${extractedCols.length} field patterns for "${extractedTableName}" (Offline Engine)`
+          : `Extracted & applied ${deduplicated.length} field patterns for "${extractedTableName}" (Offline Engine)`
       );
     }
   };
@@ -1643,7 +1676,29 @@ export default function App() {
     }
 
     if (recs.columns && recs.columns.length > 0) {
-      setColumns(recs.columns);
+      const seenNames = new Set<string>();
+      const seenIds = new Set<string>();
+      const sanitizedCols = recs.columns.map((c, idx) => {
+        let uniqueName = (c.name || `field_${idx + 1}`).trim();
+        let counter = 1;
+        while (seenNames.has(uniqueName.toLowerCase())) {
+          uniqueName = `${c.name || 'field'}_${counter++}`;
+        }
+        seenNames.add(uniqueName.toLowerCase());
+
+        let uniqueId = c.id || `col_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
+        while (seenIds.has(uniqueId)) {
+          uniqueId = `col_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
+        }
+        seenIds.add(uniqueId);
+
+        return {
+          ...c,
+          id: uniqueId,
+          name: uniqueName,
+        };
+      });
+      setColumns(sanitizedCols);
     }
 
     if (recs.importedContext) {
@@ -1651,7 +1706,7 @@ export default function App() {
     }
 
     setStatusMessage(
-      `Applied recommended ${recs.strategy} mode & ${recs.tableName || 'schema'} template for locked folder "${selectedFolderName || 'target'}" (Offline Heuristics)`
+      `Applied recommended ${recs.strategy} mode & ${recs.tableName || 'schema'} template for locked folder "${selectedFolderName || 'target'}".`
     );
   };
 
@@ -2300,6 +2355,7 @@ export default function App() {
           currentStrategy={outputStrategy}
           currentFormat={format}
           currentColumnsCount={columns.length}
+          currentColumns={columns}
         />
       )}
 

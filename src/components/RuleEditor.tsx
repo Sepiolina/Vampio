@@ -488,9 +488,9 @@ export const RuleEditor: React.FC<Props> = ({ col, onChange, availableColumns })
             {availableColumns.length === 0 ? (
               <span className="text-[10px] text-content-muted italic">{t('ruleEditor.noOtherColumns')}</span>
             ) : (
-              availableColumns.map((name) => (
+              availableColumns.map((name, idx) => (
                 <button
-                  key={name}
+                  key={`${name}-${idx}`}
                   type="button"
                   onClick={() => {
                     const separator = col.rule && !col.rule.endsWith(' ') ? ' ' : '';

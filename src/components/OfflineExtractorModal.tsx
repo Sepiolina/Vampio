@@ -985,7 +985,7 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                         const isSelected = selectedColumnNames.includes(h);
                         return (
                           <button
-                            key={h + idx}
+                            key={`${h}-${idx}`}
                             type="button"
                             onClick={() => toggleColumnSelection(h)}
                             className={`px-2 py-0.5 rounded text-[10px] font-mono transition flex items-center gap-1 border ${
@@ -1034,8 +1034,8 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                         <thead>
                           <tr className="border-b border-border-subtle text-content-muted">
                             <th className="p-1.5">#</th>
-                            {selectedColumnNames.map((colName) => (
-                              <th key={colName} className="p-1.5 font-bold text-accent whitespace-nowrap">
+                            {selectedColumnNames.map((colName, cIdx) => (
+                              <th key={`${colName}-${cIdx}`} className="p-1.5 font-bold text-accent whitespace-nowrap">
                                 {colName}
                               </th>
                             ))}
@@ -1047,12 +1047,12 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                               <td className="p-1.5 text-content-muted">
                                 {parsedRowRange.startIndex + rIdx + 1}
                               </td>
-                              {selectedColumnNames.map((colName) => {
-                                const cIdx = currentSheet.headers.indexOf(colName);
-                                const val = cIdx !== -1 ? row[cIdx] : null;
+                              {selectedColumnNames.map((colName, cIdx) => {
+                                const headerIdx = currentSheet.headers.indexOf(colName);
+                                const val = headerIdx !== -1 ? row[headerIdx] : null;
                                 return (
                                   <td
-                                    key={colName}
+                                    key={`${colName}-${cIdx}`}
                                     className={`p-1.5 whitespace-nowrap max-w-[160px] truncate ${
                                       val === null ? 'text-rose-400/80 italic' : 'text-content'
                                     }`}
@@ -1991,8 +1991,8 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {headerValidationReport.matchedExpected.length > 0 ? (
-                          headerValidationReport.matchedExpected.map((c) => (
-                            <span key={c} className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
+                          headerValidationReport.matchedExpected.map((c, idx) => (
+                            <span key={`${c}-${idx}`} className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
                               {c}
                             </span>
                           ))
@@ -2013,8 +2013,8 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {headerValidationReport.missingExpected.length > 0 ? (
-                          headerValidationReport.missingExpected.map((c) => (
-                            <span key={c} className="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-mono">
+                          headerValidationReport.missingExpected.map((c, idx) => (
+                            <span key={`${c}-${idx}`} className="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-mono">
                               {c}
                             </span>
                           ))
@@ -2037,8 +2037,8 @@ export const OfflineExtractorModal: React.FC<Props> = ({
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {headerValidationReport.unexpectedExtra.length > 0 ? (
-                          headerValidationReport.unexpectedExtra.map((c) => (
-                            <span key={c} className="px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs font-mono">
+                          headerValidationReport.unexpectedExtra.map((c, idx) => (
+                            <span key={`${c}-${idx}`} className="px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs font-mono">
                               {c}
                             </span>
                           ))
