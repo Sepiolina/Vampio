@@ -138,7 +138,7 @@ export const Header: React.FC<Props> = ({
   const currentThemeMeta = THEME_OPTIONS.find((t) => t.id === theme) || THEME_OPTIONS[0];
 
   return (
-    <header className="relative flex items-center justify-between px-2 sm:px-3 md:px-4 h-11 min-h-[44px] border-b border-border-subtle bg-secondary z-40 select-none gap-1.5 sm:gap-2 md:gap-3 shadow-2xs">
+    <header className="relative flex flex-wrap sm:flex-nowrap items-center justify-between px-2 sm:px-3 md:px-4 py-2 sm:py-0 sm:h-11 shrink-0 min-h-[44px] border-b border-border-subtle bg-secondary z-40 select-none gap-1.5 sm:gap-2 md:gap-3 shadow-2xs">
       {/* Left: Brand Identity & Menus (Files, Settings, Other) */}
       <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 flex-shrink-0">
         <div className="group flex items-center cursor-default py-0.5" title="VAMPIO">
@@ -193,21 +193,21 @@ export const Header: React.FC<Props> = ({
         tabs={[
           {
             id: 'schema',
-            label: <span className="hidden sm:inline">{t('header.schemaBuilder')}</span>,
+            label: <span>{t('header.schemaBuilder')}</span>,
             icon: <Columns size={12} />,
             badge: totalColumns,
-            title: `${t('header.schemaBuilder')} (${totalColumns} ${t('common.columns')})`,
+            title: `${t('header.schemaBuilder')} (${totalColumns} ${t('header.columns')})`,
           },
           {
             id: 'preview',
-            label: <span className="hidden sm:inline">{t('header.livePreview')}</span>,
+            label: <span>{t('header.livePreview')}</span>,
             icon: <Table size={12} />,
             badge: previewRowCount > 0 ? previewRowCount : undefined,
-            title: `${t('header.livePreview')} (${previewRowCount} ${t('common.rows')})`,
+            title: `${t('header.livePreview')} (${previewRowCount} ${t('header.rows')})`,
           },
           {
             id: 'split',
-            label: <span className="hidden md:inline">{t('header.splitWorkspace')}</span>,
+            label: <span>{t('header.splitWorkspace')}</span>,
             icon: <Split size={12} />,
             title: `${t('header.splitWorkspace')} (Side by side / Stacked)`,
           },
@@ -217,7 +217,7 @@ export const Header: React.FC<Props> = ({
         layoutId="workspace-main-tabs"
         variant="pill"
         size="xs"
-        className="mx-0.5 sm:mx-2"
+        className="order-last sm:order-none w-full sm:w-auto min-w-0 overflow-x-auto shrink-0 sm:shrink justify-start [&_button]:shrink-0 [&_button]:px-1.5 sm:[&_button]:px-2.5 [&_button]:min-h-7"
       />
 
       {/* Right: Status Indicators, Language & Theme */}
@@ -259,6 +259,7 @@ export const Header: React.FC<Props> = ({
             }`}
             title={`Current Theme: ${currentThemeMeta.label} (${currentThemeMeta.isLight ? t('header.lightMode') : t('header.darkMode')})`}
             aria-label="Theme menu"
+            aria-expanded={isThemeOpen}
           >
             <AnimatePresence mode="wait">
               <motion.div

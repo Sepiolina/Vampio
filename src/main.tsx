@@ -4,17 +4,20 @@ import App from './App.tsx';
 import { I18nProvider } from './i18n';
 import { UserRoleProvider } from './context/UserRoleContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
+import { MotionConfig } from 'motion/react';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <I18nProvider>
-      <UserRoleProvider>
-        <WorkspaceProvider>
-          <App />
-        </WorkspaceProvider>
-      </UserRoleProvider>
-    </I18nProvider>
+    <MotionConfig reducedMotion="user">
+      <I18nProvider>
+        <UserRoleProvider>
+          <WorkspaceProvider>
+            <App />
+          </WorkspaceProvider>
+        </UserRoleProvider>
+      </I18nProvider>
+    </MotionConfig>
   </StrictMode>,
 );
 

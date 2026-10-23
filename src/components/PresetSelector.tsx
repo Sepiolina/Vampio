@@ -1,9 +1,10 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PresetSchema, ColumnSpec } from '../types';
 import { PRESET_SCHEMAS } from '../data/presets';
 import { X, Layers, ArrowRight, Download, Upload, Search } from 'lucide-react';
 import { AnimatedTabs } from './AnimatedTabs';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 
 interface Props {
   isOpen: boolean;
@@ -27,18 +28,8 @@ export const PresetSelector: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Close on Escape key press
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  const dialogRef = useModalAccessibility(isOpen, onClose);
+  const titleId = React.useId();
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -119,26 +110,33 @@ export const PresetSelector: React.FC<Props> = ({
 
           {/* Animated Modal Dialog */}
           <motion.div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            tabIndex={-1}
             initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 16 }}
             transition={{ type: "spring", duration: 0.3, bounce: 0.12 }}
-            className="bg-primary border border-border-subtle rounded-2xl w-full max-w-4xl h-[90vh] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+            className="bg-primary border border-border-subtle rounded-2xl w-full max-w-4xl h-[90dvh] max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle bg-secondary">
+            <div className="flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-border-subtle bg-secondary">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center text-content shadow-md">
                   <Layers size={18} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-content">Preset Schemas & Templates</h3>
+                  <h3 id={titleId} className="text-sm font-bold text-content">Preset Schemas & Templates</h3>
                   <p className="text-xs text-content-muted">
                     Jumpstart synthetic generation with production patterns
                   </p>
                 </div>
               </div>
               <motion.button
+                type="button"
+                aria-label="Close presets"
                 whileTap={{ scale: 0.92 }}
                 onClick={onClose}
                 className="p-1.5 text-content-muted hover:text-content hover:bg-tertiary rounded-lg transition"
@@ -148,7 +146,7 @@ export const PresetSelector: React.FC<Props> = ({
             </div>
 
             {/* Import / Export Bar */}
-            <div className="px-6 py-3 bg-secondary border-b border-border-subtle flex items-center justify-between gap-3 text-xs">
+            <div className="px-4 sm:px-6 py-3 shrink-0 bg-secondary border-b border-border-subtle flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="text-content-muted">
                 Have an existing schema definition or want to save your current setup?
               </div>
@@ -180,9 +178,11 @@ export const PresetSelector: React.FC<Props> = ({
             </div>
 
             {errorMsg && (
-              <div className="px-6 py-2 bg-red-500/10 border-b border-red-500/20 text-xs text-red-400 flex items-center justify-between">
+              <div role="alert" className="px-6 py-2 shrink-0 bg-red-500/10 border-b border-red-500/20 text-xs text-red-400 flex items-center justify-between">
                 <span>{errorMsg}</span>
                 <button 
+                  type="button"
+                  aria-label="Dismiss import error"
                   onClick={() => setErrorMsg(null)}
                   className="text-red-400 hover:text-red-300 ml-2"
                 >
@@ -198,6 +198,8 @@ export const PresetSelector: React.FC<Props> = ({
                 <input
                   type="text"
                   placeholder="Search presets (e.g. E-Commerce, SaaS, Finance)..."
+                  aria-label="Search presets"
+                  data-autofocus
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 text-xs bg-primary border border-border-subtle rounded-lg text-content focus:outline-none focus:border-accent"
@@ -211,18 +213,28 @@ export const PresetSelector: React.FC<Props> = ({
                 layoutId="preset-categories-filter"
                 variant="chip"
                 size="xs"
+                className="min-w-0 max-w-full sm:max-w-[55%]"
               />
             </div>
 
             {/* Preset Cards List */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-3">
+              {filteredPresets.length === 0 && (
+                <div role="status" className="py-10 text-center space-y-3">
+                  <p className="text-sm text-content">No matching presets</p>
+                  <p className="text-xs text-content-muted">Try a different search or category.</p>
+                  <button type="button" onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }} className="px-3 py-2 rounded-lg border border-border-subtle text-xs text-content hover:bg-tertiary">
+                    Clear filters
+                  </button>
+                </div>
+              )}
               {filteredPresets.map((preset) => (
                 <div
                   key={preset.id}
                   className="group p-4 bg-secondary hover:bg-secondary border border-border-subtle hover:border-accent rounded-xl transition-all shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="space-y-1.5 max-w-xl">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-bold text-content group-hover:text-accent transition">
                         {preset.name}
                       </span>

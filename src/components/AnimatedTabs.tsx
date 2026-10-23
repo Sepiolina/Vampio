@@ -34,6 +34,28 @@ export function AnimatedTabs<T extends string = string>({
 }: AnimatedTabsProps<T>) {
   const autoId = React.useId();
   const activeLayoutId = layoutId || `tabs-${variant}-${autoId}`;
+  const enabledTabs = tabs.filter(tab => !tab.disabled);
+  const tabStopId = enabledTabs.some(tab => tab.id === activeTab) ? activeTab : enabledTabs[0]?.id;
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.getAttribute('role') !== 'tab' || !enabledTabs.length) return;
+    const currentIndex = enabledTabs.findIndex(tab => tab.id === target.dataset.tabId);
+    let nextIndex: number;
+    switch (event.key) {
+      case 'ArrowRight': nextIndex = (currentIndex + 1) % enabledTabs.length; break;
+      case 'ArrowLeft': nextIndex = (currentIndex - 1 + enabledTabs.length) % enabledTabs.length; break;
+      case 'Home': nextIndex = 0; break;
+      case 'End': nextIndex = enabledTabs.length - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    const nextTab = enabledTabs[nextIndex];
+    const nextButton = Array.from<HTMLButtonElement>(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(button => button.dataset.tabId === nextTab.id);
+    nextButton?.focus();
+    nextButton?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    onChange(nextTab.id);
+  };
 
   const sizeClasses = {
     xs: 'px-2.5 py-1 text-[11px] gap-1.5',
@@ -47,6 +69,7 @@ export function AnimatedTabs<T extends string = string>({
     return (
       <div
         role="tablist"
+        onKeyDown={handleKeyDown}
         className={cn('flex items-center gap-4 border-b border-border-subtle', className)}
       >
         {tabs.map((tab) => {
@@ -56,6 +79,9 @@ export function AnimatedTabs<T extends string = string>({
               key={tab.id}
               type="button"
               role="tab"
+              data-tab-id={tab.id}
+              tabIndex={tab.id === tabStopId ? 0 : -1}
+              aria-label={tab.title}
               aria-selected={isActive}
               disabled={tab.disabled}
               onClick={() => !tab.disabled && onChange(tab.id)}
@@ -112,6 +138,7 @@ export function AnimatedTabs<T extends string = string>({
     return (
       <div
         role="tablist"
+        onKeyDown={handleKeyDown}
         className={cn('flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5', className)}
       >
         {tabs.map((tab) => {
@@ -121,6 +148,9 @@ export function AnimatedTabs<T extends string = string>({
               key={tab.id}
               type="button"
               role="tab"
+              data-tab-id={tab.id}
+              tabIndex={tab.id === tabStopId ? 0 : -1}
+              aria-label={tab.title}
               aria-selected={isActive}
               disabled={tab.disabled}
               onClick={() => !tab.disabled && onChange(tab.id)}
@@ -176,6 +206,7 @@ export function AnimatedTabs<T extends string = string>({
   return (
     <div
       role="tablist"
+      onKeyDown={handleKeyDown}
       className={cn(
         'relative flex items-center bg-primary/95 border border-border-subtle p-1 rounded-xl gap-1 shadow-inner backdrop-blur-xs transition-colors duration-200',
         fullWidth && 'w-full',
@@ -189,6 +220,9 @@ export function AnimatedTabs<T extends string = string>({
             key={tab.id}
             type="button"
             role="tab"
+            data-tab-id={tab.id}
+            tabIndex={tab.id === tabStopId ? 0 : -1}
+            aria-label={tab.title}
             aria-selected={isActive}
             disabled={tab.disabled}
             onClick={() => !tab.disabled && onChange(tab.id)}

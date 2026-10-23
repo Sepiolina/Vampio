@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useUserRole, UserRole } from '../context/UserRoleContext';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import { 
   Activity, 
   Code2, 
@@ -20,29 +21,22 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const { role, setRole, setIsRoleModalOpen } = useUserRole();
   const [selectedRole, setSelectedRole] = useState<UserRole>(role || 'operator');
 
-  // Close on Escape key press
+  const handleDismiss = () => {
+    setIsRoleModalOpen(false);
+    onClose?.();
+  };
+  const dialogRef = useModalAccessibility(isOpen, handleDismiss);
+  const titleId = React.useId();
+  const descriptionId = React.useId();
+
   useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setIsRoleModalOpen(false);
-        if (onClose) onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, setIsRoleModalOpen]);
+    if (isOpen) setSelectedRole(role);
+  }, [isOpen, role]);
 
   if (!isOpen) return null;
 
   const handleConfirm = (chosenRole: UserRole) => {
     setRole(chosenRole);
-    setIsRoleModalOpen(false);
-    if (onClose) onClose();
-  };
-
-  const handleDismiss = () => {
     setIsRoleModalOpen(false);
     if (onClose) onClose();
   };
@@ -56,32 +50,39 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
         }}
       >
         <motion.div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          tabIndex={-1}
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.2 }}
-          className="bg-secondary border border-border-subtle w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+          className="bg-secondary border border-border-subtle w-full max-w-2xl max-h-[calc(100dvh-2rem)] rounded-2xl shadow-2xl overflow-y-auto flex flex-col"
         >
           {/* Header */}
-          <div className="p-6 border-b border-border-subtle bg-primary/40 flex items-start justify-between">
+          <div className="p-4 sm:p-6 shrink-0 border-b border-border-subtle bg-primary/40 flex items-start justify-between gap-3">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-accent/15 text-accent border border-accent/25">
                 <Zap size={12} />
                 <span>Workspace Role Selection</span>
               </div>
-              <h2 className="text-xl font-bold text-content">Choose Your Workspace Mode</h2>
-              <p className="text-xs text-content-muted">
+              <h2 id={titleId} className="text-xl font-bold text-content">Choose Your Workspace Mode</h2>
+              <p id={descriptionId} className="text-xs text-content-muted">
                 Select your primary workflow. You can seamlessly switch between modes at any time from the top bar.
               </p>
             </div>
             {onClose && (
               <button
                 type="button"
+                aria-label="Close workspace mode selection"
                 onClick={() => {
                   setIsRoleModalOpen(false);
                   onClose();
                 }}
-                className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-tertiary transition cursor-pointer"
+                className="p-2 min-h-9 min-w-9 shrink-0 rounded-lg text-content-muted hover:text-content hover:bg-tertiary transition cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -89,11 +90,10 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
 
           {/* Cards Grid */}
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 sm:p-6 shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Card 1: Operator Mode */}
             <div
-              onClick={() => setSelectedRole('operator')}
-              className={`p-5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+              className={`p-5 rounded-xl border-2 transition-all flex flex-col justify-between ${
                 selectedRole === 'operator'
                   ? 'bg-accent/10 border-accent shadow-md shadow-accent/10'
                   : 'bg-primary/50 border-border-subtle hover:border-border-subtle/80 hover:bg-primary'
@@ -113,7 +113,10 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <h3 className="font-bold text-sm text-content">Field Operator / Technician</h3>
+                    <label className="flex items-center gap-2 font-bold text-sm text-content cursor-pointer">
+                      <input type="radio" name={titleId} value="operator" checked={selectedRole === 'operator'} onChange={() => setSelectedRole('operator')} className="accent-accent" />
+                      Field Operator / Technician
+                    </label>
                   </div>
                   <span className="text-[10px] font-semibold text-emerald-400 font-mono">
                     Simplified · Zero Clutter
@@ -156,8 +159,7 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
             {/* Card 2: Developer Studio */}
             <div
-              onClick={() => setSelectedRole('developer')}
-              className={`p-5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+              className={`p-5 rounded-xl border-2 transition-all flex flex-col justify-between ${
                 selectedRole === 'developer'
                   ? 'bg-accent/10 border-accent shadow-md shadow-accent/10'
                   : 'bg-primary/50 border-border-subtle hover:border-border-subtle/80 hover:bg-primary'
@@ -177,7 +179,10 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <h3 className="font-bold text-sm text-content">Developer Studio</h3>
+                    <label className="flex items-center gap-2 font-bold text-sm text-content cursor-pointer">
+                      <input type="radio" name={titleId} value="developer" checked={selectedRole === 'developer'} onChange={() => setSelectedRole('developer')} className="accent-accent" />
+                      Developer Studio
+                    </label>
                   </div>
                   <span className="text-[10px] font-semibold text-indigo-400 font-mono">
                     Advanced · Schema Engineering
@@ -220,10 +225,10 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-border-subtle bg-primary/30 flex items-center justify-between text-xs text-content-muted">
+          <div className="p-4 shrink-0 border-t border-border-subtle bg-primary/30 flex flex-wrap items-center justify-between gap-3 text-xs text-content-muted">
             <span className="flex items-center gap-1.5">
               <ShieldCheck size={14} className="text-accent" />
-              <span>Preferences saved in local storage. 100% offline & private.</span>
+              <span>Your mode is saved on this device. You can switch at any time.</span>
             </span>
 
             <button
@@ -231,7 +236,7 @@ export const RoleOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
               onClick={() => handleConfirm(selectedRole)}
               className="px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white font-semibold transition cursor-pointer"
             >
-              Continue
+              Continue in {selectedRole === 'developer' ? 'Developer Studio' : 'Operator Mode'}
             </button>
           </div>
         </motion.div>
