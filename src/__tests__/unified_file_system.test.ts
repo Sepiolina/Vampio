@@ -6,6 +6,7 @@ import {
   traverseFileSystemEntry,
   createVirtualDirectoryHandle,
   pickDirectoryViaHtmlInput,
+  saveFileToDiskOrDownload,
 } from '../utils/fileSystem';
 
 // Minimal DOM mock for Node vitest runner
@@ -347,6 +348,57 @@ describe('Unified Single Source of Truth for File & Folder Selection (DRY Mandat
       expect(result).not.toBeNull();
       expect(result?.name).toBe('finance_dept');
       expect(result?.isVirtual).toBe(true);
+    });
+  });
+
+  describe('saveFileToDiskOrDownload', () => {
+    it('downloads file via browser download in standard web environment', async () => {
+      delete (globalThis as any).window.__TAURI_INTERNALS__;
+      delete (globalThis as any).window.__TAURI__;
+      delete (globalThis as any).window.isTauri;
+
+      const result = await saveFileToDiskOrDownload('test.json', '{"hello":"world"}', 'application/json');
+      expect(result.success).toBe(true);
+      expect(result.downloaded).toBe(true);
+    });
+
+    it('uses native save dialog and writeTextFile in Tauri desktop (.exe) environment', async () => {
+      const invokeMock = vi.fn().mockImplementation(async (cmd: string, args: any) => {
+        if (cmd === 'plugin:dialog|save') {
+          return 'C:\\data\\test.json';
+        }
+        if (cmd.startsWith('plugin:fs|write')) {
+          return undefined;
+        }
+        return undefined;
+      });
+
+      (globalThis as any).window.__TAURI_INTERNALS__ = { invoke: invokeMock };
+
+      const result = await saveFileToDiskOrDownload('test.json', '{"hello":"world"}', 'application/json');
+      expect(invokeMock.mock.calls[0][0]).toBe('plugin:dialog|save');
+      expect(result.success).toBe(true);
+      expect(result.path).toBe('C:\\data\\test.json');
+
+      delete (globalThis as any).window.__TAURI_INTERNALS__;
+    });
+
+    it('returns cancelled when user cancels native save dialog in Tauri', async () => {
+      const invokeMock = vi.fn().mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:dialog|save') {
+          return null; // user cancelled dialog
+        }
+        return undefined;
+      });
+
+      (globalThis as any).window.__TAURI_INTERNALS__ = { invoke: invokeMock };
+
+      const result = await saveFileToDiskOrDownload('test.json', '{"hello":"world"}', 'application/json');
+      expect(invokeMock.mock.calls[0][0]).toBe('plugin:dialog|save');
+      expect(result.success).toBe(false);
+      expect(result.cancelled).toBe(true);
+
+      delete (globalThis as any).window.__TAURI_INTERNALS__;
     });
   });
 });

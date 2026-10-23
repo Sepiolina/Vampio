@@ -20,6 +20,7 @@ import {
   formatFileSize,
   exportWorkspaceProfileBundleJson,
 } from '../utils/folderBehaviorAnalyzer';
+import { saveFileToDiskOrDownload } from '../utils/fileSystem';
 import { useFolderMonitor } from '../hooks/useFolderMonitor';
 import { FolderMonitorRecommendationsTab } from './folderMonitor/FolderMonitorRecommendationsTab';
 import { FolderMonitorMetricsTab } from './folderMonitor/FolderMonitorMetricsTab';
@@ -196,7 +197,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-subtle bg-secondary">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-xl bg-accent text-white flex items-center justify-center shadow-xs flex-shrink-0">
-                  <FolderLock size={18} />
+                  <FolderLock size={18} style={{ color: '#ffffff' }} className="text-white" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -397,21 +398,23 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   <>
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         const jsonStr = exportWorkspaceProfileBundleJson(monitor.analysis!);
-                        const blob = new Blob([jsonStr], { type: 'application/json' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
                         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
                         const safeName = (monitor.folderName || 'folder').replace(/[^a-zA-Z0-9_-]/g, '_');
-                        a.href = url;
-                        a.download = `${safeName}-profile-${timestamp}.vampio.profile.json`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
+                        const filename = `${safeName}-profile-${timestamp}.vampio.profile.json`;
+                        await saveFileToDiskOrDownload(filename, jsonStr, 'application/json', {
+                          title: 'Export Forensic Profile Bundle',
+                          defaultDir: typeof monitor.folderHandle?.path === 'string' ? monitor.folderHandle.path : undefined,
+                          filters: [
+                            {
+                              name: 'Vampio Profile (*.vampio.profile.json, *.json)',
+                              extensions: ['json'],
+                            },
+                          ],
+                        });
                       }}
-                      className="px-3.5 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-lg bg-secondary hover:bg-tertiary active:scale-95 border border-border-subtle text-content text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer select-none"
                       title="Export complete forensic profile bundle for developer workspace"
                     >
                       <Download size={13} />

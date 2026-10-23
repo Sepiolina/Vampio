@@ -28,7 +28,7 @@ import {
   generateWorkspaceProfileBundle,
   VampioWorkspaceProfileBundle
 } from '../utils/folderBehaviorAnalyzer';
-import { pickDirectory } from '../utils/fileSystem';
+import { pickDirectory, saveFileToDiskOrDownload } from '../utils/fileSystem';
 import { useUserRole } from '../context/UserRoleContext';
 import { useI18n, LanguageSelectDropdown } from '../i18n';
 
@@ -47,6 +47,8 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
   const [analysis, setAnalysis] = useState<FolderAnalysisResult | null>(null);
   const [isAutoWatch, setIsAutoWatch] = useState<boolean>(true);
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
+  const [isExportingBundle, setIsExportingBundle] = useState<boolean>(false);
+  const [exportedBundle, setExportedBundle] = useState<boolean>(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
   const watchIntervalRef = useRef<any>(null);
@@ -126,26 +128,46 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
     };
   }, [isAutoWatch, directoryHandle, folderName]);
 
-  // Export JSON Bundle for DEV
-  const handleExportBundle = () => {
-    if (!analysis) return;
+  // Export JSON Bundle for DEV (supports both Tauri native desktop .exe and web browser)
+  const handleExportBundle = async () => {
+    if (!analysis || isExportingBundle) return;
+    setIsExportingBundle(true);
     try {
       const jsonStr = exportWorkspaceProfileBundleJson(analysis, folderPath);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const safeName = (folderName || 'folder').replace(/[^a-zA-Z0-9_-]/g, '_');
-      a.href = url;
-      a.download = `${safeName}-profile-${timestamp}.vampio.profile.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      notify('Exported Developer Profile Bundle (.vampio.profile.json)');
+      const filename = `${safeName}-profile-${timestamp}.vampio.profile.json`;
+
+      const result = await saveFileToDiskOrDownload(
+        filename,
+        jsonStr,
+        'application/json',
+        {
+          title: 'Export Developer Profile Bundle',
+          defaultDir: folderPath || undefined,
+          filters: [
+            {
+              name: 'Vampio Profile (*.vampio.profile.json, *.json)',
+              extensions: ['json'],
+            },
+          ],
+        }
+      );
+
+      if (result.success) {
+        setExportedBundle(true);
+        setTimeout(() => setExportedBundle(false), 3000);
+        if (result.path) {
+          notify(`Saved Profile Bundle: ${result.path.split(/[\\/]/).pop() || result.path}`);
+        } else {
+          notify('Exported Developer Profile Bundle (.vampio.profile.json)');
+        }
+      }
     } catch (err: any) {
       console.error('Export error:', err);
-      notify('Failed to export profile bundle');
+      notify(`Export note: ${err?.message || 'Could not export profile'}`);
+    } finally {
+      setIsExportingBundle(false);
     }
   };
 
@@ -509,10 +531,24 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 <button
                   type="button"
                   onClick={handleExportBundle}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-md shadow-emerald-500/20"
+                  disabled={isExportingBundle}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-md shadow-emerald-500/20 disabled:opacity-60 disabled:cursor-not-allowed select-none"
+                  title="Export offline behavior profile bundle (.vampio.profile.json) for Developer Studio"
                 >
-                  <Download size={15} />
-                  <span>{t('operator.exportProfileBundle')}</span>
+                  {isExportingBundle ? (
+                    <RefreshCw size={15} className="animate-spin" />
+                  ) : exportedBundle ? (
+                    <Check size={15} className="text-white" />
+                  ) : (
+                    <Download size={15} />
+                  )}
+                  <span>
+                    {isExportingBundle
+                      ? 'Saving...'
+                      : exportedBundle
+                      ? 'Saved!'
+                      : t('operator.exportProfileBundle')}
+                  </span>
                 </button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 import { ColumnSpec, ExportFormat } from '../types';
 import { isTauri as coreIsTauri } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
 import { downloadFile, createZipArchive, resolveMultiFilename, formatSingleFileUnit, toXmlTag } from './export';
 
@@ -797,3 +797,78 @@ function escapeCsv(val: unknown): string {
   }
   return str;
 }
+
+export interface SaveFileDialogOptions {
+  title?: string;
+  defaultDir?: string;
+  filters?: Array<{ name: string; extensions: string[] }>;
+}
+
+export interface SaveFileResult {
+  success: boolean;
+  path?: string;
+  downloaded?: boolean;
+  cancelled?: boolean;
+}
+
+/**
+ * Universal file saver supporting desktop Tauri native Save dialogs (.exe, macOS, Linux)
+ * and seamless fallback to browser downloads in web environments.
+ */
+export async function saveFileToDiskOrDownload(
+  filename: string,
+  content: string | Uint8Array,
+  mimeType: string = 'application/json',
+  options?: SaveFileDialogOptions
+): Promise<SaveFileResult> {
+  // 1. Native Desktop App (Tauri)
+  if (isTauri()) {
+    try {
+      let defaultPath = filename;
+      if (options?.defaultDir) {
+        const cleanDir = options.defaultDir.replace(/[\\/]+$/, '');
+        defaultPath = `${cleanDir}/${filename}`;
+      }
+
+      const ext = filename.split('.').pop() || 'json';
+      const filters = options?.filters || [
+        {
+          name: `${ext.toUpperCase()} File (*.${ext})`,
+          extensions: [ext],
+        },
+      ];
+
+      const selectedPath = await save({
+        title: options?.title || `Save ${filename}`,
+        defaultPath,
+        filters,
+      });
+
+      if (!selectedPath) {
+        // User clicked Cancel in native dialog
+        return { success: false, cancelled: true };
+      }
+
+      if (typeof content === 'string') {
+        await writeTextFile(selectedPath, content);
+      } else {
+        const u8 = content instanceof Uint8Array ? content : new Uint8Array(content);
+        await writeFile(selectedPath, u8);
+      }
+
+      return { success: true, path: selectedPath };
+    } catch (tauriErr: any) {
+      console.warn('Native desktop save dialog failed, falling back to browser download:', tauriErr);
+    }
+  }
+
+  // 2. Standard Web Browser Download
+  try {
+    downloadFile(content, filename, mimeType);
+    return { success: true, downloaded: true };
+  } catch (err: any) {
+    console.error('File download failed:', err);
+    throw err;
+  }
+}
+

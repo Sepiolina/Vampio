@@ -124,8 +124,8 @@ export const PresetSelector: React.FC<Props> = ({
             {/* Header */}
             <div className="flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-border-subtle bg-secondary">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center text-content shadow-md">
-                  <Layers size={18} />
+                <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center text-white shadow-md">
+                  <Layers size={18} style={{ color: '#ffffff' }} className="text-white" />
                 </div>
                 <div>
                   <h3 id={titleId} className="text-sm font-bold text-content">Preset Schemas & Templates</h3>
