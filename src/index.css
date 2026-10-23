@@ -135,6 +135,11 @@ html.theme-neon, body.theme-neon, .theme-neon {
 }
 
 @layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
   html, body {
     background-color: var(--bg-primary);
     color: var(--text-main);
@@ -360,4 +365,13 @@ html.theme-neon, body.theme-neon, .theme-neon {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

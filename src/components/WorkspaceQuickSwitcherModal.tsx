@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, CornerDownLeft, Plus } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { COLOR_TAGS } from '../utils/workspaceStorage';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 
 export const WorkspaceQuickSwitcherModal: React.FC = () => {
   const {
@@ -16,10 +17,13 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useModalAccessibility(isQuickSwitcherOpen, () => setIsQuickSwitcherOpen(false));
+  const listId = React.useId();
+  const titleId = React.useId();
 
   const filtered = workspaces.filter((ws) => {
     if (!query.trim()) return true;
-    const q = query.toLowerCase();
+    const q = query.trim().toLowerCase();
     return (
       ws.name.toLowerCase().includes(q) ||
       ws.tableName.toLowerCase().includes(q) ||
@@ -32,22 +36,14 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
     if (isQuickSwitcherOpen) {
       setQuery('');
       setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isQuickSwitcherOpen]);
 
-  // Global Escape key press
+  // Keep the keyboard-selected result visible in long workspace lists.
   useEffect(() => {
     if (!isQuickSwitcherOpen) return;
-    const handleWindowKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setIsQuickSwitcherOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, [isQuickSwitcherOpen, setIsQuickSwitcherOpen]);
+    document.getElementById(`${listId}-${selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
+  }, [isQuickSwitcherOpen, selectedIndex, listId]);
 
   // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -56,7 +52,7 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
       setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, filtered.length - 1)));
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (filtered[selectedIndex]) {
@@ -81,21 +77,34 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20 sm:pt-28 px-4 bg-black/80 backdrop-blur-md select-none"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-4 sm:pt-28 px-4 pb-4 bg-black/80 backdrop-blur-md select-none"
       onClick={(e) => {
         if (e.target === e.currentTarget) setIsQuickSwitcherOpen(false);
       }}
     >
       <div 
-        className="w-full max-w-lg bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-        onKeyDown={handleKeyDown}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="w-full max-w-lg max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-8rem)] flex flex-col bg-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
       >
+        <h2 id={titleId} className="sr-only">Switch workspace</h2>
         {/* Search Input Bar */}
-        <div className="relative flex items-center px-4 py-3.5 border-b border-border-subtle bg-primary/40">
+        <div className="relative shrink-0 flex items-center px-4 py-3.5 border-b border-border-subtle bg-primary/40">
           <Search size={16} className="text-content-muted mr-3 shrink-0" />
           <input
             ref={inputRef}
+            data-autofocus
             type="text"
+            role="combobox"
+            aria-label="Search or create a workspace"
+            aria-controls={listId}
+            aria-expanded="true"
+            aria-autocomplete="list"
+            aria-activedescendant={filtered[selectedIndex] ? `${listId}-${selectedIndex}` : undefined}
+            onKeyDown={handleKeyDown}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -110,7 +119,8 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
         </div>
 
         {/* Results List */}
-        <div className="max-h-72 overflow-y-auto p-2 space-y-1 bg-secondary">
+        <div className="min-h-0 overflow-y-auto p-2 space-y-1 bg-secondary">
+          <div id={listId} role="listbox" aria-label="Workspaces" className="max-h-72 overflow-y-auto space-y-1">
           {filtered.map((ws, idx) => {
             const isSelected = idx === selectedIndex;
             const isActive = ws.id === activeWorkspaceId;
@@ -118,6 +128,9 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
             return (
               <div
                 key={ws.id}
+                id={`${listId}-${idx}`}
+                role="option"
+                aria-selected={isSelected}
                 onClick={() => {
                   switchWorkspace(ws.id);
                   setIsQuickSwitcherOpen(false);
@@ -157,6 +170,7 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
               </div>
             );
           })}
+          </div>
 
           {filtered.length === 0 && (
             <div className="px-4 py-8 text-center text-xs text-content-muted">
@@ -177,7 +191,7 @@ export const WorkspaceQuickSwitcherModal: React.FC = () => {
         </div>
 
         {/* Footer shortcuts */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border-subtle bg-primary/40 text-[10px] font-mono text-content-muted">
+        <div className="flex shrink-0 flex-wrap gap-2 items-center justify-between px-4 py-2.5 border-t border-border-subtle bg-primary/40 text-[10px] font-mono text-content-muted">
           <div className="flex items-center gap-3">
             <span>↑↓ to navigate</span>
             <span>↵ to select</span>
