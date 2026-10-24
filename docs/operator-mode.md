@@ -1,40 +1,33 @@
 # Operator Mode
 
-Operator Mode is a deliberately small interface for technicians and field engineers. Instead of designing schemas, you point Vampio at a folder of files and get a profile of how those files behave, which you can hand to a developer.
+Operator Mode inspects a local folder and creates a reusable simulation profile for a developer. Choose it on first launch or through **Others → Switch to Operator Mode**. The same monitor is available in Developer Studio through **Others → Target Folder Behavior Monitor**.
 
-![Operator mode](./screenshots/operator-mode.png)
+## Inspect a folder
 
-Choose it on first launch, or switch via **Switch to Operator Mode** in the `Others` menu. **Switch to Developer Studio** returns to the full app.
+1. Select a folder to monitor. A folder picker that supports live handles can be rescanned; a file-list fallback is a snapshot and requires selecting the folder again to refresh it.
+2. Review recommendations, source files, encoding evidence, per-file formats, extracted fields and events. Live directory monitoring starts automatically; pause it when repeated reads are unnecessary. Uploads remain snapshots.
+3. In a mixed folder, expand a file profile and choose **Use for simulation** to select its schema. The inventory and Markdown report still cover every discovered file.
+4. Review the simulation rules and export the artifact you need.
+5. In Developer Studio, import the profile bundle to restore the suggested workspace, then review the destination and generate a small test batch before starting continuous output.
 
-## Workflow
+Analysis stays on your device. Content inspection is sampled, with explicit byte and file limits. An incomplete sample can omit later fields and cut off a final record. An unreadable or skipped file has no reliable content profile. Folder modification times support a cadence estimate; repeated scans provide evidence of actual growth, additions, removals and truncation. A successful read does not prove the absence of an OS lock, and a read error may mean denied permissions rather than a lock.
 
-1. Click **Select Folder to Monitor** and choose a production directory, a PLC log repository, or any local folder.
-2. Vampio reads the files locally and analyses them. Results are grouped in four tabs: **Recommendations**, **Metrics**, **Schema** and **Events**.
-3. Click **Export Profile Bundle (.JSON)**.
-4. A developer opens **Others → Import Machine Profile Bundle** in Developer Studio to load the bundle and auto-configure a matching workspace.
+## Choose an export
 
-The same monitor is available inside Developer Studio as **Others → Target Folder Behavior Monitor**.
+| Export | Use | Import |
+| --- | --- | --- |
+| Profile bundle (`.json`) | Main reusable profile: schema, source findings and recommended simulation settings | **Others → Import Machine Profile Bundle** in Developer Studio |
+| Simulation template (`-simulation.json`) | Reuse the inferred columns and generator rules in another workspace | Schema/preset selector's schema import |
+| Inspection report (`.md`) | Share readable documentation of the files inspected, evidence, rules, settings and limitations | Read as Markdown; this is documentation, not an import format |
 
-## What is detected
+Raw snippets and sample rows are omitted by default. The sample inclusion control explicitly adds these production values to supported exports. Filenames, paths, column names, inferred enums/constants and numeric ranges can still reveal source information even with samples disabled. Review every artifact before sharing it.
 
-- Character **encoding** (for example UTF-8 and TIS-620) and likely languages
-- Field **delimiter**
-- **File locks**
-- Aggregate metrics (file count, total size)
-- A suggested column template, output format, filename pattern, write interval and rows per file
+## What the findings mean
 
-Nothing is uploaded; analysis happens on your device.
+Encoding and language labels are heuristic findings with confidence and evidence. BOMs and valid byte sequences provide stronger evidence than already-decoded text; some legacy encodings remain ambiguous. Per-file profiles help identify mixed folders instead of assuming every file matches the selected schema sample.
 
-## Profile bundle format
+JSONL and delimited files yield structured fields where recognized. Apache-style, timestamp/level, key-value and generic text logs may yield useful field approximations. Binary or unrecognized input may have no extractable schema. The suggested template may use a fallback when extraction cannot find fields; check its stated reason and confidence.
 
-The exported JSON contains:
+Simulation generates new values using the extracted rules. It does not replay exact original records, relationships, timing, legacy encoding, BOMs or arbitrary raw log layouts. Output uses UTF-8 and each selected format's serializer. Custom delimiters and exact text log layouts need a custom serializer. Template-only imports load columns and table name; their metadata documents suggested settings but does not apply them. The profile bundle is the main route for restoring simulation settings; review the destination before writing files.
 
-| Key | Contents |
-| :--- | :--- |
-| `version`, `generatedAt`, `generator` | Bundle metadata |
-| `source` | Platform (`web` or `tauri`), folder name and path, file count, total size |
-| `metrics`, `forensics` | Folder statistics and encoding/delimiter/lock findings |
-| `samplePreview` | A sample file name, raw snippet, inferred headers, and up to 5 sample rows |
-| `vampioWorkspace` | Suggested `columns`, `tableName`, `outputStrategy`, `format`, `filenamePattern`, `intervalMs`, `rowsPerFile`, `targetFile` |
-
-> The bundle includes a raw snippet and sample rows from your files. Review it before sharing if the data is sensitive.
+Profile imports restore the row count, interval, execution mode, filename pattern and selected schema. They start with a new browser download named for the simulation. Source directories are kept separate from output destinations, and source append suggestions become fresh output until you explicitly configure an append target.

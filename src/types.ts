@@ -211,6 +211,7 @@ export interface WorkspaceSession {
   format: ExportFormat;
   count: number;
   intervalMs: number;
+  generationMode?: 'Batch' | 'Continuous';
   outputDestination: OutputDestination;
   outputStrategy: OutputStrategy;
   multiFileConfig: MultiFileConfig;

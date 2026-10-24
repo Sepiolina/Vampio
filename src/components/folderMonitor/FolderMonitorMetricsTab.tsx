@@ -65,6 +65,14 @@ export const FolderMonitorMetricsTab: React.FC<FolderMonitorMetricsTabProps> = (
         </div>
       )}
 
+      {analysis && (
+        <section aria-label="Read access and lock evidence" className="p-3 rounded-xl bg-secondary border border-border-subtle space-y-1 text-xs">
+          <h3 className="font-bold text-content">Read access and lock evidence</h3>
+          <p className="text-content-muted break-words">{analysis.forensics.lockDetails || 'No lock evidence observed in sampled reads.'}</p>
+          <p className="text-content-muted">Successful reads do not prove the absence of an exclusive OS lock or confirm write access. File cadence and size alone do not establish an active writer.</p>
+        </section>
+      )}
+
       {/* Discovered Files Table */}
       <div className="border border-border-subtle rounded-xl overflow-hidden bg-secondary/50">
         <div className="px-4 py-2 bg-secondary border-b border-border-subtle flex items-center justify-between">
@@ -73,7 +81,7 @@ export const FolderMonitorMetricsTab: React.FC<FolderMonitorMetricsTabProps> = (
           </span>
           {discoveredFiles.length > 0 && (
             <span className="text-[10px] text-content-muted font-mono">
-              Click row to inspect content preview
+              Select a file to inspect its sample
             </span>
           )}
         </div>
@@ -85,10 +93,12 @@ export const FolderMonitorMetricsTab: React.FC<FolderMonitorMetricsTabProps> = (
             </div>
           ) : (
             discoveredFiles.map((file, idx) => (
-              <div
+              <button
+                type="button"
+                aria-pressed={selectedFileForPreview?.name === file.name}
                 key={`${file.name}-${idx}`}
                 onClick={() => onSelectFileForPreview(file)}
-                className={`px-4 py-2 flex items-center justify-between text-xs cursor-pointer transition ${
+                className={`w-full text-left px-4 py-2 flex gap-3 items-center justify-between text-xs cursor-pointer transition ${
                   selectedFileForPreview?.name === file.name
                     ? 'bg-accent/15 text-accent font-semibold'
                     : 'hover:bg-tertiary text-content'
@@ -96,17 +106,21 @@ export const FolderMonitorMetricsTab: React.FC<FolderMonitorMetricsTabProps> = (
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <FileText size={13} className="text-content-muted flex-shrink-0" />
-                  <span className="font-mono truncate">{file.name}</span>
+                  <span className="font-mono truncate" title={file.name}>{file.name}</span>
                 </div>
                 <div className="flex items-center gap-3 font-mono text-[11px] text-content-muted flex-shrink-0">
                   <span>{formatFileSize(file.size)}</span>
                   <span>{new Date(file.lastModified).toLocaleTimeString()}</span>
                 </div>
-              </div>
+              </button>
             ))
           )}
         </div>
       </div>
+
+      {selectedFileForPreview && analysis?.fileProfiles?.find(profile => profile.name === selectedFileForPreview.name)?.readError && (
+        <p role="alert" className="text-xs text-rose-400 break-words">{analysis.fileProfiles.find(profile => profile.name === selectedFileForPreview.name)?.readError}</p>
+      )}
 
       {/* Selected File Sample View */}
       {selectedFileForPreview && selectedFileForPreview.sampleContent && (
@@ -116,7 +130,7 @@ export const FolderMonitorMetricsTab: React.FC<FolderMonitorMetricsTabProps> = (
               Snippet: {selectedFileForPreview.name}
             </span>
             <span className="text-[10px] text-content-muted font-mono">
-              First 64 KB
+              First 1,000 decoded characters
             </span>
           </div>
           <pre className="p-2.5 rounded-lg bg-secondary text-[11px] font-mono text-content-muted overflow-x-auto max-h-36 select-text whitespace-pre-wrap">

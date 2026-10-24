@@ -16,6 +16,7 @@ import {
   ActionStats
 } from './types';
 import { GeneratorEngine } from './utils/generator';
+import { workspaceSettingsFromProfile } from './utils/workspaceProfile';
 import { 
   formatDataset, 
   downloadFile, 
@@ -379,6 +380,7 @@ export default function App() {
       setFormat(activeWorkspace.format || 'csv');
       setCount(activeWorkspace.count || 1000);
       setIntervalMs(activeWorkspace.intervalMs || 150);
+      setMode(activeWorkspace.generationMode || 'Batch');
       setOutputDestination(activeWorkspace.outputDestination || 'download');
       setOutputStrategy(activeWorkspace.outputStrategy || 'single');
       if (activeWorkspace.multiFileConfig) {
@@ -407,6 +409,7 @@ export default function App() {
       format,
       count,
       intervalMs,
+      generationMode: mode,
       outputDestination,
       outputStrategy,
       multiFileConfig,
@@ -420,6 +423,7 @@ export default function App() {
     format,
     count,
     intervalMs,
+    mode,
     outputDestination,
     outputStrategy,
     multiFileConfig,
@@ -443,29 +447,22 @@ export default function App() {
   } | null>(null);
 
   const handleApplyProfileBundle = (bundle: VampioWorkspaceProfileBundle) => {
-    if (bundle.vampioWorkspace.columns && bundle.vampioWorkspace.columns.length > 0) {
-      setColumns(bundle.vampioWorkspace.columns);
-    }
-    if (bundle.vampioWorkspace.tableName) {
-      setTableName(bundle.vampioWorkspace.tableName);
-    }
-    if (bundle.vampioWorkspace.format) {
-      setFormat(bundle.vampioWorkspace.format);
-    }
-    if (bundle.vampioWorkspace.outputStrategy) {
-      setOutputStrategy(bundle.vampioWorkspace.outputStrategy);
-    }
-    if (bundle.vampioWorkspace.filenamePattern) {
-      setMultiFileConfig((prev) => ({
-        ...prev,
-        enabled: bundle.vampioWorkspace.outputStrategy === 'multi_file',
-        filenamePattern: bundle.vampioWorkspace.filenamePattern,
-        rowsPerFile: bundle.vampioWorkspace.rowsPerFile || prev.rowsPerFile,
-      }));
-    }
-    if (bundle.vampioWorkspace.intervalMs) {
-      setIntervalMs(bundle.vampioWorkspace.intervalMs);
-    }
+    const settings = workspaceSettingsFromProfile(bundle);
+    setColumns(settings.columns!);
+    setTableName(settings.tableName!);
+    setFormat(settings.format!);
+    setCount(settings.count!);
+    setIntervalMs(settings.intervalMs!);
+    setMode(settings.generationMode!);
+    setFilename(settings.filename!);
+    setOutputStrategy(settings.outputStrategy!);
+    setOutputDestination('download');
+    setDirectoryHandle(null);
+    setSelectedFolderName(null);
+    setImportedContext(null);
+    setMultiFileConfig(settings.multiFileConfig!);
+    // A profile describes a schema; it must not retain a previous workspace's JSON serializer.
+    updateActiveWorkspace({ customJsonConfig: undefined });
     setProfileBannerInfo({
       folderName: bundle.source.folderName,
       platform: bundle.source.platform,
@@ -479,20 +476,7 @@ export default function App() {
   };
 
   const handleApplyAsNewWorkspace = async (bundle: VampioWorkspaceProfileBundle) => {
-    const newWs = await importAsNewWorkspace({
-      name: bundle.source.folderName || 'Imported Profile',
-      tableName: bundle.vampioWorkspace.tableName || 'imported_schema',
-      columns: bundle.vampioWorkspace.columns || [],
-      format: bundle.vampioWorkspace.format || 'csv',
-      outputStrategy: bundle.vampioWorkspace.outputStrategy,
-      multiFileConfig: bundle.vampioWorkspace.filenamePattern ? {
-        enabled: bundle.vampioWorkspace.outputStrategy === 'multi_file',
-        filenamePattern: bundle.vampioWorkspace.filenamePattern,
-        rowsPerFile: bundle.vampioWorkspace.rowsPerFile || 1,
-        packageAsZip: true,
-      } : undefined,
-      intervalMs: bundle.vampioWorkspace.intervalMs,
-    });
+    const newWs = await importAsNewWorkspace(workspaceSettingsFromProfile(bundle));
     setProfileBannerInfo({
       folderName: bundle.source.folderName,
       platform: bundle.source.platform,
@@ -513,6 +497,8 @@ export default function App() {
 
   // 100% Offline Target Folder Behavior Monitor Modal
   const [isFolderMonitorOpen, setIsFolderMonitorOpen] = useState(false);
+  const [monitorDirectoryHandle, setMonitorDirectoryHandle] = useState<any>(null);
+  const [monitorFolderName, setMonitorFolderName] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
 
   // REST API Retrieval & Enrichment Modal
@@ -1651,10 +1637,12 @@ export default function App() {
     generationMode: 'Batch' | 'Continuous';
     importedContext?: ImportedFileContext;
   }) => {
-    setOutputDestination('folder');
-    setOutputStrategy(recs.strategy);
+    setOutputDestination('download');
+    setImportedContext(null);
+    updateActiveWorkspace({ customJsonConfig: undefined });
+    setOutputStrategy(recs.strategy === 'append_existing' ? 'single' : recs.strategy);
     setFormat(recs.format);
-    if (recs.filename) setFilename(recs.filename);
+    if (recs.filename) setFilename(`${recs.filename}_simulation`);
     if (recs.tableName) setTableName(recs.tableName);
     if (recs.batchCount) setCount(recs.batchCount);
     if (recs.intervalMs) setIntervalMs(recs.intervalMs);
@@ -1664,7 +1652,7 @@ export default function App() {
       setMultiFileConfig((prev) => ({
         ...prev,
         enabled: true,
-        pattern: recs.filenamePattern!,
+        filenamePattern: recs.filenamePattern!,
         rowsPerFile: recs.rowsPerFile || 1000,
         startIndex: 1,
       }));
@@ -1706,7 +1694,7 @@ export default function App() {
     }
 
     setStatusMessage(
-      `Applied recommended ${recs.strategy} mode & ${recs.tableName || 'schema'} template for locked folder "${selectedFolderName || 'target'}".`
+      `Simulation configured from ${monitorFolderName || 'the inspected source'}. Output is a new download; choose an output folder separately if needed.`
     );
   };
 
@@ -2343,13 +2331,11 @@ export default function App() {
         <FolderMonitorModal
           isOpen={isFolderMonitorOpen}
           onClose={() => setIsFolderMonitorOpen(false)}
-          currentDirectoryHandle={directoryHandle}
-          currentFolderName={selectedFolderName}
+          currentDirectoryHandle={monitorDirectoryHandle || directoryHandle}
+          currentFolderName={monitorFolderName || selectedFolderName}
           onSelectLockedFolder={(handle, name) => {
-            setDirectoryHandle(handle);
-            setSelectedFolderName(name);
-            addRecentFolder(name);
-            setOutputDestination('folder');
+            setMonitorDirectoryHandle(handle);
+            setMonitorFolderName(name);
           }}
           onApplyRecommendations={handleApplyFolderRecommendations}
           currentStrategy={outputStrategy}
