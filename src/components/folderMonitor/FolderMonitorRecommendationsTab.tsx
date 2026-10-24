@@ -156,7 +156,7 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
 
           <div className="pt-2 border-t border-border-subtle/70 flex items-center justify-between text-[11px]">
             <span className="text-content-muted">Target Destination:</span>
-            <span className="font-mono text-content font-semibold">📁 Direct to Locked Folder</span>
+            <span className="font-mono text-content font-semibold">📁 Output to Selected Folder</span>
           </div>
         </div>
 
@@ -213,6 +213,8 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
         </div>
       </div>
 
+      {!analysis.extractedColumns.length && <p className="text-xs text-content-muted">No fields were inferred, so simulation recommendations cannot be applied. Review file profiles and export Markdown for the inventory and read findings.</p>}
+
       {/* Primary One-Click Action Deck */}
       <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -222,7 +224,7 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
               One-Click Apply Recommendations
             </h4>
             <p className="text-xs text-content-muted mt-0.5">
-              Locks this folder, applies the suggested {analysis.suggestedMode.outputStrategy} strategy, and loads the {analysis.suggestedTemplate.presetName} schema.
+              Selects this folder for output, applies the suggested {analysis.suggestedMode.outputStrategy} strategy, and loads the {analysis.suggestedTemplate.presetName} schema.
             </p>
           </div>
 
@@ -230,7 +232,8 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
             <button
               type="button"
               onClick={onApplyAll}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-md hover:shadow-lg transition cursor-pointer"
+              disabled={!analysis.extractedColumns.length || isLoading}
+              className="disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-md hover:shadow-lg transition cursor-pointer"
             >
               {hasApplied ? <Check size={15} /> : <Zap size={15} />}
               <span>{hasApplied ? 'Applied Successfully!' : 'Apply Mode & Template'}</span>
@@ -240,18 +243,20 @@ export const FolderMonitorRecommendationsTab: React.FC<FolderMonitorRecommendati
 
         <div className="pt-2 border-t border-accent/20 flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-content-muted text-[11px]">Need granular control?</span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onApplyModeOnly}
-              className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
+              disabled={!analysis.extractedColumns.length || isLoading}
+              className="disabled:opacity-50 disabled:cursor-not-allowed px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
             >
               Apply Mode Only (Keep Columns)
             </button>
             <button
               type="button"
               onClick={onApplyTemplateOnly}
-              className="px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
+              disabled={!analysis.extractedColumns.length || isLoading}
+              className="disabled:opacity-50 disabled:cursor-not-allowed px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-[11px] font-medium text-content transition cursor-pointer"
             >
               Apply Template Only
             </button>

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import { 
   Upload, 
   X, 
@@ -18,8 +19,8 @@ import {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onApplyBundle: (bundle: VampioWorkspaceProfileBundle) => void;
-  onApplyAsNewWorkspace?: (bundle: VampioWorkspaceProfileBundle) => void;
+  onApplyBundle: (bundle: VampioWorkspaceProfileBundle) => void | Promise<void>;
+  onApplyAsNewWorkspace?: (bundle: VampioWorkspaceProfileBundle) => void | Promise<void>;
 }
 
 export const WorkspaceBundleImportModal: React.FC<Props> = ({
@@ -32,19 +33,17 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
   const [bundle, setBundle] = useState<VampioWorkspaceProfileBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useModalAccessibility(isOpen, onClose);
+  const titleId = React.useId();
+  const [isApplying, setIsApplying] = useState(false);
 
-  // Close on Escape key press
   useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
+    if (isOpen) {
+      setBundle(null);
+      setError(null);
+      setDragActive(false);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -59,15 +58,26 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
     setBundle(parsedBundle);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const readProfile = (file: File) => {
+    setBundle(null);
+    setError(null);
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Profile exceeds the 10 MiB import limit.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
       handleProcessText(content);
     };
+    reader.onerror = () => setError('Could not read this profile. Try selecting the file again.');
     reader.readAsText(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) readProfile(file);
+    e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -75,18 +85,20 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
     setDragActive(false);
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      handleProcessText(content);
-    };
-    reader.readAsText(file);
+    readProfile(file);
   };
 
-  const handleApply = () => {
-    if (!bundle) return;
-    onApplyBundle(bundle);
-    onClose();
+  const handleApply = async (asNew = false) => {
+    if (!bundle || isApplying) return;
+    setIsApplying(true);
+    try {
+      await (asNew ? onApplyAsNewWorkspace?.(bundle) : onApplyBundle(bundle));
+      onClose();
+    } catch (error) {
+      setError(`Could not open the simulation: ${error instanceof Error ? error.message : 'Please try again.'}`);
+    } finally {
+      setIsApplying(false);
+    }
   };
 
   return (
@@ -98,11 +110,16 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
         }}
       >
         <motion.div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.2 }}
-          className="bg-secondary border border-border-subtle w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+          className="bg-secondary border border-border-subtle w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]"
         >
           {/* Header */}
           <div className="p-5 border-b border-border-subtle bg-primary/40 flex items-center justify-between">
@@ -111,7 +128,7 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
                 <FileCode size={20} />
               </div>
               <div>
-                <h2 className="text-base font-bold text-content">Import Behavior Profile Bundle</h2>
+                <h2 id={titleId} className="text-base font-bold text-content">Import Behavior Profile Bundle</h2>
                 <p className="text-xs text-content-muted">
                   Load a `.vampio.profile.json` exported by field technicians or folder monitors
                 </p>
@@ -119,6 +136,7 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
             </div>
             <button
               type="button"
+              aria-label="Close profile import"
               onClick={onClose}
               className="p-1.5 text-content-muted hover:text-content hover:bg-tertiary rounded-lg transition cursor-pointer"
             >
@@ -139,6 +157,15 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
             {/* Dropzone */}
             {!bundle ? (
               <div
+                role="button"
+                tabIndex={0}
+                aria-label="Choose a workspace profile JSON file"
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
                 onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                 onDragLeave={() => setDragActive(false)}
                 onDrop={handleDrop}
@@ -191,12 +218,12 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
                 {/* Forensic Snapshot */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div className="p-3 rounded-lg bg-primary border border-border-subtle font-mono">
-                    <div className="text-[10px] text-content-muted uppercase">Format</div>
-                    <div className="font-bold text-content mt-0.5">{bundle.forensics.dominantExtension}</div>
+                    <div className="text-[10px] text-content-muted uppercase">Simulation format</div>
+                    <div className="font-bold text-content mt-0.5 uppercase">{bundle.vampioWorkspace.format}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-primary border border-border-subtle font-mono">
                     <div className="text-[10px] text-content-muted uppercase">Delimiter</div>
-                    <div className="font-bold text-content mt-0.5">{bundle.forensics.delimiterName || 'N/A'}</div>
+                    <div className="font-bold text-content mt-0.5 truncate" title={bundle.forensics.delimiterName || 'No field delimiter'}>{bundle.forensics.delimiterName || 'None'}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-primary border border-border-subtle font-mono">
                     <div className="text-[10px] text-content-muted uppercase">Encoding</div>
@@ -208,9 +235,9 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
                     <div className="text-[10px] text-content-muted uppercase">Lock State</div>
                     <div className="font-bold mt-0.5 truncate">
                       {bundle.forensics.fileLockStatus === 'no_lock_detected' ? (
-                        <span className="text-emerald-400">Clean</span>
+                        <span className="text-content-muted" title="No lock evidence; OS locking and write access were not verified">Unverified</span>
                       ) : (
-                        <span className="text-amber-400">Active Write</span>
+                        <span className="text-amber-400">Read issue observed</span>
                       )}
                     </div>
                   </div>
@@ -249,12 +276,13 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
                   <span>Naming: <strong className="text-accent font-mono">{bundle.vampioWorkspace.filenamePattern}</strong></span>
                   <span>Interval: <strong className="text-content font-mono">{bundle.vampioWorkspace.intervalMs}ms</strong></span>
                 </div>
+                <p className="text-xs text-content-muted">Simulation starts as a new download. Original log files and directories are not selected as output. Generated text uses UTF-8 and normalized output formatting.</p>
               </div>
             )}
 
             {/* Error Message */}
             {error && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+              <div role="alert" className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
                 <AlertCircle size={15} className="shrink-0" />
                 <span>{error}</span>
               </div>
@@ -271,16 +299,12 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
               Cancel
             </button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {onApplyAsNewWorkspace && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!bundle) return;
-                    onApplyAsNewWorkspace(bundle);
-                    onClose();
-                  }}
-                  disabled={!bundle}
+                  onClick={() => void handleApply(true)}
+                  disabled={!bundle || isApplying}
                   className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border ${
                     bundle
                       ? 'bg-secondary hover:bg-card text-accent border-accent/40 shadow-xs'
@@ -294,8 +318,8 @@ export const WorkspaceBundleImportModal: React.FC<Props> = ({
 
               <button
                 type="button"
-                onClick={handleApply}
-                disabled={!bundle}
+                onClick={() => void handleApply()}
+                disabled={!bundle || isApplying}
                 className={`px-5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
                   bundle
                     ? 'bg-accent hover:bg-accent-hover text-white'

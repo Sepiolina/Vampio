@@ -1,16 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  DiscoveredFolderFile,
-  FolderAnalysisResult,
-  FolderMonitorEvent,
-  analyzeFolderFiles,
-  readFolderFromDirectoryHandle,
-  readFilesFromHtmlFileList,
-  formatFileSize,
+  DiscoveredFolderFile, FolderAnalysisResult, FolderMonitorEvent,
+  analyzeFolderFiles, readFolderFromDirectoryHandle,
 } from '../utils/folderBehaviorAnalyzer';
+import { createSerialScanner, diffFolderSnapshots, fileIdentity, monitorSourceKind, resolveSchemaSource, MonitorStatus } from '../utils/folderMonitorState';
 import { useFilePicker } from './useFilePicker';
-import { DirectorySelectionResult } from '../utils/fileSystem';
-
+import { createVirtualDirectoryHandle, DirectorySelectionResult } from '../utils/fileSystem';
 import { ColumnSpec } from '../types';
 
 export interface UseFolderMonitorProps {
@@ -19,211 +14,168 @@ export interface UseFolderMonitorProps {
   initialFolderName: string | null;
   onSelectLockedFolder: (dirHandle: any, folderName: string) => void;
   currentColumns?: ColumnSpec[];
+  pollIntervalMs?: number;
 }
 
-export function useFolderMonitor({
-  isOpen,
-  initialDirectoryHandle,
-  initialFolderName,
-  onSelectLockedFolder,
-  currentColumns,
-}: UseFolderMonitorProps) {
-  const [isLoading, setIsLoading] = useState(false);
+export function useFolderMonitor({ isOpen, initialDirectoryHandle, initialFolderName, onSelectLockedFolder, currentColumns, pollIntervalMs = 3000 }: UseFolderMonitorProps) {
   const [folderHandle, setFolderHandle] = useState<any | null>(initialDirectoryHandle);
-  const [folderName, setFolderName] = useState<string>(initialFolderName || '');
+  const [folderName, setFolderName] = useState(initialFolderName || initialDirectoryHandle?.name || '');
   const [discoveredFiles, setDiscoveredFiles] = useState<DiscoveredFolderFile[]>([]);
   const [analysis, setAnalysis] = useState<FolderAnalysisResult | null>(null);
+  const [preferredSampleName, setPreferredSampleName] = useState<string | null>(null);
+  const preferredSampleRef = useRef<string | null>(null);
+  const filesRef = useRef<DiscoveredFolderFile[]>([]);
   const [isLiveMonitoring, setIsLiveMonitoring] = useState(true);
   const [events, setEvents] = useState<FolderMonitorEvent[]>([]);
   const [selectedFileForPreview, setSelectedFileForPreview] = useState<DiscoveredFolderFile | null>(null);
-
-  const monitoringTimerRef = useRef<any>(null);
-
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastScanAt, setLastScanAt] = useState<number | null>(null);
+  const [hasScanned, setHasScanned] = useState(false);
+  const sourceKind = monitorSourceKind(folderHandle);
+  const canPoll = sourceKind === 'directory';
+  const columnsRef = useRef(currentColumns);
+  columnsRef.current = currentColumns;
+  const serialize = useRef(createSerialScanner());
+  const scopeRef = useRef<{ cancelled: boolean; scan: () => Promise<void> } | null>(null);
+  const liveRef = useRef(isLiveMonitoring);
+  liveRef.current = isLiveMonitoring;
   const addEvent = useCallback((type: FolderMonitorEvent['type'], message: string, details?: string) => {
-    const newEvent: FolderMonitorEvent = {
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp: new Date().toLocaleTimeString(),
-      type,
-      message,
-      details,
-    };
-    setEvents((prev) => [newEvent, ...prev.slice(0, 49)]);
+    setEvents(prev => [{ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, timestamp: new Date().toLocaleTimeString(), type, message, details }, ...prev].slice(0, 100));
+  }, []);
+  const clearEvents = useCallback(() => setEvents([]), []);
+
+  const sourceRef = useRef({ handle: initialDirectoryHandle, name: initialFolderName || initialDirectoryHandle?.name || '' });
+  const selectSource = useCallback((handle: any, name: string) => {
+    if (sourceRef.current.handle === handle && sourceRef.current.name === name) return;
+    sourceRef.current = { handle, name };
+    preferredSampleRef.current = null;
+    setPreferredSampleName(null);
+    filesRef.current = [];
+    if (scopeRef.current) scopeRef.current.cancelled = true;
+    setFolderHandle(handle);
+    setFolderName(name);
   }, []);
 
-  const clearEvents = useCallback(() => {
+  // Parent changes include clearing the selected folder; local picker changes are retained
+  // until the parent supplies a different handle.
+  useEffect(() => {
+    selectSource(initialDirectoryHandle, initialFolderName || initialDirectoryHandle?.name || '');
+  }, [initialDirectoryHandle, initialFolderName, selectSource]);
+
+  useEffect(() => {
+    filesRef.current = [];
+    setDiscoveredFiles([]);
+    setAnalysis(null);
+    setSelectedFileForPreview(null);
     setEvents([]);
+    setError(null);
+    setLastScanAt(null);
+    setHasScanned(false);
+    setIsLoading(false);
+    if (!isOpen || !folderHandle) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let previous: DiscoveredFolderFile[] | null = null;
+    let previousError: string | null = null;
+    let pending: Promise<void> | null = null;
+    const scope = { cancelled: false, scan: (): Promise<void> => {
+      if (scope.cancelled) return Promise.resolve();
+      if (pending) return pending;
+      if (timer) clearTimeout(timer);
+      setIsLoading(true);
+      pending = (async () => {
+        try {
+          const files = await serialize.current(() => !scope.cancelled, () => readFolderFromDirectoryHandle(folderHandle));
+          if (scope.cancelled || !files) return;
+          if (previousError) addEvent('access_changed', `Directory read access restored: /${folderName}`);
+          const changes = previous === null ? [{ type: 'scan' as const, message: `${sourceKind === 'snapshot' ? 'Loaded snapshot' : 'Scanned folder'}: ${files.length} files in /${folderName}` }] : diffFolderSnapshots(previous, files);
+          changes.forEach(change => addEvent(change.type, change.message, 'details' in change ? change.details : undefined));
+          previous = files;
+          previousError = null;
+          setError(null);
+          filesRef.current = files;
+          setDiscoveredFiles(files);
+          preferredSampleRef.current = resolveSchemaSource(files, preferredSampleRef.current);
+          setPreferredSampleName(preferredSampleRef.current);
+          setAnalysis(analyzeFolderFiles(files, folderName || folderHandle.name || 'target_folder', columnsRef.current, preferredSampleRef.current || undefined));
+          setSelectedFileForPreview(selected => files.find(file => selected && fileIdentity(file) === fileIdentity(selected)) || files[0] || null);
+          setLastScanAt(Date.now());
+          setHasScanned(true);
+        } catch (err) {
+          if (scope.cancelled) return;
+          const message = err instanceof Error ? err.message : String(err);
+          if (previousError !== message) addEvent('error', `Folder scan failed: ${message}`);
+          previousError = message;
+          setError(message);
+          setAnalysis(null);
+          filesRef.current = [];
+          setDiscoveredFiles([]);
+          setSelectedFileForPreview(null);
+          setHasScanned(false);
+        } finally {
+          pending = null;
+          if (!scope.cancelled) {
+            setIsLoading(false);
+            if (canPoll) timer = setTimeout(tick, Math.max(250, pollIntervalMs));
+          }
+        }
+      })();
+      return pending;
+    } };
+    function tick() {
+      if (scope.cancelled) return;
+      if (liveRef.current) void scope.scan();
+      else timer = setTimeout(tick, Math.max(250, pollIntervalMs));
+    }
+    scopeRef.current = scope;
+    void scope.scan();
+    return () => {
+      scope.cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (scopeRef.current === scope) scopeRef.current = null;
+    };
+  }, [folderHandle, folderName, isOpen, canPoll, sourceKind, pollIntervalMs, addEvent]);
+
+  useEffect(() => {
+    setAnalysis(previous => previous ? analyzeFolderFiles(previous.files, previous.folderName, currentColumns, preferredSampleRef.current || undefined) : null);
+  }, [currentColumns]);
+
+  const selectSchemaSource = useCallback((name: string | null) => {
+    const selected = resolveSchemaSource(filesRef.current, name);
+    preferredSampleRef.current = selected;
+    setPreferredSampleName(selected);
+    setAnalysis(previous => previous ? analyzeFolderFiles(previous.files, previous.folderName, columnsRef.current, selected || undefined) : null);
   }, []);
 
-  // Process batch of local files
-  const processFilesBatch = useCallback(async (files: File[], sourceName: string) => {
-    setIsLoading(true);
-    try {
-      const discovered = await readFilesFromHtmlFileList(files);
-      setDiscoveredFiles(discovered);
-      const result = analyzeFolderFiles(discovered, sourceName, currentColumns);
-      setAnalysis(result);
-      if (discovered.length > 0) setSelectedFileForPreview(discovered[0]);
-      addEvent('info', `Ingested ${discovered.length} real files from "/${sourceName}"`);
-      if (result.metrics.namingPattern?.detected) {
-        addEvent('pattern_matched', `Sequence pattern matched: "${result.metrics.namingPattern.pattern}"`);
-      }
-    } catch (err: any) {
-      addEvent('info', `Batch processing error: ${err.message || 'Failed reading files'}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addEvent, currentColumns]);
-
-  // Scan folder handle
+  const refresh = useCallback(async () => { await scopeRef.current?.scan(); }, []);
   const scanFolderHandle = useCallback(async (handle: any, name: string) => {
-    setIsLoading(true);
-    addEvent('scan', `Scanning folder "${name}"...`);
-
-    try {
-      const files = await readFolderFromDirectoryHandle(handle);
-      setDiscoveredFiles(files);
-      const result = analyzeFolderFiles(files, name, currentColumns);
-      setAnalysis(result);
-      if (files.length > 0) {
-        setSelectedFileForPreview(files[0]);
-      }
-
-      addEvent(
-        'info',
-        `Discovered ${files.length} files (${formatFileSize(result.metrics.totalSizeBytes)}) in /${name}`
-      );
-      if (result.metrics.namingPattern?.detected) {
-        addEvent(
-          'pattern_matched',
-          `Sequence pattern matched: "${result.metrics.namingPattern.pattern}"`
-        );
-      }
-      if (result.metrics.temporalCadence === 'high_frequency_stream') {
-        addEvent(
-          'cadence_detected',
-          `Detected rapid ingestion cadence (~${result.metrics.avgTimeDeltaSeconds}s delta between files)`
-        );
-      }
-    } catch (err: any) {
-      addEvent('info', `Scan note: ${err.message || 'Error inspecting folder'}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addEvent]);
-
-  // Unified File Picker integration
+    if (handle === folderHandle) await refresh();
+    else selectSource(handle, name);
+  }, [folderHandle, refresh, selectSource]);
+  const processFilesBatch = useCallback(async (files: File[], name: string) => {
+    const handle = createVirtualDirectoryHandle(name, undefined, files);
+    selectSource(handle, name);
+    onSelectLockedFolder(handle, name);
+  }, [selectSource, onSelectLockedFolder]);
   const filePicker = useFilePicker({
     onFolderSelect: async (result: DirectorySelectionResult) => {
-      setFolderHandle(result.handle);
-      setFolderName(result.name);
-      onSelectLockedFolder(result.handle, result.name);
-      addEvent('scan', `Locked onto directory: /${result.name}`);
-      if (result.files && result.files.length > 0) {
-        await processFilesBatch(result.files, result.name);
-      } else {
-        await scanFolderHandle(result.handle, result.name);
-      }
+      const handle = result.isVirtual ? createVirtualDirectoryHandle(result.name, result.path, result.files) : result.handle;
+      selectSource(handle, result.name);
+      onSelectLockedFolder(handle, result.name);
     },
-    onFilesSelect: async (files: File[]) => {
-      if (!files || files.length === 0) return;
-      const derivedName = 'selected_files';
-      setFolderName(derivedName);
-      const virtualHandle = { name: derivedName, kind: 'virtual-dir' };
-      setFolderHandle(virtualHandle);
-      onSelectLockedFolder(virtualHandle, derivedName);
-      await processFilesBatch(files, derivedName);
-    },
+    onFilesSelect: files => processFilesBatch(files, 'selected_files'),
   });
-
   const handlePickDirectory = useCallback(async () => {
-    try {
-      await filePicker.selectFolder();
-    } catch (err: any) {
-      addEvent('info', `Folder selection note: ${err?.message || 'Cancelled'}`);
-    }
+    try { await filePicker.selectFolder(); }
+    catch (err) { addEvent('error', `Folder selection failed: ${err instanceof Error ? err.message : String(err)}`); }
   }, [filePicker, addEvent]);
-
-  // Sync if parent folder changes while open
-  useEffect(() => {
-    if (initialDirectoryHandle && !folderHandle) {
-      setFolderHandle(initialDirectoryHandle);
-      setFolderName(initialFolderName || initialDirectoryHandle.name || 'locked_folder');
-    }
-  }, [initialDirectoryHandle, initialFolderName, folderHandle]);
-
-  // Initial scan if folder is already linked
-  useEffect(() => {
-    if (isOpen && folderHandle && discoveredFiles.length === 0) {
-      scanFolderHandle(folderHandle, folderName || folderHandle.name || 'locked_folder');
-    }
-  }, [isOpen, folderHandle, discoveredFiles.length, folderName, scanFolderHandle]);
-
-  // Periodic poll for real folder changes
-  useEffect(() => {
-    if (!isOpen || !isLiveMonitoring || !folderHandle) {
-      if (monitoringTimerRef.current) clearInterval(monitoringTimerRef.current);
-      return;
-    }
-
-    monitoringTimerRef.current = setInterval(async () => {
-      try {
-        const freshFiles = await readFolderFromDirectoryHandle(folderHandle);
-        let hasChanges = freshFiles.length !== discoveredFiles.length;
-
-        if (!hasChanges) {
-          const prevMap = new Map<string, DiscoveredFolderFile>(discoveredFiles.map((f) => [f.name, f]));
-          for (const fresh of freshFiles) {
-            const prev = prevMap.get(fresh.name);
-            if (!prev) {
-              hasChanges = true;
-              addEvent('file_added', `New file observed: ${fresh.name}`, `${formatFileSize(fresh.size)}`);
-              break;
-            } else if (prev.size !== fresh.size || prev.lastModified !== fresh.lastModified) {
-              hasChanges = true;
-              addEvent('file_grown', `File changed: ${fresh.name}`, `${formatFileSize(fresh.size)}`);
-              break;
-            }
-          }
-        } else {
-          const delta = freshFiles.length - discoveredFiles.length;
-          if (delta > 0) {
-            addEvent('file_added', `${delta} new file(s) arrived in monitored folder`);
-          } else {
-            addEvent('file_removed', `${Math.abs(delta)} file(s) removed from monitored folder`);
-          }
-        }
-
-        if (hasChanges) {
-          setDiscoveredFiles(freshFiles);
-          const freshAnalysis = analyzeFolderFiles(freshFiles, folderName || 'target_folder', currentColumns);
-          setAnalysis(freshAnalysis);
-        }
-      } catch (pollErr: any) {
-        console.warn('Live folder poll tick note:', pollErr?.message);
-      }
-    }, 3000);
-
-    return () => {
-      if (monitoringTimerRef.current) clearInterval(monitoringTimerRef.current);
-    };
-  }, [isOpen, isLiveMonitoring, folderHandle, discoveredFiles, folderName, addEvent, currentColumns]);
-
+  const visibleError = error || filePicker.error;
+  const status: MonitorStatus = visibleError ? 'error' : !folderHandle ? 'idle' : isLoading ? 'scanning' : sourceKind === 'snapshot' ? 'snapshot' : !isOpen || !isLiveMonitoring ? 'paused' : hasScanned ? 'ready' : 'idle';
   return {
-    isLoading: isLoading || filePicker.isLoading,
-    folderHandle,
-    folderName,
-    discoveredFiles,
-    analysis,
-    isLiveMonitoring,
-    setIsLiveMonitoring,
-    events,
-    selectedFileForPreview,
-    setSelectedFileForPreview,
-    addEvent,
-    clearEvents,
-    scanFolderHandle,
-    processFilesBatch,
-    handlePickDirectory,
-    filePicker,
+    isLoading: isLoading || filePicker.isLoading, folderHandle, folderName, discoveredFiles, analysis,
+    isLiveMonitoring, setIsLiveMonitoring, events, selectedFileForPreview, setSelectedFileForPreview,
+    addEvent, clearEvents, scanFolderHandle, processFilesBatch, handlePickDirectory, filePicker,
+    sourceKind, canPoll, error: visibleError, status, lastScanAt, hasScanned, refresh,
+    preferredSampleName, selectSchemaSource,
   };
 }

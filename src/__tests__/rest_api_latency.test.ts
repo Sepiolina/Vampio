@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { 
   recordLatencyMetric, 
   getLatencyStats, 
@@ -8,6 +8,7 @@ import {
 } from '../utils/restApiManager';
 
 describe('REST API Latency Metrics & Sparkline History', () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     setCachedApiResponse('https://dummyjson.com/users?limit=20', {
       users: [{ id: 1, email: 'test@example.com' }]
@@ -51,6 +52,12 @@ describe('REST API Latency Metrics & Sparkline History', () => {
   });
 
   it('should record latency during prefetchRestApiBatch', async () => {
+    // Pool prefetch intentionally refreshes the cache: exercise it without a public network dependency.
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: [{ id: 1, email: 'test@example.com' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetch);
     const colId = 'col-prefetch-test';
     const rule = serializeRestApiConfig({
       url: 'https://dummyjson.com/users?limit=20',
@@ -60,6 +67,7 @@ describe('REST API Latency Metrics & Sparkline History', () => {
     });
 
     await prefetchRestApiBatch([{ id: colId, type: 'REST_API', rule }]);
+    expect(fetch).toHaveBeenCalledWith('https://dummyjson.com/users?limit=20', expect.objectContaining({ method: 'GET' }));
     const stats = getLatencyStats(colId, 'https://dummyjson.com/users?limit=20');
     expect(stats).not.toBeNull();
     expect(stats?.avgLatencyMs).toBeGreaterThanOrEqual(1);

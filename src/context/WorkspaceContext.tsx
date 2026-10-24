@@ -57,6 +57,8 @@ interface WorkspaceContextValue {
     format?: ExportFormat;
     count?: number;
     intervalMs?: number;
+    generationMode?: 'Batch' | 'Continuous';
+    filename?: string;
     outputStrategy?: OutputStrategy;
     multiFileConfig?: MultiFileConfig;
     appendConfig?: AppendConfig;
@@ -359,6 +361,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     format?: ExportFormat;
     count?: number;
     intervalMs?: number;
+    generationMode?: 'Batch' | 'Continuous';
+    filename?: string;
     outputStrategy?: OutputStrategy;
     multiFileConfig?: MultiFileConfig;
     appendConfig?: AppendConfig;
@@ -371,6 +375,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       format: data.format || 'csv',
       count: data.count || 1000,
       intervalMs: data.intervalMs || 150,
+      generationMode: data.generationMode || 'Batch',
+      filename: data.filename,
       outputStrategy: data.outputStrategy || 'single',
       multiFileConfig: data.multiFileConfig,
       appendConfig: data.appendConfig,

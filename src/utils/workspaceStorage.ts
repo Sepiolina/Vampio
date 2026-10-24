@@ -87,6 +87,7 @@ export function createDefaultWorkspace(custom?: Partial<WorkspaceSession>): Work
     format: custom?.format || 'csv',
     count: custom?.count || 1000,
     intervalMs: custom?.intervalMs || 150,
+    generationMode: custom?.generationMode || 'Batch',
     outputDestination: custom?.outputDestination || 'download',
     outputStrategy: custom?.outputStrategy || 'single',
     multiFileConfig: custom?.multiFileConfig || {

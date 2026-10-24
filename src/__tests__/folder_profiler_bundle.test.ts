@@ -43,7 +43,8 @@ describe('Folder Behavior Profiler & Forensic Engine', () => {
       ]);
       const res = detectEncoding(tis620Bytes);
       expect(res.encoding).toBe('TIS-620 / Windows-874');
-      expect(res.confidence).toBeGreaterThanOrEqual(90);
+      expect(res.confidence).toBeGreaterThanOrEqual(50);
+      expect(res.confidence).toBeLessThan(80); // Legacy byte ranges overlap other encodings.
     });
 
     it('should detect UTF-8 when Thai Unicode characters are present in text', () => {
@@ -138,16 +139,16 @@ describe('Folder Behavior Profiler & Forensic Engine', () => {
       const res = detectFileLock(files, 'high_frequency_stream');
       expect(res.fileLockStatus).toBe('file_in_use_error');
       expect(res.lockDetails).toContain('active_stream.log');
-      expect(res.hasContinuousAppend).toBe(true);
+      expect(res.hasContinuousAppend).toBe(false);
     });
 
-    it('should suspect active stream append when files are modified seconds ago', () => {
+    it('does not infer locks or continuous append from recent modification alone', () => {
       const files: DiscoveredFolderFile[] = [
         { name: 'live_output.csv', size: 4096, lastModified: Date.now() - 2000 }
       ];
       const res = detectFileLock(files, 'high_frequency_stream');
-      expect(res.fileLockStatus).toBe('active_lock_suspected');
-      expect(res.hasContinuousAppend).toBe(true);
+      expect(res.fileLockStatus).toBe('no_lock_detected');
+      expect(res.hasContinuousAppend).toBe(false);
     });
   });
 
@@ -171,7 +172,7 @@ describe('Folder Behavior Profiler & Forensic Engine', () => {
       const analysis = analyzeFolderFiles(mockFiles, 'production_line_4');
       expect(analysis.metrics.totalFiles).toBe(2);
       expect(analysis.forensics.delimiter).toBe('|');
-      expect(analysis.forensics.dominantExtension).toBe('.txt'); // .log maps to txt format
+      expect(analysis.forensics.dominantExtension).toBe('.log'); // Preserve observed extension separately from export format
 
       const bundle = generateWorkspaceProfileBundle(analysis, '/var/log/production_line_4');
       expect(bundle.$schema).toBe('https://vampio.dev/schema/workspace-profile-v1.json');

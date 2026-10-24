@@ -1,8 +1,12 @@
 import { ColumnSpec, ColumnType, ExportFormat, OutputStrategy, PresetSchema } from '../types';
 import { PRESET_SCHEMAS } from '../data/presets';
 import { isTauri } from './fileSystem';
-import { readDir, readFile, stat } from '@tauri-apps/plugin-fs';
+import { readDir, open, stat } from '@tauri-apps/plugin-fs';
 import * as XLSX from 'xlsx';
+import { decodeTextSample, detectNewlines } from './textDecoding';
+import { analyzeLogSample, DetectedLogFormat } from './logAnalysis';
+import { parseWorkspaceProfileBundle } from './workspaceProfile';
+import { getSimulationFormat } from './profileExports';
 
 export interface DiscoveredFolderFile {
   name: string;
@@ -13,6 +17,10 @@ export interface DiscoveredFolderFile {
   file?: File;
   sampleContent?: string;
   rawBytes?: Uint8Array;
+  readStatus?: 'sampled' | 'skipped' | 'read_error' | 'binary';
+  readError?: string;
+  sampledBytes?: number;
+  truncated?: boolean;
   isLocked?: boolean;
   lockReason?: string;
 }
@@ -44,12 +52,13 @@ export interface FileForensicsProfile {
   delimiterName?: string; // "Comma", "Tab", "Semicolon", "Pipe", "Space / Log"
   encoding: 'UTF-8' | 'UTF-8 with BOM' | 'UTF-16 LE' | 'UTF-16 BE' | 'TIS-620 / Windows-874' | 'Windows-1252 / ISO-8859-1' | 'ASCII';
   encodingConfidence: number; // 0 - 100
-  newlineType: 'CRLF (Windows)' | 'LF (Unix)' | 'CR (Legacy)' | 'Mixed';
+  newlineType: 'CRLF (Windows)' | 'LF (Unix)' | 'CR (Legacy)' | 'Mixed' | 'None' | 'Unknown';
   detectedLanguages: ('Thai' | 'English' | 'CJK' | 'Numeric/Symbols')[];
   fileLockStatus: 'no_lock_detected' | 'active_lock_suspected' | 'file_in_use_error' | 'read_only';
   lockDetails?: string;
   hasContinuousAppend: boolean;
-  sampleLogFormat?: 'apache_nginx' | 'iso_timestamp_bracketed' | 'json_stream' | 'delimited_csv' | 'generic_text';
+  sampleLogFormat?: 'apache_nginx' | 'iso_timestamp_bracketed' | 'json_stream' | 'delimited_csv' | 'generic_text' | 'key_value';
+  encodingEvidence?: string[];
 }
 
 export interface SuggestedModeConfig {
@@ -90,9 +99,26 @@ export interface SuggestedTemplateConfig {
 export interface FolderMonitorEvent {
   id: string;
   timestamp: string;
-  type: 'scan' | 'file_added' | 'file_grown' | 'pattern_matched' | 'cadence_detected' | 'info';
+  type: 'scan' | 'file_added' | 'file_grown' | 'pattern_matched' | 'cadence_detected' | 'info' | 'file_removed' | 'file_modified' | 'file_truncated' | 'access_changed' | 'file_rotated' | 'error';
   message: string;
   details?: string;
+}
+
+export interface FileAnalysisProfile {
+  name: string;
+  sourceId?: string;
+  format: DetectedLogFormat;
+  encoding: FileForensicsProfile['encoding'];
+  encodingConfidence: number;
+  encodingEvidence: string[];
+  formatEvidence: string[];
+  newlineType: FileForensicsProfile['newlineType'] | 'None';
+  sampledBytes: number;
+  truncated: boolean;
+  readStatus: NonNullable<DiscoveredFolderFile['readStatus']>;
+  readError?: string;
+  columns: ExtractedFolderColumn[];
+  sampleRows: string[][];
 }
 
 export interface FolderAnalysisResult {
@@ -107,6 +133,7 @@ export interface FolderAnalysisResult {
   extractedColumns: ExtractedFolderColumn[];
   sampleFileUsed?: string;
   sampleSnippet?: string;
+  fileProfiles?: FileAnalysisProfile[];
 }
 
 export interface VampioWorkspaceProfileBundle {
@@ -123,6 +150,8 @@ export interface VampioWorkspaceProfileBundle {
   };
   metrics: FolderBehaviorMetrics;
   forensics: FileForensicsProfile;
+  fileProfiles?: FileAnalysisProfile[];
+  samplesIncluded?: boolean;
   samplePreview: {
     filename?: string;
     rawSnippet: string;
@@ -136,6 +165,9 @@ export interface VampioWorkspaceProfileBundle {
     format: ExportFormat;
     filenamePattern: string;
     intervalMs: number;
+    batchCount?: number;
+    generationMode?: 'Batch' | 'Continuous';
+    filename?: string;
     rowsPerFile?: number;
     targetFile?: string;
   };
@@ -165,8 +197,6 @@ export async function readFolderFromDirectoryHandle(
           let lockReason = '';
           let fileSize = 0;
           let lastModified = Date.now();
-          const ext = getExtension(entry.name).toLowerCase();
-          const isStructured = ['csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'xls', 'sql', 'xml', 'log', 'txt'].includes(ext);
 
           try {
             const fileStat = await stat(filePath);
@@ -176,16 +206,14 @@ export async function readFolderFromDirectoryHandle(
             }
           } catch {}
 
-          if (discovered.length < maxFilesToReadContent || isStructured) {
+          if (discovered.length < Math.max(0, maxFilesToReadContent)) {
             try {
-              const fullBytes = await readFile(filePath);
-              if (!fileSize) fileSize = fullBytes.byteLength;
-              rawBytes = fullBytes.slice(0, sampleContentLimitBytes);
+              rawBytes = await readNativeSample(filePath, sampleContentLimitBytes);
               // Decode with TextDecoder
-              sampleContent = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
+              sampleContent = decodeTextSample(rawBytes, fileSize > rawBytes.length).text;
             } catch (readErr: any) {
-              isLocked = true;
-              lockReason = readErr?.message || 'Access denied / locked by another process';
+              isLocked = isExplicitLockError(readErr);
+              lockReason = errorMessage(readErr);
             }
           }
 
@@ -198,12 +226,16 @@ export async function readFolderFromDirectoryHandle(
             rawBytes,
             isLocked,
             lockReason: isLocked ? lockReason : undefined,
+            readError: lockReason || undefined,
+            readStatus: lockReason ? 'read_error' : rawBytes ? (decodeTextSample(rawBytes).binary ? 'binary' : 'sampled') : 'skipped',
+            sampledBytes: rawBytes?.length || 0,
+            truncated: rawBytes ? fileSize > rawBytes.length : false,
           });
         }
       }
       return discovered;
     } catch (tauriErr) {
-      console.warn('Tauri native readDir failed, falling back:', tauriErr);
+      throw tauriErr;
     }
   }
 
@@ -223,8 +255,8 @@ export async function readFolderFromDirectoryHandle(
 
   // 3. Standard Web File System Access API
   try {
-    if (typeof dirHandle.values !== 'function') {
-      return [];
+    if (!dirHandle || typeof dirHandle.values !== 'function') {
+      throw new Error('Selected directory cannot be read');
     }
     // @ts-ignore
     for await (const entry of dirHandle.values()) {
@@ -235,19 +267,17 @@ export async function readFolderFromDirectoryHandle(
           const file = await entry.getFile();
           let sampleContent = '';
           let rawBytes: Uint8Array | undefined = undefined;
-          const ext = getExtension(file.name).toLowerCase();
-          const isStructured = ['csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'xls', 'sql', 'xml', 'log', 'txt'].includes(ext);
 
           // Read content for the first few files to analyze headers/structure
-          if (discovered.length < maxFilesToReadContent || isStructured) {
+          if (discovered.length < Math.max(0, maxFilesToReadContent)) {
             try {
-              const slice = file.slice(0, sampleContentLimitBytes);
+              const slice = file.slice(0, Math.max(0, sampleContentLimitBytes));
               const buffer = await slice.arrayBuffer();
               rawBytes = new Uint8Array(buffer);
-              sampleContent = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
+              sampleContent = decodeTextSample(rawBytes, file.size > rawBytes.length).text;
             } catch (sliceErr: any) {
-              isLocked = true;
-              lockReason = sliceErr?.message || 'File locked / concurrent read error';
+              isLocked = isExplicitLockError(sliceErr);
+              lockReason = errorMessage(sliceErr);
             }
           }
 
@@ -261,22 +291,28 @@ export async function readFolderFromDirectoryHandle(
             rawBytes,
             isLocked,
             lockReason: isLocked ? lockReason : undefined,
+            readError: lockReason || undefined,
+            readStatus: lockReason ? 'read_error' : rawBytes ? (decodeTextSample(rawBytes).binary ? 'binary' : 'sampled') : 'skipped',
+            sampledBytes: rawBytes?.length || 0,
+            truncated: rawBytes ? file.size > rawBytes.length : false,
           });
         } catch (fileErr: any) {
-          console.warn('Could not inspect file entry (possibly locked):', entry.name, fileErr);
+          console.warn('Could not inspect file entry:', entry.name, fileErr);
           discovered.push({
             name: entry.name,
             size: 0,
             lastModified: Date.now(),
             handle: entry,
-            isLocked: true,
-            lockReason: fileErr?.message || 'Permission denied / locked by another process',
+            isLocked: isExplicitLockError(fileErr),
+            lockReason: isExplicitLockError(fileErr) ? errorMessage(fileErr) : undefined,
+            readStatus: 'read_error',
+            readError: errorMessage(fileErr),
           });
         }
       }
     }
   } catch (err) {
-    console.error('Failed reading directory handle entries:', err);
+    throw err;
   }
 
   return discovered;
@@ -299,18 +335,16 @@ export async function readFilesFromHtmlFileList(
     let rawBytes: Uint8Array | undefined = undefined;
     let isLocked = false;
     let lockReason = '';
-    const ext = getExtension(file.name).toLowerCase();
-    const isStructured = ['csv', 'tsv', 'json', 'jsonl', 'ndjson', 'xlsx', 'xls', 'sql', 'xml', 'log', 'txt'].includes(ext);
 
-    if (i < maxFilesToReadContent || isStructured) {
+    if (i < Math.max(0, maxFilesToReadContent)) {
       try {
-        const slice = file.slice(0, sampleContentLimitBytes);
+        const slice = file.slice(0, Math.max(0, sampleContentLimitBytes));
         const buffer = await slice.arrayBuffer();
         rawBytes = new Uint8Array(buffer);
-        sampleContent = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
+        sampleContent = decodeTextSample(rawBytes, file.size > rawBytes.length).text;
       } catch (e: any) {
-        isLocked = true;
-        lockReason = e?.message || 'Read error / file busy';
+        isLocked = isExplicitLockError(e);
+        lockReason = errorMessage(e);
         console.warn('Sample read error:', file.name, e);
       }
     }
@@ -325,6 +359,10 @@ export async function readFilesFromHtmlFileList(
       rawBytes,
       isLocked,
       lockReason: isLocked ? lockReason : undefined,
+      readError: lockReason || undefined,
+      readStatus: lockReason ? 'read_error' : rawBytes ? (decodeTextSample(rawBytes).binary ? 'binary' : 'sampled') : 'skipped',
+      sampledBytes: rawBytes?.length || 0,
+      truncated: rawBytes ? file.size > rawBytes.length : false,
     });
   }
 
@@ -339,8 +377,15 @@ export async function readFilesFromHtmlFileList(
 export function analyzeFolderFiles(
   files: DiscoveredFolderFile[],
   folderName: string = 'locked_folder',
-  existingWorkspaceColumns?: ColumnSpec[]
+  existingWorkspaceColumns?: ColumnSpec[],
+  preferredSampleName?: string
 ): FolderAnalysisResult {
+  files = files.map(file => {
+    if (!file.rawBytes) return file;
+    const decoded = decodeTextSample(file.rawBytes, file.truncated ?? file.size > file.rawBytes.length);
+    return { ...file, sampleContent: decoded.text || undefined };
+  });
+  const fileProfiles = files.map(profileFileSample);
   const totalFiles = files.length;
   let totalSizeBytes = 0;
   let minSizeBytes = Infinity;
@@ -428,6 +473,9 @@ export function analyzeFolderFiles(
   );
 
   const sortedCandidates = [...validFiles].sort((a, b) => {
+    const preferredRank = (file: DiscoveredFolderFile) => !preferredSampleName || file.readStatus === 'read_error' ? 0 : (file.relativePath || file.name) === preferredSampleName ? 2 : file.name === preferredSampleName ? 1 : 0;
+    const preference = preferredRank(b) - preferredRank(a);
+    if (preference) return preference;
     const aExt = getExtension(a.name).toLowerCase();
     const bExt = getExtension(b.name).toLowerCase();
     const aStruct = structuredExtensions.has(aExt) ? 1 : 0;
@@ -444,11 +492,11 @@ export function analyzeFolderFiles(
 
   for (const cand of sortedCandidates) {
     if (cand.sampleContent || cand.rawBytes) {
-      const cols = sniffColumnsFromContent(cand.name, cand.sampleContent || '', cand.rawBytes);
+      const cols = sniffColumnsFromContent(cand.name, completeTextForInference(cand, cand.sampleContent || ''), cand.rawBytes, cand.truncated ?? (cand.rawBytes ? cand.size > cand.rawBytes.length : false));
       if (cols.length > 0) {
         extractedColumns = cols;
         sampleCandidate = cand;
-        sampleFileUsed = cand.name;
+        sampleFileUsed = cand.relativePath || cand.name;
         break;
       }
     }
@@ -459,9 +507,13 @@ export function analyzeFolderFiles(
     sampleCandidate = validFiles.find((f) => f.sampleContent) || validFiles[0];
   }
 
-  // Fallback: If no sample content available but files exist, infer from folder context
-  if (extractedColumns.length === 0 && totalFiles > 0) {
-    extractedColumns = inferDefaultColumnsFromFolderContext(folderName, dominantFormat);
+  // Metadata alone cannot establish columns; leave extraction empty when no sample is readable.
+
+  // Record content can identify JSONL even when operational logs use a .log extension.
+  if (dominantFormat === 'txt' && sampleCandidate) {
+    const detected = fileProfiles.find(profile => (profile.sourceId || profile.name) === (sampleCandidate.relativePath || sampleCandidate.name))?.format;
+    if (detected === 'jsonl') dominantFormat = 'jsonl';
+    else if (detected === 'json') dominantFormat = 'json';
   }
 
   // 6. Suggest Set Mode & Template
@@ -499,7 +551,8 @@ export function analyzeFolderFiles(
     suggestedMode,
     suggestedTemplate,
     extractedColumns,
-    sampleFileUsed,
+    sampleFileUsed: sampleFileUsed || sampleCandidate?.relativePath || sampleCandidate?.name,
+    fileProfiles,
     sampleSnippet: sampleCandidate?.sampleContent ? sampleCandidate.sampleContent.slice(0, 1000) : undefined,
   };
 }
@@ -526,8 +579,8 @@ function deriveModeSuggestion(
 
     return {
       outputStrategy: 'multi_file',
-      strategyConfidence: namingPattern?.detected ? 96 : 88,
-      strategyReason: `Observed ${totalFiles} partitioned files with ${namingPattern?.detected ? `sequence convention "${namingPattern.sampleMatch}"` : 'uniform micro-batch sizes'}. Partitioned streaming matches the existing folder ingestion pattern.`,
+      strategyConfidence: namingPattern?.detected ? 85 : 65,
+      strategyReason: `Observed ${totalFiles} files with ${namingPattern?.detected ? `sequence convention "${namingPattern.sampleMatch}"` : 'uniform micro-batch sizes'}. Partitioned output is a suggested simulation; modification times do not prove live streaming.`,
       format: dominantFormat,
       formatReason: `Dominant file type across monitored folder is ${dominantFormat.toUpperCase()} (${metrics.formatDistribution[dominantFormat] || totalFiles} files).`,
       outputDestination: 'folder',
@@ -543,18 +596,17 @@ function deriveModeSuggestion(
   // CASE B: In-Place Append
   // Single active log or growing data file
   if (
-    (totalFiles === 1 && (dominantFormat === 'csv' || dominantFormat === 'jsonl' || dominantFormat === 'txt')) ||
-    sizeVarianceType === 'monolithic_single'
+    ['csv', 'tsv', 'jsonl', 'txt'].includes(dominantFormat) && (totalFiles === 1 || sizeVarianceType === 'monolithic_single')
   ) {
     const target = sortedFiles.reduce((prev, curr) => (curr.size > prev.size ? curr : prev), sortedFiles[0]);
     const targetName = target ? target.name : `${baseName}.${dominantFormat}`;
 
     return {
       outputStrategy: 'append_existing',
-      strategyConfidence: 92,
-      strategyReason: `Detected primary rolling target "${targetName}" (${formatFileSize(target?.size || 0)}). Recommends appending new synthetic records in-place without overwriting previous data.`,
+      strategyConfidence: 70,
+      strategyReason: `Selected primary file "${targetName}" (${formatFileSize(target?.size || 0)}). Append is a suggested simulation based on file layout; actual growth and write access are unverified.`,
       format: dominantFormat,
-      formatReason: `Target file uses standard ${dominantFormat.toUpperCase()} structure.`,
+      formatReason: `Suggested ${dominantFormat.toUpperCase()} output based on sampled content and extension.`,
       outputDestination: 'folder',
       suggestedFilename: baseName,
       suggestedTargetFile: targetName,
@@ -615,7 +667,7 @@ function deriveTemplateSuggestion(
       };
     });
 
-    const fileBase = sampleFileUsed ? sampleFileUsed.replace(/\.[^.]+$/, '') : folderName;
+    const fileBase = sampleFileUsed ? (sampleFileUsed.split(/[\\/]/).pop() || sampleFileUsed).replace(/\.[^.]+$/, '') : folderName;
     const cleanBase = cleanIdentifier(fileBase) || cleanIdentifier(folderName) || 'ingested';
 
     return {
@@ -716,12 +768,13 @@ function deriveTemplateSuggestion(
 function sniffColumnsFromContent(
   filename: string,
   content: string,
-  rawBytes?: Uint8Array
+  rawBytes?: Uint8Array,
+  truncated = false
 ): ExtractedFolderColumn[] {
   const ext = getExtension(filename).toLowerCase();
 
   // 1. Excel (.xlsx / .xls) binary parsing
-  if ((ext === 'xlsx' || ext === 'xls') && rawBytes && rawBytes.length > 0) {
+  if ((ext === 'xlsx' || ext === 'xls') && rawBytes && rawBytes.length > 0 && !truncated) {
     try {
       const wb = XLSX.read(rawBytes, { type: 'array' });
       const firstSheetName = wb.SheetNames[0];
@@ -769,6 +822,9 @@ function sniffColumnsFromContent(
     }
   }
 
+  const logSample = analyzeLogSample(content);
+  if (logSample.records.length) return extractColumnsFromObjects(logSample.records);
+  if (rawBytes && decodeTextSample(rawBytes).binary) return [];
   const cleaned = content.replace(/^\uFEFF/, '').trim();
   if (!cleaned) return [];
 
@@ -843,7 +899,9 @@ function sniffColumnsFromContent(
       rawHeaders.pop();
     }
 
-    if (rawHeaders.length >= 1) {
+    const delimited = detectDelimiter(lines);
+    const looksLikeHeader = rawHeaders.every(h => /^[\p{L}_][\p{L}\p{N}_ .()\/-]*$/u.test(h) || h === '');
+    if (['csv', 'tsv'].includes(ext) || rawHeaders.length >= 2 && delimited.delimiter && looksLikeHeader) {
       const dataRows = lines.slice(1, 10).map((l) => splitDelimitedLine(l, delimiter));
       const seenNames = new Set<string>();
 
@@ -871,7 +929,7 @@ function sniffColumnsFromContent(
     }
   }
 
-  return [];
+  return [{ name: 'message', inferredType: 'String', inferredRule: '80', sampleValues: cleaned.split(/\r\n|\n|\r/).slice(0, 3) }];
 }
 
 function extractColumnsFromObjects(objects: Record<string, any>[]): ExtractedFolderColumn[] {
@@ -902,11 +960,14 @@ function extractColumnsFromObjects(objects: Record<string, any>[]): ExtractedFol
 }
 
 function inferColumnTypeFromSamples(header: string, samples: string[]): { type: ColumnType; rule: string } {
-  const lower = header.toLowerCase();
+  const lower = header.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+  const words = new Set(lower.split(/[^a-z0-9]+/));
+  const hasWord = (...names: string[]) => names.some(name => words.has(name));
+  if (samples.length === 0) return { type: 'String', rule: '10' };
 
   // Sequence / ID
   if (lower === 'id' || lower.endsWith('_id') || lower === 'index' || lower === 'seq') {
-    if (samples.every((s) => /^\d+$/.test(s))) {
+    if (samples.length > 0 && samples.every((s) => /^\d+$/.test(s))) {
       return { type: 'Sequence', rule: samples[0] || '1001' };
     }
     if (samples.some((s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s))) {
@@ -932,7 +993,7 @@ function inferColumnTypeFromSamples(header: string, samples: string[]): { type: 
   }
 
   // IP Address
-  if (lower.includes('ip') || lower.includes('address') && samples.some((s) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s))) {
+  if (hasWord('ip', 'ipv4') || lower.includes('address') && samples.some((s) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s))) {
     return { type: 'Entity', rule: 'ip_address' };
   }
 
@@ -941,7 +1002,7 @@ function inferColumnTypeFromSamples(header: string, samples: string[]): { type: 
   if (lower.includes('city')) return { type: 'Entity', rule: 'city' };
 
   // Timestamp / Date
-  if (lower.includes('date') || lower.includes('time') || lower.includes('at') || lower.includes('timestamp')) {
+  if (hasWord('date', 'time', 'timestamp') || lower.endsWith('_at')) {
     if (samples.some((s) => s.includes('T') || s.includes('Z'))) {
       return { type: 'DateTime', rule: 'ISO' };
     }
@@ -949,42 +1010,37 @@ function inferColumnTypeFromSamples(header: string, samples: string[]): { type: 
   }
 
   // Boolean
-  if (lower.startsWith('is_') || lower.startsWith('has_') || samples.every((s) => ['true', 'false', '0', '1', 'yes', 'no'].includes(s.toLowerCase()))) {
+  if (lower.startsWith('is_') || lower.startsWith('has_') || samples.length > 0 && samples.every((s) => ['true', 'false', '0', '1', 'yes', 'no'].includes(s.toLowerCase()))) {
     return { type: 'Boolean', rule: '50' };
   }
 
   // Float / Currency / Percentage
   if (
-    lower.includes('price') ||
-    lower.includes('rate') ||
-    lower.includes('temp') ||
-    lower.includes('weight') ||
+    hasWord('price', 'rate', 'temp', 'temperature', 'weight') ||
     samples.some((s) => /^-?\d+\.\d+$/.test(s))
   ) {
     const nums = samples.map((s) => parseFloat(s)).filter((n) => !isNaN(n));
-    const min = nums.length > 0 ? Math.floor(Math.min(...nums)) : 10;
-    const max = nums.length > 0 ? Math.ceil(Math.max(...nums)) : 100;
-    return { type: 'Float', rule: `${min}, ${Math.max(max, min + 10)}, 2` };
+    const min = nums.length > 0 ? Math.min(...nums) : 10;
+    const max = nums.length > 0 ? Math.max(...nums) : 100;
+    const decimals = Math.min(6, Math.max(2, ...samples.map(value => value.split('.')[1]?.length || 0)));
+    return { type: 'Float', rule: `${min}, ${max}, ${decimals}` };
   }
 
   // Integer
   if (
-    lower.includes('count') ||
-    lower.includes('qty') ||
-    lower.includes('quantity') ||
-    lower.includes('age') ||
-    samples.every((s) => /^-?\d+$/.test(s))
+    hasWord('count', 'qty', 'quantity', 'age') ||
+    samples.length > 0 && samples.every((s) => /^-?\d+$/.test(s))
   ) {
     const nums = samples.map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
     const min = nums.length > 0 ? Math.min(...nums) : 1;
     const max = nums.length > 0 ? Math.max(...nums) : 50;
-    return { type: 'Int', rule: `${min}, ${Math.max(max, min + 5)}` };
+    return { type: 'Int', rule: `${min}, ${max}` };
   }
 
   // Status / Set/Enum
-  if (lower.includes('status') || lower.includes('category') || lower.includes('type') || lower.includes('method')) {
+  if (lower === 'level' || lower === 'severity' || lower.includes('status') || lower.includes('category') || lower.includes('type') || lower.includes('method')) {
     const uniqueValues = Array.from(new Set(samples)).slice(0, 5);
-    if (uniqueValues.length > 0) {
+    if (uniqueValues.length > 0 && uniqueValues.every(value => !value.includes(','))) {
       return { type: 'Set/Enum', rule: uniqueValues.map((v) => `${v}:25`).join(', ') };
     }
   }
@@ -1108,11 +1164,22 @@ function getExtension(filename: string): string {
 }
 
 function splitDelimitedLine(line: string, delimiter: string): string[] {
-  return line.split(delimiter).map((part) => part.trim().replace(/^["']|["']$/g, ''));
+  const cells: string[] = [];
+  let cell = ''; let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') {
+      if (quoted && line[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = !quoted;
+    } else if (line[i] === delimiter && !quoted) { cells.push(cell.trim()); cell = ''; }
+    else cell += line[i];
+  }
+  cells.push(cell.trim());
+  return cells;
 }
 
 function sanitizeColumnName(name: string): string {
-  return name.trim().replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '') || 'field';
+  const cleaned = name.trim().replace(/[^\p{L}\p{N}_]/gu, '_').replace(/^_+|_+$/g, '') || 'field';
+  return ['__proto__', 'constructor', 'prototype'].includes(name.trim().toLowerCase()) || ['__proto__', 'constructor', 'prototype'].includes(cleaned.toLowerCase()) ? `field_${cleaned}` : cleaned;
 }
 
 function cleanIdentifier(name: string): string {
@@ -1132,71 +1199,18 @@ export function detectEncoding(
   bytes?: Uint8Array,
   text?: string
 ): { encoding: FileForensicsProfile['encoding']; confidence: number } {
-  if (bytes && bytes.length >= 2) {
-    // 1. BOM Checks
-    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-      return { encoding: 'UTF-8 with BOM', confidence: 100 };
-    }
-    if (bytes[0] === 0xff && bytes[1] === 0xfe) {
-      return { encoding: 'UTF-16 LE', confidence: 100 };
-    }
-    if (bytes[0] === 0xfe && bytes[1] === 0xff) {
-      return { encoding: 'UTF-16 BE', confidence: 100 };
-    }
-
-    // 2. Pure ASCII Check (every byte < 128)
-    let isPureAscii = true;
-    let highByteCount = 0;
-    let thaiByteCandidates = 0;
-
-    for (let i = 0; i < bytes.length; i++) {
-      const b = bytes[i];
-      if (b >= 128) {
-        isPureAscii = false;
-        highByteCount++;
-        // TIS-620 / Windows-874 Thai character code range (0xA1 - 0xFB)
-        if (b >= 0xa1 && b <= 0xfb) {
-          thaiByteCandidates++;
-        }
-      }
-    }
-
-    if (isPureAscii) {
-      return { encoding: 'ASCII', confidence: 95 };
-    }
-
-    // If text contains valid decoded Thai Unicode characters (\u0E00-\u0E7F)
-    if (text && /[\u0E00-\u0E7F]/.test(text)) {
-      return { encoding: 'UTF-8', confidence: 95 };
-    }
-
-    // If high bytes are predominantly in Thai TIS-620 range
-    if (thaiByteCandidates > 0 && highByteCount > 0 && (thaiByteCandidates / highByteCount) > 0.6) {
-      return { encoding: 'TIS-620 / Windows-874', confidence: 92 };
-    }
-
-    // Default to UTF-8
-    return { encoding: 'UTF-8', confidence: 85 };
+  if (bytes) {
+    const decoded = decodeTextSample(bytes);
+    return { encoding: decoded.encoding, confidence: decoded.confidence };
   }
-
-  // Fallback to text analysis
-  if (text) {
-    if (/[\u0E00-\u0E7F]/.test(text)) {
-      return { encoding: 'UTF-8', confidence: 90 };
-    }
-    if (/^[\x00-\x7F]*$/.test(text)) {
-      return { encoding: 'ASCII', confidence: 90 };
-    }
-  }
-
-  return { encoding: 'UTF-8', confidence: 80 };
+  return { encoding: text && /^[\x00-\x7F]*$/.test(text) ? 'ASCII' : 'UTF-8', confidence: text ? 80 : 0 };
 }
 
 /**
  * Detects human languages and scripts present in the sample text
  */
 export function detectLanguages(text?: string): FileForensicsProfile['detectedLanguages'] {
-  if (!text || text.trim().length === 0) return ['English'];
+  if (!text || text.trim().length === 0) return [];
   const languages: FileForensicsProfile['detectedLanguages'] = [];
 
   if (/[\u0E00-\u0E7F]/.test(text)) {
@@ -1230,7 +1244,7 @@ export function detectDelimiter(lines: string[]): {
 
   const sampleLines = lines.filter((l) => l.trim().length > 0).slice(0, 10);
   if (sampleLines.length === 0) {
-    return { delimiter: ',', delimiterName: 'Comma (,)' };
+    return {};
   }
 
   let bestDelimiter: ',' | '\t' | ';' | '|' | ' ' | undefined = undefined;
@@ -1262,8 +1276,8 @@ export function detectDelimiter(lines: string[]): {
   }
 
   return {
-    delimiter: bestDelimiter || ',',
-    delimiterName: bestName || 'Comma (,)',
+    delimiter: bestDelimiter,
+    delimiterName: bestDelimiter ? bestName : undefined,
   };
 }
 
@@ -1278,30 +1292,18 @@ export function detectFileLock(
   lockDetails?: string;
   hasContinuousAppend: boolean;
 } {
-  // Check if any file flagged with lock/in-use error
-  const lockedFile = files.find((f) => f.isLocked || (f.lockReason && f.lockReason.length > 0));
-  if (lockedFile) {
-    return {
-      fileLockStatus: 'file_in_use_error',
-      lockDetails: `Process lock conflict on: ${lockedFile.name} (${lockedFile.lockReason || 'Sharing violation'})`,
-      hasContinuousAppend: true,
-    };
-  }
-
-  // Check if active recent write stream
-  const now = Date.now();
-  const veryRecentFiles = files.filter((f) => now - f.lastModified < 15000); // modified within 15s
-  if (veryRecentFiles.length > 0 || temporalCadence === 'high_frequency_stream') {
-    return {
-      fileLockStatus: 'active_lock_suspected',
-      lockDetails: `Active file append stream detected on ${veryRecentFiles[0]?.name || 'live log file'}`,
-      hasContinuousAppend: true,
-    };
-  }
-
+  const lockedFile = files.find(f => isExplicitLockError(f.lockReason || f.readError || ''));
+  if (lockedFile) return {
+    fileLockStatus: 'file_in_use_error',
+    lockDetails: `Explicit lock/sharing error reading ${lockedFile.name}: ${lockedFile.lockReason || lockedFile.readError}`,
+    hasContinuousAppend: false,
+  };
+  const errors = files.filter(f => f.readError || f.readStatus === 'read_error');
   return {
     fileLockStatus: 'no_lock_detected',
-    lockDetails: 'All files accessible for read/write without process locks',
+    lockDetails: errors.length
+      ? `${errors.length} file(s) could not be read; access errors do not establish a process lock. Write access was not tested.`
+      : 'No explicit lock error observed. Read sampling does not test write access or establish continuous append.',
     hasContinuousAppend: false,
   };
 }
@@ -1315,24 +1317,28 @@ export function detectFileForensics(
   sampleCandidate?: DiscoveredFolderFile
 ): FileForensicsProfile {
   const extensions = Object.keys(metrics.formatDistribution).map((ext) => `.${ext}`);
-  const dominantExtension = `.${metrics.dominantFormat}`;
+  const dominantExtension = `.${Object.entries(metrics.formatDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || metrics.dominantFormat}`;
 
-  const text = sampleCandidate?.sampleContent || '';
+  const decoded = sampleCandidate?.rawBytes ? decodeTextSample(sampleCandidate.rawBytes, sampleCandidate.truncated) : undefined;
+  const text = decoded?.text ?? sampleCandidate?.sampleContent ?? '';
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
 
   // Encoding & confidence
   const { encoding, confidence } = detectEncoding(sampleCandidate?.rawBytes, text);
 
-  // Delimiter
-  const { delimiter, delimiterName } = detectDelimiter(lines);
-
-  // Newline standard
-  let newlineType: FileForensicsProfile['newlineType'] = 'LF (Unix)';
-  if (text.includes('\r\n')) {
-    newlineType = text.includes('\n') && !text.split('\r\n').every((s) => !s.includes('\n')) ? 'Mixed' : 'CRLF (Windows)';
-  } else if (text.includes('\r')) {
-    newlineType = 'CR (Legacy)';
+  // Parse records before punctuation heuristics; commas inside JSON/messages are not CSV fields.
+  const detected = analyzeLogSample(text).format;
+  let { delimiter, delimiterName } = detectDelimiter(lines);
+  if (detected === 'json' || detected === 'jsonl') {
+    delimiter = undefined;
+    delimiterName = 'JSON records (no field delimiter)';
+  } else if (detected === 'apache_nginx' || detected === 'timestamp_level' || detected === 'key_value') {
+    delimiter = ' ';
+    delimiterName = detected === 'apache_nginx' ? 'Access-log fields (quoted/bracketed)' : detected === 'timestamp_level' ? 'Timestamp / level / message' : 'Key=value records';
   }
+
+  const hasReadableSample = !!sampleCandidate && !decoded?.binary && sampleCandidate.readStatus !== 'read_error' && (sampleCandidate.rawBytes !== undefined || sampleCandidate.sampleContent !== undefined);
+  const newlineType: FileForensicsProfile['newlineType'] = hasReadableSample ? detectNewlines(text) : 'Unknown';
 
   // Languages
   const detectedLanguages = detectLanguages(text);
@@ -1340,19 +1346,9 @@ export function detectFileForensics(
   // File Lock
   const { fileLockStatus, lockDetails, hasContinuousAppend } = detectFileLock(files, metrics.temporalCadence);
 
-  // Sample Log Format
-  let sampleLogFormat: FileForensicsProfile['sampleLogFormat'] = undefined;
-  if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
-    sampleLogFormat = 'json_stream';
-  } else if (lines.some((l) => l.startsWith('[') && (l.includes('INFO') || l.includes('WARN') || l.includes('ERROR') || l.includes('DEBUG')))) {
-    sampleLogFormat = 'iso_timestamp_bracketed';
-  } else if (lines.some((l) => /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} - - \[/.test(l))) {
-    sampleLogFormat = 'apache_nginx';
-  } else if (delimiter === ',' || delimiter === '\t' || delimiter === ';' || delimiter === '|') {
-    sampleLogFormat = 'delimited_csv';
-  } else {
-    sampleLogFormat = 'generic_text';
-  }
+  const sampleLogFormat: FileForensicsProfile['sampleLogFormat'] = detected === 'json' || detected === 'jsonl'
+    ? 'json_stream' : detected === 'timestamp_level' ? 'iso_timestamp_bracketed' : detected === 'apache_nginx'
+    ? 'apache_nginx' : detected === 'key_value' ? 'key_value' : delimiter && delimiter !== ' ' ? 'delimited_csv' : 'generic_text';
 
   return {
     dominantExtension,
@@ -1361,6 +1357,7 @@ export function detectFileForensics(
     delimiterName,
     encoding,
     encodingConfidence: confidence,
+    encodingEvidence: decoded?.evidence,
     newlineType,
     detectedLanguages,
     fileLockStatus,
@@ -1375,21 +1372,19 @@ export function detectFileForensics(
  */
 export function generateWorkspaceProfileBundle(
   analysis: FolderAnalysisResult,
-  customFolderPath?: string
+  customFolderPath?: string,
+  options: { includeSamples?: boolean } = {},
 ): VampioWorkspaceProfileBundle {
-  const sampleCandidate = analysis.files.find((f) => f.sampleContent && f.sampleContent.trim().length > 0) || analysis.files[0];
-  const sampleText = sampleCandidate?.sampleContent || '';
-  const lines = sampleText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  const delimiter = analysis.forensics?.delimiter || ',';
-
-  const inferredHeaders = analysis.extractedColumns.map((c) => c.name);
-  const sampleRows = lines.slice(0, 5).map((l) => splitDelimitedLine(l, delimiter));
-
+  const sampleCandidate = analysis.files.find(file => (file.relativePath || file.name) === analysis.sampleFileUsed)
+    || analysis.files.find(file => file.sampleContent?.trim()) || analysis.files[0];
+  const sourceProfile = analysis.fileProfiles?.find(file => (file.sourceId || file.name) === (sampleCandidate?.relativePath || sampleCandidate?.name));
+  const includeSamples = options.includeSamples === true;
+  const format = getSimulationFormat(analysis);
   return {
     $schema: 'https://vampio.dev/schema/workspace-profile-v1.json',
     version: '1.0.0',
     generatedAt: new Date().toISOString(),
-    generator: 'Vampio Behavior Monitor v1.2',
+    generator: 'Vampio Log Profiler',
     source: {
       platform: isTauri() ? 'tauri' : 'web',
       folderName: analysis.folderName,
@@ -1399,64 +1394,113 @@ export function generateWorkspaceProfileBundle(
     },
     metrics: analysis.metrics,
     forensics: analysis.forensics,
+    samplesIncluded: includeSamples,
+    fileProfiles: analysis.fileProfiles?.map(file => ({
+      ...file,
+      columns: file.columns.map(column => ({ ...column, sampleValues: includeSamples ? column.sampleValues : [] })),
+      sampleRows: includeSamples ? file.sampleRows : [],
+    })),
     samplePreview: {
       filename: sampleCandidate?.name,
-      rawSnippet: sampleText.slice(0, 1500),
-      inferredHeaders,
-      sampleRows,
+      rawSnippet: includeSamples ? (sampleCandidate?.sampleContent || '').slice(0, 1500) : '',
+      inferredHeaders: analysis.extractedColumns.map(column => column.name),
+      sampleRows: includeSamples ? sourceProfile?.sampleRows || [] : [],
     },
     vampioWorkspace: {
       columns: analysis.suggestedTemplate.columns,
       tableName: analysis.suggestedTemplate.tableName,
       outputStrategy: analysis.suggestedMode.outputStrategy,
-      format: analysis.suggestedMode.format,
-      filenamePattern: analysis.suggestedMode.suggestedFilenamePattern || `${analysis.suggestedMode.suggestedFilename}_{index}.${analysis.suggestedMode.format}`,
+      format,
+      filename: analysis.suggestedMode.suggestedFilename,
+      filenamePattern: analysis.suggestedMode.suggestedFilenamePattern || '{filename}_{index}.{ext}',
       intervalMs: analysis.suggestedMode.suggestedIntervalMs,
+      batchCount: analysis.suggestedMode.suggestedBatchCount,
+      generationMode: analysis.suggestedMode.suggestedGenerationMode,
       rowsPerFile: analysis.suggestedMode.suggestedRowsPerFile,
       targetFile: analysis.suggestedMode.suggestedTargetFile,
     },
   };
 }
 
-/**
- * Exports the bundle as a formatted JSON string for download or clipboard
- */
+/** Export an importable simulation profile. Raw samples require explicit opt-in. */
 export function exportWorkspaceProfileBundleJson(
   analysis: FolderAnalysisResult,
-  customFolderPath?: string
+  customFolderPath?: string,
+  options: { includeSamples?: boolean } = {},
 ): string {
-  const bundle = generateWorkspaceProfileBundle(analysis, customFolderPath);
-  return JSON.stringify(bundle, null, 2);
+  return JSON.stringify(generateWorkspaceProfileBundle(analysis, customFolderPath, options), null, 2);
 }
 
-/**
- * Validates and parses an uploaded profile bundle JSON
- */
+/** Validate fields used by the import preview and generator before applying a profile. */
 export function validateAndParseWorkspaceBundle(jsonText: string): {
   valid: boolean;
   error?: string;
   bundle?: VampioWorkspaceProfileBundle;
 } {
+  return parseWorkspaceProfileBundle(jsonText);
+}
+
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === 'string' ? error : String(error);
+}
+
+/** Access denied, unreadable encodings and missing paths are not evidence of another process's lock. */
+export function isExplicitLockError(error: unknown): boolean {
+  return /sharing[ _-]violation|lock[ _-]violation|resource (?:is )?(?:busy|locked)|\bEBUSY\b|\bEWOULDBLOCK\b|os error (?:32|33)\b|locked by (?:another|a) process/i.test(errorMessage(error));
+}
+
+async function readNativeSample(path: string, limit: number): Promise<Uint8Array> {
+  const handle = await open(path, { read: true });
   try {
-    const parsed = JSON.parse(jsonText);
-    if (!parsed || typeof parsed !== 'object') {
-      return { valid: false, error: 'File content is not a valid JSON object.' };
+    const buffer = new Uint8Array(Math.max(0, Math.floor(limit)));
+    let offset = 0;
+    while (offset < buffer.length) {
+      const count = await handle.read(buffer.subarray(offset));
+      if (count === null || count === 0) break;
+      offset += count;
     }
-
-    if (!parsed.vampioWorkspace || !Array.isArray(parsed.vampioWorkspace.columns)) {
-      return { valid: false, error: 'Missing vampioWorkspace schema configuration or columns array.' };
-    }
-
-    if (!parsed.metrics || !parsed.forensics) {
-      return { valid: false, error: 'Incomplete bundle: missing folder metrics or forensics profiles.' };
-    }
-
-    return {
-      valid: true,
-      bundle: parsed as VampioWorkspaceProfileBundle,
-    };
-  } catch (err: any) {
-    return { valid: false, error: `JSON Parse error: ${err?.message || 'Invalid syntax'}` };
+    return buffer.subarray(0, offset);
+  } finally {
+    await handle.close();
   }
 }
 
+function profileFileSample(file: DiscoveredFolderFile): FileAnalysisProfile {
+  const truncated = file.truncated ?? (file.rawBytes ? file.size > file.rawBytes.length : false);
+  const decoded = file.rawBytes ? decodeTextSample(file.rawBytes, truncated) : undefined;
+  const text = decoded?.text ?? file.sampleContent ?? '';
+  const inferenceText = completeTextForInference(file, text);
+  const log = analyzeLogSample(inferenceText);
+  const spreadsheet = /\.xlsx?$/i.test(file.name);
+  const columns = decoded?.binary && !spreadsheet ? [] : sniffColumnsFromContent(file.name, inferenceText, file.rawBytes, truncated);
+  const delimiter = detectDelimiter(text.split(/\r\n|\n|\r/)).delimiter;
+  const format = spreadsheet && columns.length ? 'spreadsheet' : decoded?.binary ? 'binary' : log.format === 'generic_text' && delimiter && delimiter !== ' ' ? 'delimited' : log.format;
+  const keys = log.records.length ? Array.from(new Set(log.records.flatMap(Object.keys))) : [];
+  return {
+    name: file.name,
+    sourceId: file.relativePath || file.name,
+    format,
+    encoding: decoded?.encoding ?? detectEncoding(undefined, text).encoding,
+    encodingConfidence: decoded?.confidence ?? (text ? 70 : 0),
+    encodingEvidence: decoded?.evidence ?? [text ? 'Only decoded text supplied; original byte encoding cannot be verified' : 'No sample bytes available'],
+    formatEvidence: spreadsheet ? [truncated ? 'Workbook exceeds the bounded sample; no complete spreadsheet schema can be inferred' : columns.length ? 'Parsed first worksheet from a fully sampled workbook; binary bytes were not treated as text' : 'Sample could not be parsed as a supported workbook'] : log.evidence,
+    newlineType: decoded?.binary || file.readStatus === 'read_error' || !file.rawBytes && file.sampleContent === undefined ? 'Unknown' : detectNewlines(text),
+    sampledBytes: file.sampledBytes ?? file.rawBytes?.length ?? (text ? new TextEncoder().encode(text).length : 0),
+    truncated,
+    readStatus: file.readStatus ?? (file.readError ? 'read_error' : decoded?.binary ? 'binary' : text || file.rawBytes ? 'sampled' : 'skipped'),
+    readError: file.readError,
+    columns,
+    sampleRows: log.records.length ? log.records.slice(0, 5).map(row => keys.map(key => typeof row[key] === 'object' ? JSON.stringify(row[key]) : String(row[key] ?? '')))
+      : inferenceText.split(/\r\n|\n|\r/).filter(Boolean).slice(format === 'delimited' ? 1 : 0, 6).map(line => delimiter ? splitDelimitedLine(line, delimiter) : [line]),
+  };
+}
+
+/** A bounded sample can end inside a record. Keep the preview, but exclude that record from inference. */
+function completeTextForInference(file: DiscoveredFolderFile, text: string): string {
+  const truncated = file.truncated ?? (file.rawBytes ? file.size > file.rawBytes.length : false);
+  if (!truncated || /[\r\n]$/.test(text)) return text;
+  const end = Math.max(text.lastIndexOf('\n'), text.lastIndexOf('\r'));
+  return end < 0 ? '' : text.slice(0, end + 1);
+}

@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { 
   FolderSearch, 
   FolderCheck, 
   Activity, 
   FileText, 
-  Download, 
   Copy, 
   Check, 
   RefreshCw, 
@@ -18,17 +17,13 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { 
-  FolderAnalysisResult, 
-  DiscoveredFolderFile, 
-  readFolderFromDirectoryHandle, 
-  readFilesFromHtmlFileList, 
-  analyzeFolderFiles, 
   formatFileSize, 
-  exportWorkspaceProfileBundleJson, 
   generateWorkspaceProfileBundle,
   VampioWorkspaceProfileBundle
 } from '../utils/folderBehaviorAnalyzer';
-import { pickDirectory, saveFileToDiskOrDownload } from '../utils/fileSystem';
+import { useFolderMonitor } from '../hooks/useFolderMonitor';
+import { ProfileExportControls } from './folderMonitor/ProfileExportControls';
+import { LogProfilePanel } from './folderMonitor/LogProfilePanel';
 import { useUserRole } from '../context/UserRoleContext';
 import { useI18n, LanguageSelectDropdown } from '../i18n';
 
@@ -39,137 +34,22 @@ interface Props {
 export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }) => {
   const { setRole } = useUserRole();
   const { t } = useI18n();
-  const [directoryHandle, setDirectoryHandle] = useState<any | null>(null);
-  const [folderName, setFolderName] = useState<string>('');
-  const [folderPath, setFolderPath] = useState<string>('');
-  const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [discoveredFiles, setDiscoveredFiles] = useState<DiscoveredFolderFile[]>([]);
-  const [analysis, setAnalysis] = useState<FolderAnalysisResult | null>(null);
-  const [isAutoWatch, setIsAutoWatch] = useState<boolean>(true);
-  const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
-  const [isExportingBundle, setIsExportingBundle] = useState<boolean>(false);
-  const [exportedBundle, setExportedBundle] = useState<boolean>(false);
+  const monitor = useFolderMonitor({
+    isOpen: true,
+    initialDirectoryHandle: null,
+    initialFolderName: null,
+    onSelectLockedFolder: () => {},
+  });
+  const { folderHandle: directoryHandle, folderName, isLoading: isScanning, discoveredFiles, analysis,
+    isLiveMonitoring: isAutoWatch, setIsLiveMonitoring: setIsAutoWatch } = monitor;
+  const folderPath = typeof directoryHandle?.path === 'string' ? directoryHandle.path : folderName;
+  const schemaProfile = analysis?.fileProfiles?.find(profile => (profile.sourceId || profile.name) === analysis.sampleFileUsed);
+  const [copiedSummary, setCopiedSummary] = useState(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
-
-  const watchIntervalRef = useRef<any>(null);
-
-  // Trigger notification toast
-  const notify = (msg: string) => {
-    setStatusNotification(msg);
-    setTimeout(() => setStatusNotification(null), 3500);
-  };
-
-  // Perform folder scan
-  const performScan = async (handle: any, name: string) => {
-    setIsScanning(true);
-    try {
-      const files = await readFolderFromDirectoryHandle(handle);
-      setDiscoveredFiles(files);
-      const result = analyzeFolderFiles(files, name);
-      setAnalysis(result);
-    } catch (err: any) {
-      console.error('Scan error:', err);
-      notify(`${t('operator.scanError')}: ${err?.message || 'Failed reading directory'}`);
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  // Handle select folder via single source of truth
-  const handleSelectFolder = async () => {
-    try {
-      const result = await pickDirectory({ allowFallback: true, title: 'Select Monitored Directory' });
-      if (!result) return;
-
-      const name = result.name || 'Monitored_Folder';
-      const path = result.path || name;
-      setDirectoryHandle(result.handle);
-      setFolderName(name);
-      setFolderPath(path);
-
-      if (result.files && result.files.length > 0) {
-        setIsScanning(true);
-        try {
-          const files = await readFilesFromHtmlFileList(result.files);
-          setDiscoveredFiles(files);
-          const analysisResult = analyzeFolderFiles(files, name);
-          setAnalysis(analysisResult);
-          notify(`Loaded ${files.length} files from "${name}"`);
-        } finally {
-          setIsScanning(false);
-        }
-      } else {
-        await performScan(result.handle, name);
-        notify(`${t('operator.monitoringFolder')} "${name}"`);
-      }
-    } catch (err: any) {
-      console.warn('Directory selection failed:', err);
-      notify(`Selection note: ${err?.message || 'Could not select folder'}`);
-    }
-  };
-
-  // Polling / Auto-watch cadence
-  useEffect(() => {
-    if (!isAutoWatch || !directoryHandle) return;
-
-    watchIntervalRef.current = setInterval(async () => {
-      try {
-        const files = await readFolderFromDirectoryHandle(directoryHandle);
-        setDiscoveredFiles(files);
-        const result = analyzeFolderFiles(files, folderName);
-        setAnalysis(result);
-      } catch (e) {
-        console.warn('Auto-watch tick error:', e);
-      }
-    }, 4000);
-
-    return () => {
-      if (watchIntervalRef.current) clearInterval(watchIntervalRef.current);
-    };
-  }, [isAutoWatch, directoryHandle, folderName]);
-
-  // Export JSON Bundle for DEV (supports both Tauri native desktop .exe and web browser)
-  const handleExportBundle = async () => {
-    if (!analysis || isExportingBundle) return;
-    setIsExportingBundle(true);
-    try {
-      const jsonStr = exportWorkspaceProfileBundleJson(analysis, folderPath);
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const safeName = (folderName || 'folder').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `${safeName}-profile-${timestamp}.vampio.profile.json`;
-
-      const result = await saveFileToDiskOrDownload(
-        filename,
-        jsonStr,
-        'application/json',
-        {
-          title: 'Export Developer Profile Bundle',
-          defaultDir: folderPath || undefined,
-          filters: [
-            {
-              name: 'Vampio Profile (*.vampio.profile.json, *.json)',
-              extensions: ['json'],
-            },
-          ],
-        }
-      );
-
-      if (result.success) {
-        setExportedBundle(true);
-        setTimeout(() => setExportedBundle(false), 3000);
-        if (result.path) {
-          notify(`Saved Profile Bundle: ${result.path.split(/[\\/]/).pop() || result.path}`);
-        } else {
-          notify('Exported Developer Profile Bundle (.vampio.profile.json)');
-        }
-      }
-    } catch (err: any) {
-      console.error('Export error:', err);
-      notify(`Export note: ${err?.message || 'Could not export profile'}`);
-    } finally {
-      setIsExportingBundle(false);
-    }
-  };
+  const notify = (message: string) => setStatusNotification(message);
+  const handleSelectFolder = monitor.handlePickDirectory;
+  const hasInferredColumns = !!analysis?.extractedColumns.length;
+  const handleSelectFiles = () => { void monitor.filePicker.selectFiles().catch(() => {}); };
 
   // Copy quick summary text for Slack/Teams/Email
   const handleCopySummary = async () => {
@@ -185,7 +65,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
       `Encoding: ${f.encoding} (Confidence: ${f.encodingConfidence}%)`,
       `Newline: ${f.newlineType}`,
       `Languages: ${f.detectedLanguages.join(', ')}`,
-      `File Lock Status: ${f.fileLockStatus === 'no_lock_detected' ? 'Clean (No locks)' : f.lockDetails || 'Active Locks'}`,
+      `File Lock Status: ${f.fileLockStatus === 'no_lock_detected' ? 'No lock evidence observed; OS locking and write access unverified' : f.lockDetails || 'Possible contention'}`,
       `Detected Headers (${analysis.extractedColumns.length}): ${analysis.extractedColumns.map(c => c.name).join(', ')}`,
       `Temporal Cadence: ${m.temporalCadence}`,
       `Recommended Strategy: ${analysis.suggestedMode.outputStrategy} (${analysis.suggestedMode.suggestedFilenamePattern || analysis.suggestedMode.suggestedFilename})`,
@@ -204,6 +84,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
 
   // Direct handoff to Developer Studio
   const handleOpenStudio = () => {
+    if (analysis && !hasInferredColumns) return;
     if (analysis) {
       const bundle = generateWorkspaceProfileBundle(analysis, folderPath);
       if (onOpenInDeveloperStudio) {
@@ -216,20 +97,20 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
   return (
     <div className="min-h-screen bg-primary text-content flex flex-col font-sans select-none">
       {/* Top Header Bar */}
-      <header className="h-14 border-b border-border-subtle bg-secondary/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-10 sticky top-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-xs">
+      <header className="min-h-14 py-2 gap-2 border-b border-border-subtle bg-secondary/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-10 sticky top-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 shrink-0 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-xs">
               <Activity size={18} />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm text-content tracking-tight">Vampio</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30">
+                <span className="hidden sm:inline text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30">
                   {t('operator.modeBadge')}
                 </span>
               </div>
-              <p className="text-[10px] text-content-muted leading-none">
+              <p className="hidden sm:block text-[10px] text-content-muted leading-none truncate">
                 {t('operator.modeSubtitle')}
               </p>
             </div>
@@ -237,18 +118,20 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
         </div>
 
         {/* Right switch button and language selector */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <LanguageSelectDropdown compact />
           <button
             type="button"
             onClick={handleOpenStudio}
-            className="px-3 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs group"
-            title={t('operator.switchToDevTooltip')}
+            disabled={!!analysis && !hasInferredColumns}
+            aria-label={analysis && !hasInferredColumns ? 'Developer Studio handoff unavailable: no fields were inferred' : t('operator.switchToDev')}
+            className="disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs group"
+            title={analysis && !hasInferredColumns ? 'No fields were inferred. Export Markdown to review the findings.' : t('operator.switchToDevTooltip')}
           >
             <Code2 size={14} className="text-accent group-hover:rotate-12 transition-transform" />
             <span className="hidden sm:inline">{t('operator.switchToDev')}</span>
             <span className="sm:hidden">{t('operator.devStudio')}</span>
-            <ArrowRight size={13} className="text-content-muted" />
+            <ArrowRight size={13} className="hidden sm:block text-content-muted" />
           </button>
         </div>
       </header>
@@ -257,7 +140,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5">
         {/* Status Toast Notification */}
         {statusNotification && (
-          <div className="p-3 rounded-xl bg-accent text-white text-xs font-medium flex items-center justify-between shadow-lg animate-in fade-in duration-200">
+          <div role="status" className="p-3 rounded-xl bg-accent text-white text-xs font-medium flex items-center justify-between shadow-lg animate-in fade-in duration-200">
             <div className="flex items-center gap-2">
               <Sparkles size={14} />
               <span>{statusNotification}</span>
@@ -268,22 +151,22 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
         {/* Hero Section: Select Folder / Active Monitor Status */}
         <div className="p-6 rounded-2xl bg-secondary border border-border-subtle shadow-md space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="text-lg font-bold text-content flex items-center gap-2">
-                {directoryHandle ? (
+            <div className="space-y-1 min-w-0">
+              <h1 className="text-lg font-bold text-content flex items-start gap-2 min-w-0">
+                {monitor.sourceKind !== 'none' ? (
                   <>
-                    <FolderCheck className="text-emerald-400" size={20} />
-                    <span>{t('operator.monitoredFolder')}: <span className="text-accent">{folderName}</span></span>
+                    <FolderCheck className="text-emerald-400 shrink-0 mt-1" size={20} />
+                    <span className="min-w-0 break-words">{monitor.sourceKind === 'snapshot' ? 'Uploaded snapshot' : t('operator.monitoredFolder')}: <span className="text-accent">{folderName}</span></span>
                   </>
                 ) : (
                   <>
-                    <FolderSearch className="text-accent" size={20} />
-                    <span>{t('operator.targetFolderSelection')}</span>
+                    <FolderSearch className="text-accent shrink-0 mt-1" size={20} />
+                    <span className="min-w-0 break-words">{t('operator.targetFolderSelection')}</span>
                   </>
                 )}
               </h1>
-              <p className="text-xs text-content-muted">
-                {directoryHandle
+              <p className="text-xs text-content-muted break-all">
+                {monitor.sourceKind !== 'none'
                   ? (folderPath ? `${t('operator.path')}: ${folderPath}` : t('operator.watcherActiveSubtitle'))
                   : t('operator.selectFolderPrompt')}
               </p>
@@ -291,16 +174,16 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
 
             {/* Action buttons */}
             <div className="flex items-center gap-2 flex-wrap">
-              {directoryHandle ? (
+              {monitor.sourceKind !== 'none' ? (
                 <>
                   <button
                     type="button"
-                    onClick={() => performScan(directoryHandle, folderName)}
-                    disabled={isScanning}
+                    onClick={() => void monitor.refresh()}
+                    disabled={isScanning || !monitor.canPoll}
                     className="px-3.5 py-2 rounded-xl bg-secondary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <RefreshCw size={13} className={isScanning ? 'animate-spin text-accent' : ''} />
-                    <span>{isScanning ? t('operator.scanning') : t('operator.rescanFolder')}</span>
+                    <span>{isScanning ? t('operator.scanning') : monitor.canPoll ? t('operator.rescanFolder') : 'Snapshot'}</span>
                   </button>
                   <button
                     type="button"
@@ -322,18 +205,22 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                   <span>{isScanning ? t('operator.scanningDirectory') : t('operator.selectFolderToMonitor')}</span>
                 </button>
               )}
+              <button type="button" onClick={handleSelectFiles} disabled={isScanning}
+                className="px-3.5 py-2 rounded-xl bg-primary hover:bg-tertiary border border-border-subtle text-content text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50">
+                <FileText size={13} className="shrink-0" /><span>Select files snapshot</span>
+              </button>
             </div>
           </div>
 
           {/* Active Live Watcher Beacon */}
-          {directoryHandle && (
+          {monitor.sourceKind !== 'none' && (
             <div className="pt-3 border-t border-border-subtle/70 flex items-center justify-between text-xs text-content-muted flex-wrap gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap" role="status">
                 <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className={`absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${monitor.canPoll && isAutoWatch && !monitor.error ? 'animate-ping' : 'hidden'}`}></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
-                <span className="font-mono text-emerald-400 font-medium">{t('operator.realtimeWatcherActive')}</span>
+                <span className={`font-mono font-medium ${monitor.error ? 'text-rose-400' : monitor.canPoll && isAutoWatch ? 'text-emerald-400' : 'text-content-muted'}`}>{isScanning ? 'Scanning' : monitor.error ? 'Scan failed' : monitor.sourceKind === 'snapshot' ? 'Uploaded snapshot · no live refresh' : isAutoWatch ? 'Live · refresh every 3 seconds' : 'Paused'}</span>
                 <span className="text-content-muted/60">·</span>
                 <span>{discoveredFiles.length} {t('operator.filesDetected')}</span>
               </div>
@@ -342,16 +229,20 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 <label className="flex items-center gap-1.5 cursor-pointer text-[11px]">
                   <input
                     type="checkbox"
-                    checked={isAutoWatch}
+                    checked={isAutoWatch && monitor.canPoll}
+                    disabled={!monitor.canPoll}
                     onChange={(e) => setIsAutoWatch(e.target.checked)}
                     className="rounded text-accent focus:ring-0"
                   />
-                  <span>{t('operator.autoRefresh4s')}</span>
+                  <span>Auto refresh</span>
                 </label>
               </div>
             </div>
           )}
         </div>
+
+        {monitor.error && <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-400 break-words">{monitor.error}</div>}
+        {monitor.lastScanAt && <p className="text-xs text-content-muted">Last scan: {new Date(monitor.lastScanAt).toLocaleString()}</p>}
 
         {/* Profiler Forensic Results */}
         {analysis && (
@@ -374,7 +265,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 </div>
                 <div className="pt-1.5 border-t border-border-subtle/60 flex items-center gap-1 text-[11px] text-content-muted font-mono">
                   <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-                  <span>{t('operator.cadence')}: {analysis.metrics.temporalCadence.replace(/_/g, ' ')}</span>
+                  <span>File-time estimate: {analysis.metrics.temporalCadence.replace(/_/g, ' ')}</span>
                 </div>
               </div>
 
@@ -386,7 +277,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 </div>
                 <div>
                   <div className="text-xl font-bold text-content font-mono uppercase">
-                    {analysis.forensics.dominantExtension}
+                    {schemaProfile?.format.replace(/_/g, ' ') || analysis.forensics.dominantExtension}
                   </div>
                   <div className="text-xs text-content-muted mt-0.5">
                     {t('operator.delimiter')}: <span className="text-accent font-semibold">{analysis.forensics.delimiterName || 'N/A'}</span>
@@ -436,30 +327,28 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                   )}
                 </div>
                 <div>
-                  <div className="text-sm font-bold truncate">
+                  <div className="text-sm font-bold">
                     {analysis.forensics.fileLockStatus === 'no_lock_detected'
-                      ? t('operator.cleanNoLocks')
+                      ? 'No lock evidence observed'
                       : analysis.forensics.fileLockStatus === 'active_lock_suspected'
-                        ? t('operator.activeStreamAppend')
-                        : t('operator.fileInUseConflict')}
+                        ? 'Possible active writer'
+                        : 'Read/access problem'}
                   </div>
-                  <div className="text-[11px] text-content-muted line-clamp-1 mt-0.5">
-                    {analysis.forensics.lockDetails || 'Files accessible'}
+                  <div className="text-[11px] text-content-muted mt-0.5 break-words">
+                    {analysis.forensics.lockDetails || 'Sample reads completed'}
                   </div>
                 </div>
                 <div className="pt-1.5 border-t border-border-subtle/60 text-[11px] font-mono">
-                  {analysis.forensics.hasContinuousAppend ? (
-                    <span className="text-amber-400">{t('operator.streamAppendMode')}</span>
-                  ) : (
-                    <span className="text-emerald-400">{t('operator.staticBatchReady')}</span>
-                  )}
+                  <span className="text-content-muted">OS locks and write access unverified</span>
                 </div>
               </div>
             </div>
 
+            <LogProfilePanel analysis={analysis} onSelectSchemaSource={monitor.selectSchemaSource} />
+
             {/* Inferred Schema Columns Pill Bar */}
             <div className="p-4 rounded-xl bg-secondary border border-border-subtle space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap gap-2 items-center justify-between">
                 <span className="text-xs font-bold text-content flex items-center gap-1.5">
                   <Sparkles size={13} className="text-accent" />
                   <span>{t('operator.detectedSchemaFields')} ({analysis.extractedColumns.length} {t('operator.columnsCount')})</span>
@@ -499,21 +388,23 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                   </span>
                   <span className="text-[10px] font-mono text-content-muted">{t('operator.first1000Chars')}</span>
                 </div>
-                <pre className="p-3 rounded-lg bg-primary border border-border-subtle text-[11px] font-mono text-content-muted overflow-x-auto max-h-36 whitespace-pre-wrap leading-relaxed">
+                <pre className="p-3 rounded-lg bg-primary border border-border-subtle text-[11px] font-mono text-content-muted overflow-x-auto max-h-36 whitespace-pre-wrap leading-relaxed select-text">
                   {analysis.sampleSnippet}
                 </pre>
               </div>
             )}
+
+            <ProfileExportControls analysis={analysis} folderPath={folderPath} />
 
             {/* Main Action Bar for Field Operator */}
             <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border-2 border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
               <div className="space-y-1 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <h3 className="font-bold text-base text-content">{t('operator.profileBundleReady')}</h3>
+                  <h3 className="font-bold text-base text-content">Analysis summary</h3>
                 </div>
                 <p className="text-xs text-content-muted max-w-lg">
-                  {t('operator.profileBundleDesc')}
+                  Copy the observed file patterns and recommendations for review.
                 </p>
               </div>
 
@@ -526,29 +417,6 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 >
                   {copiedSummary ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                   <span>{copiedSummary ? t('operator.copied') : t('operator.copySummary')}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleExportBundle}
-                  disabled={isExportingBundle}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-md shadow-emerald-500/20 disabled:opacity-60 disabled:cursor-not-allowed select-none"
-                  title="Export offline behavior profile bundle (.vampio.profile.json) for Developer Studio"
-                >
-                  {isExportingBundle ? (
-                    <RefreshCw size={15} className="animate-spin" />
-                  ) : exportedBundle ? (
-                    <Check size={15} className="text-white" />
-                  ) : (
-                    <Download size={15} />
-                  )}
-                  <span>
-                    {isExportingBundle
-                      ? 'Saving...'
-                      : exportedBundle
-                      ? 'Saved!'
-                      : t('operator.exportProfileBundle')}
-                  </span>
                 </button>
               </div>
             </div>

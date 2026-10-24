@@ -12,16 +12,16 @@ import {
   Terminal,
   ShieldCheck,
   RefreshCw,
-  Download,
 } from 'lucide-react';
 import { AnimatedTabs } from './AnimatedTabs';
 import { ColumnSpec, ExportFormat, OutputStrategy } from '../types';
 import {
   formatFileSize,
-  exportWorkspaceProfileBundleJson,
 } from '../utils/folderBehaviorAnalyzer';
-import { saveFileToDiskOrDownload } from '../utils/fileSystem';
+import { getSimulationFormat } from '../utils/profileExports';
 import { useFolderMonitor } from '../hooks/useFolderMonitor';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
+import { ProfileExportControls } from './folderMonitor/ProfileExportControls';
 import { FolderMonitorRecommendationsTab } from './folderMonitor/FolderMonitorRecommendationsTab';
 import { FolderMonitorMetricsTab } from './folderMonitor/FolderMonitorMetricsTab';
 import { FolderMonitorSchemaTab } from './folderMonitor/FolderMonitorSchemaTab';
@@ -77,25 +77,18 @@ export const FolderMonitorModal: React.FC<Props> = ({
     currentColumns,
   });
 
-  // Close on Escape key press
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  const dialogRef = useModalAccessibility(isOpen, onClose);
+  useEffect(() => setHasApplied(false), [isOpen, monitor.folderHandle]);
+
+  const selectFiles = () => { void monitor.filePicker.selectFiles().catch(() => {}); };
+  const selectFolderSnapshot = () => { void monitor.filePicker.selectFolder({ allowFallback: true }).catch(() => {}); };
 
   // One-click apply handlers
   const handleApplyAll = () => {
-    if (!monitor.analysis) return;
+    if (!monitor.analysis || monitor.analysis.extractedColumns.length === 0) return;
     onApplyRecommendations({
       strategy: monitor.analysis.suggestedMode.outputStrategy,
-      format: monitor.analysis.suggestedMode.format,
+      format: getSimulationFormat(monitor.analysis),
       destination: 'folder',
       filename: monitor.analysis.suggestedMode.suggestedFilename,
       filenamePattern: monitor.analysis.suggestedMode.suggestedFilenamePattern,
@@ -105,20 +98,17 @@ export const FolderMonitorModal: React.FC<Props> = ({
       tableName: monitor.analysis.suggestedTemplate.tableName,
       batchCount: monitor.analysis.suggestedMode.suggestedBatchCount || 1000,
       intervalMs: monitor.analysis.suggestedMode.suggestedIntervalMs || 150,
-      generationMode:
-        monitor.analysis.suggestedMode.outputStrategy === 'append_existing'
-          ? 'Continuous'
-          : 'Batch',
+      generationMode: monitor.analysis.suggestedMode.suggestedGenerationMode,
     });
     setHasApplied(true);
     setTimeout(() => onClose(), 800);
   };
 
   const handleApplyModeOnly = () => {
-    if (!monitor.analysis) return;
+    if (!monitor.analysis || monitor.analysis.extractedColumns.length === 0) return;
     onApplyRecommendations({
       strategy: monitor.analysis.suggestedMode.outputStrategy,
-      format: monitor.analysis.suggestedMode.format,
+      format: getSimulationFormat(monitor.analysis),
       destination: 'folder',
       filename: monitor.analysis.suggestedMode.suggestedFilename,
       filenamePattern: monitor.analysis.suggestedMode.suggestedFilenamePattern,
@@ -128,14 +118,14 @@ export const FolderMonitorModal: React.FC<Props> = ({
       tableName: monitor.analysis.suggestedTemplate.tableName,
       batchCount: monitor.analysis.suggestedMode.suggestedBatchCount || 1000,
       intervalMs: monitor.analysis.suggestedMode.suggestedIntervalMs || 150,
-      generationMode: 'Batch',
+      generationMode: monitor.analysis.suggestedMode.suggestedGenerationMode,
     });
     setHasApplied(true);
     setTimeout(() => onClose(), 800);
   };
 
   const handleApplyTemplateOnly = () => {
-    if (!monitor.analysis) return;
+    if (!monitor.analysis || monitor.analysis.extractedColumns.length === 0) return;
     onApplyRecommendations({
       strategy: currentStrategy,
       format: currentFormat,
@@ -175,6 +165,11 @@ export const FolderMonitorModal: React.FC<Props> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: 'spring', duration: 0.28, bounce: 0.1 }}
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="folder-monitor-title"
+            tabIndex={-1}
             {...monitor.filePicker.dragProps}
             className="bg-primary border border-border-subtle rounded-2xl w-full max-w-4xl h-[90vh] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative"
           >
@@ -187,21 +182,21 @@ export const FolderMonitorModal: React.FC<Props> = ({
                 <div className="text-center">
                   <h3 className="text-base font-bold text-white">Drop Target Folder Here</h3>
                   <p className="text-xs text-white/80 mt-1 max-w-xs">
-                    Releases will recursively parse real files, infer schemas, and start live observation.
+                    Inspect local files and infer schemas. Uploaded selections are snapshots; choose a directory for live refresh.
                   </p>
                 </div>
               </div>
             )}
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-subtle bg-secondary">
-              <div className="flex items-center gap-3">
+            <div className="shrink-0 flex items-start justify-between gap-2 px-4 sm:px-5 py-3.5 border-b border-border-subtle bg-secondary">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="h-9 w-9 rounded-xl bg-accent text-white flex items-center justify-center shadow-xs flex-shrink-0">
                   <FolderLock size={18} style={{ color: '#ffffff' }} className="text-white" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold text-content">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 id="folder-monitor-title" className="text-sm font-bold text-content">
                       Target Folder Behavior Monitor
                     </h2>
                     <span className="text-[11px] font-mono text-emerald-500 flex items-center gap-1">
@@ -221,6 +216,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   onClick={onClose}
                   className="p-1.5 text-content-muted hover:text-content hover:bg-tertiary rounded-lg transition cursor-pointer"
                   title="Close"
+                  aria-label="Close folder monitor"
                 >
                   <X size={18} />
                 </button>
@@ -228,12 +224,12 @@ export const FolderMonitorModal: React.FC<Props> = ({
             </div>
 
             {/* Folder Target Status Strip */}
-            <div className="px-5 py-2.5 bg-secondary/70 border-b border-border-subtle flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5 min-w-0">
+            <div className="shrink-0 px-4 sm:px-5 py-2.5 bg-secondary/70 border-b border-border-subtle flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2.5 min-w-0 max-w-full">
                 <div className="flex items-center gap-1.5 font-mono text-content font-bold truncate">
                   <Folder size={14} className="text-accent flex-shrink-0" />
                   <span className="truncate">
-                    {monitor.folderName ? `/${monitor.folderName}` : 'No target folder locked'}
+                    {monitor.folderName ? `/${monitor.folderName}` : 'No source selected'}
                   </span>
                 </div>
 
@@ -243,15 +239,14 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   </span>
                 )}
 
-                {monitor.isLiveMonitoring && monitor.folderHandle && (
-                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-bold animate-pulse">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    LIVE OBSERVING
+                {monitor.sourceKind !== 'none' && (
+                  <span role="status" className="text-[10px] text-content-muted font-mono">
+                    {monitor.isLoading ? 'Scanning…' : monitor.error ? 'Scan failed' : monitor.sourceKind === 'snapshot' ? 'SNAPSHOT · no live refresh' : monitor.isLiveMonitoring ? 'LIVE · every 3 seconds' : 'PAUSED'}
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={monitor.handlePickDirectory}
@@ -259,12 +254,12 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-accent text-white hover:bg-accent-hover text-[11px] font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
                 >
                   <FolderLock size={12} />
-                  <span>{monitor.folderHandle ? 'Change Target Folder' : 'Lock Target Folder'}</span>
+                  <span>{monitor.sourceKind !== 'none' ? 'Change Source' : 'Select Target Folder'}</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => monitor.filePicker.selectFolder({ allowFallback: true })}
+                  onClick={selectFolderSnapshot}
                   disabled={monitor.isLoading}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-[11px] font-medium transition cursor-pointer disabled:opacity-50"
                   title="Select directory via local folder picker"
@@ -275,7 +270,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
 
                 <button
                   type="button"
-                  onClick={() => monitor.filePicker.selectFiles()}
+                  onClick={selectFiles}
                   disabled={monitor.isLoading}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content text-[11px] font-medium transition cursor-pointer disabled:opacity-50"
                   title="Select batch of files"
@@ -284,10 +279,10 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   <span>Batch Files</span>
                 </button>
 
-                {monitor.folderHandle && (
+                {monitor.canPoll && (
                   <button
                     type="button"
-                    onClick={() => monitor.scanFolderHandle(monitor.folderHandle, monitor.folderName)}
+                    onClick={() => void monitor.refresh()}
                     disabled={monitor.isLoading}
                     className="p-1 rounded-lg bg-secondary hover:bg-tertiary border border-border-subtle text-content transition cursor-pointer flex items-center gap-1 px-2 text-[11px]"
                     title="Scan folder now"
@@ -299,8 +294,11 @@ export const FolderMonitorModal: React.FC<Props> = ({
               </div>
             </div>
 
+            {monitor.error && <div role="alert" className="px-5 py-2 text-xs text-rose-400 bg-rose-500/10 break-words">{monitor.error}</div>}
+            {monitor.lastScanAt && <p className="px-5 py-1 text-[11px] text-content-muted">Last scan: {new Date(monitor.lastScanAt).toLocaleString()}</p>}
+
             {/* Navigation Tabs */}
-            <div className="px-5 pt-2 border-b border-border-subtle bg-secondary/40">
+            <div className="shrink-0 px-4 sm:px-5 pt-2 pb-2 border-b border-border-subtle bg-secondary/40">
               <AnimatedTabs
                 tabs={[
                   {
@@ -332,12 +330,13 @@ export const FolderMonitorModal: React.FC<Props> = ({
                 onChange={(t) => setActiveTab(t as MonitorTab)}
                 layoutId="folder-monitor-tabs"
                 variant="pill"
+                className="overflow-x-auto"
                 size="xs"
               />
             </div>
 
             {/* Body Content */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4">
               {activeTab === 'recommendations' && (
                 <FolderMonitorRecommendationsTab
                   analysis={monitor.analysis}
@@ -349,8 +348,8 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   onApplyModeOnly={handleApplyModeOnly}
                   onApplyTemplateOnly={handleApplyTemplateOnly}
                   onPickDirectory={monitor.handlePickDirectory}
-                  onSelectFolderFallback={() => monitor.filePicker.selectFolder({ allowFallback: true })}
-                  onSelectFiles={() => monitor.filePicker.selectFiles()}
+                  onSelectFolderFallback={selectFolderSnapshot}
+                  onSelectFiles={selectFiles}
                 />
               )}
 
@@ -364,7 +363,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
               )}
 
               {activeTab === 'schema' && (
-                <FolderMonitorSchemaTab analysis={monitor.analysis} />
+                <FolderMonitorSchemaTab analysis={monitor.analysis} onSelectSchemaSource={monitor.selectSchemaSource} />
               )}
 
               {activeTab === 'live_events' && (
@@ -374,16 +373,20 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   isLoading={monitor.isLoading}
                   folderHandle={monitor.folderHandle}
                   onToggleLiveMonitoring={() => monitor.setIsLiveMonitoring(!monitor.isLiveMonitoring)}
-                  onRescan={() => monitor.folderHandle && monitor.scanFolderHandle(monitor.folderHandle, monitor.folderName)}
+                  onRescan={() => void monitor.refresh()}
+                  sourceKind={monitor.sourceKind}
+                  error={monitor.error}
+                  lastScanAt={monitor.lastScanAt}
                 />
               )}
+              {monitor.analysis && <ProfileExportControls analysis={monitor.analysis} folderPath={typeof monitor.folderHandle?.path === 'string' ? monitor.folderHandle.path : undefined} />}
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-3 border-t border-border-subtle bg-secondary flex items-center justify-between text-xs">
+            <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-border-subtle bg-secondary flex flex-wrap gap-3 items-center justify-between text-xs">
               <div className="flex items-center gap-2 text-content-muted text-[11px]">
                 <ShieldCheck size={14} className="text-emerald-400" />
-                <span>Runs 100% in your browser. No files are uploaded to any server or AI service.</span>
+                <span>Analyzed locally. Selecting a folder does not acquire an OS lock or verify write access.</span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -398,32 +401,9 @@ export const FolderMonitorModal: React.FC<Props> = ({
                   <>
                     <button
                       type="button"
-                      onClick={async () => {
-                        const jsonStr = exportWorkspaceProfileBundleJson(monitor.analysis!);
-                        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                        const safeName = (monitor.folderName || 'folder').replace(/[^a-zA-Z0-9_-]/g, '_');
-                        const filename = `${safeName}-profile-${timestamp}.vampio.profile.json`;
-                        await saveFileToDiskOrDownload(filename, jsonStr, 'application/json', {
-                          title: 'Export Forensic Profile Bundle',
-                          defaultDir: typeof monitor.folderHandle?.path === 'string' ? monitor.folderHandle.path : undefined,
-                          filters: [
-                            {
-                              name: 'Vampio Profile (*.vampio.profile.json, *.json)',
-                              extensions: ['json'],
-                            },
-                          ],
-                        });
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg bg-secondary hover:bg-tertiary active:scale-95 border border-border-subtle text-content text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer select-none"
-                      title="Export complete forensic profile bundle for developer workspace"
-                    >
-                      <Download size={13} />
-                      <span>Export Profile Bundle (.JSON)</span>
-                    </button>
-                    <button
-                      type="button"
                       onClick={handleApplyAll}
-                      className="px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                      disabled={!monitor.analysis.extractedColumns.length || monitor.isLoading}
+                      className="disabled:opacity-50 disabled:cursor-not-allowed px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <Sparkles size={13} />
                       <span>Apply Recommendations</span>
