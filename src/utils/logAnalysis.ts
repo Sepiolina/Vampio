@@ -1,3 +1,5 @@
+import { MAX_INFERENCE_RECORDS } from './columnInference';
+
 export type DetectedLogFormat = 'jsonl' | 'json' | 'apache_nginx' | 'timestamp_level' | 'key_value' | 'delimited' | 'generic_text' | 'spreadsheet' | 'binary' | 'unknown';
 export interface LogSample {
   format: DetectedLogFormat;
@@ -9,12 +11,12 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 /** Recognize records before header inference, so a first log event never becomes a CSV header. */
 export function analyzeLogSample(text: string): LogSample {
   const cleaned = text.trim();
-  const lines = cleaned.split(/\r\n|\n|\r/).filter(Boolean).slice(0, 100);
+  const lines = cleaned.split(/\r\n|\n|\r/).filter(Boolean).slice(0, MAX_INFERENCE_RECORDS);
   if (!cleaned) return { format: 'unknown', records: [], evidence: [] };
   try {
     const parsed: unknown = JSON.parse(cleaned);
     if (isRecord(parsed)) return { format: 'json', records: [parsed], evidence: ['Parsed JSON object'] };
-    if (Array.isArray(parsed) && parsed.length && parsed.every(isRecord)) return { format: 'json', records: parsed.slice(0, 100), evidence: ['Parsed JSON object array'] };
+    if (Array.isArray(parsed) && parsed.length && parsed.every(isRecord)) return { format: 'json', records: parsed.slice(0, MAX_INFERENCE_RECORDS), evidence: ['Parsed JSON object array'] };
   } catch { /* JSONL can include an incomplete final sampled line. */ }
   const jsonLines = lines.map(line => { try { const v = JSON.parse(line); return isRecord(v) ? v : null; } catch { return null; } });
   if (jsonLines.filter(Boolean).length && jsonLines.slice(0, -1).every(Boolean) && (jsonLines.at(-1) || lines.at(-1)?.trim().startsWith('{')) && (lines.length > 1 || jsonLines[0])) {

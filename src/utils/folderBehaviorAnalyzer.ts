@@ -7,6 +7,7 @@ import { decodeTextSample, detectNewlines } from './textDecoding';
 import { analyzeLogSample, DetectedLogFormat } from './logAnalysis';
 import { parseWorkspaceProfileBundle } from './workspaceProfile';
 import { getSimulationFormat } from './profileExports';
+import { ColumnInferenceMetadata, inferColumnValues, MAX_INFERENCE_RECORDS } from './columnInference';
 
 export interface DiscoveredFolderFile {
   name: string;
@@ -77,7 +78,7 @@ export interface SuggestedModeConfig {
   suggestedGenerationMode: 'Batch' | 'Continuous';
 }
 
-export interface ExtractedFolderColumn {
+export interface ExtractedFolderColumn extends Partial<ColumnInferenceMetadata> {
   name: string;
   inferredType: ColumnType;
   inferredRule: string;
@@ -662,20 +663,23 @@ function deriveTemplateSuggestion(
         name: uniqueName,
         type: c.inferredType,
         rule: c.inferredRule,
-        skip_pct: 0,
+        skip_pct: Number(((c.nullRatio || 0) * 100).toFixed(2)),
+        notes: c.inferenceReason,
         condition: '',
       };
     });
 
     const fileBase = sampleFileUsed ? (sampleFileUsed.split(/[\\/]/).pop() || sampleFileUsed).replace(/\.[^.]+$/, '') : folderName;
     const cleanBase = cleanIdentifier(fileBase) || cleanIdentifier(folderName) || 'ingested';
+    const confidence = Math.round(extractedColumns.reduce((sum, column) => sum + (column.inferenceConfidence ?? 50), 0) / extractedColumns.length);
+    const sampledRows = Math.max(0, ...extractedColumns.map(column => column.sampleCount || 0));
 
     return {
       type: 'custom_extracted',
       presetName: `Custom: ${cleanBase}_Schema`,
       category: 'Extracted Schema',
-      confidence: 98,
-      reason: `Synthesized from ${extractedColumns.length} fields detected in "${sampleFileUsed || folderName}".`,
+      confidence,
+      reason: `Inferred ${extractedColumns.length} field rules from ${sampledRows} sampled record${sampledRows === 1 ? '' : 's'} in "${sampleFileUsed || folderName}"; average field confidence is ${confidence}%.`,
       matchedKeywords: extractedColumns.map((c) => c.name),
       columns: customCols,
       tableName: `${cleanBase}_records`,
@@ -792,13 +796,10 @@ function sniffColumnsFromContent(
             }
           }
           if (headers.length > 0) {
-            const dataRows = rows.slice(1, 10);
+            const dataRows = rows.slice(1, MAX_INFERENCE_RECORDS + 1);
             const seenNames = new Set<string>();
             return headers.map((header, colIdx) => {
-              const sampleVals = dataRows
-                .map((r) => (r && r[colIdx] !== undefined && r[colIdx] !== null ? String(r[colIdx]) : ''))
-                .filter((v) => v.length > 0);
-              const { type, rule } = inferColumnTypeFromSamples(header, sampleVals);
+              const inference = inferColumnValues(header, dataRows.map(row => row?.[colIdx]));
               const sanitized = sanitizeColumnName(header);
               let uniqueName = sanitized;
               let counter = 1;
@@ -809,9 +810,7 @@ function sniffColumnsFromContent(
 
               return {
                 name: uniqueName,
-                inferredType: type,
-                inferredRule: rule,
-                sampleValues: sampleVals.slice(0, 3),
+                ...inference,
               };
             });
           }
@@ -841,7 +840,7 @@ function sniffColumnsFromContent(
       }
 
       if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
-        return extractColumnsFromObjects(data.slice(0, 10));
+        return extractColumnsFromObjects(data.slice(0, MAX_INFERENCE_RECORDS));
       } else if (data && typeof data === 'object' && !Array.isArray(data)) {
         return extractColumnsFromObjects([data]);
       }
@@ -854,7 +853,7 @@ function sniffColumnsFromContent(
   if (ext === 'jsonl' || ext === 'ndjson' || (cleaned.startsWith('{') && cleaned.includes('\n{'))) {
     const lines = cleaned.split(/\r?\n/).filter((l) => l.trim().startsWith('{'));
     const parsedObjects: any[] = [];
-    for (const l of lines.slice(0, 10)) {
+    for (const l of lines.slice(0, MAX_INFERENCE_RECORDS)) {
       try {
         parsedObjects.push(JSON.parse(l));
       } catch {}
@@ -902,15 +901,12 @@ function sniffColumnsFromContent(
     const delimited = detectDelimiter(lines);
     const looksLikeHeader = rawHeaders.every(h => /^[\p{L}_][\p{L}\p{N}_ .()\/-]*$/u.test(h) || h === '');
     if (['csv', 'tsv'].includes(ext) || rawHeaders.length >= 2 && delimited.delimiter && looksLikeHeader) {
-      const dataRows = lines.slice(1, 10).map((l) => splitDelimitedLine(l, delimiter));
+      const dataRows = lines.slice(1, MAX_INFERENCE_RECORDS + 1).map((l) => splitDelimitedLine(l, delimiter));
       const seenNames = new Set<string>();
 
       return rawHeaders.map((header, colIdx) => {
         const cleanH = header || `Column_${colIdx + 1}`;
-        const sampleValues = dataRows
-          .map((r) => r[colIdx] || '')
-          .filter((v) => v.length > 0);
-        const { type, rule } = inferColumnTypeFromSamples(cleanH, sampleValues);
+        const inference = inferColumnValues(cleanH, dataRows.map(row => row[colIdx]));
         const baseSanitized = sanitizeColumnName(cleanH);
         let uniqueName = baseSanitized;
         let counter = 1;
@@ -921,27 +917,23 @@ function sniffColumnsFromContent(
 
         return {
           name: uniqueName,
-          inferredType: type,
-          inferredRule: rule,
-          sampleValues: sampleValues.slice(0, 3),
+          ...inference,
         };
       });
     }
   }
 
-  return [{ name: 'message', inferredType: 'String', inferredRule: '80', sampleValues: cleaned.split(/\r\n|\n|\r/).slice(0, 3) }];
+  return [{ name: 'message', ...inferColumnValues('message', cleaned.split(/\r\n|\n|\r/)) }];
 }
 
 function extractColumnsFromObjects(objects: Record<string, any>[]): ExtractedFolderColumn[] {
+  objects = objects.slice(0, MAX_INFERENCE_RECORDS);
   const keysSet = new Set<string>();
   objects.forEach((obj) => Object.keys(obj || {}).forEach((k) => keysSet.add(k)));
 
   const seenNames = new Set<string>();
   return Array.from(keysSet).map((key) => {
-    const samples = objects
-      .map((o) => (o[key] !== undefined && o[key] !== null ? String(o[key]) : ''))
-      .filter((s) => s.length > 0);
-    const { type, rule } = inferColumnTypeFromSamples(key, samples);
+    const inference = inferColumnValues(key, objects.map(object => object[key]));
     const baseSanitized = sanitizeColumnName(key);
     let uniqueName = baseSanitized;
     let counter = 1;
@@ -952,101 +944,9 @@ function extractColumnsFromObjects(objects: Record<string, any>[]): ExtractedFol
 
     return {
       name: uniqueName,
-      inferredType: type,
-      inferredRule: rule,
-      sampleValues: samples.slice(0, 3),
+      ...inference,
     };
   });
-}
-
-function inferColumnTypeFromSamples(header: string, samples: string[]): { type: ColumnType; rule: string } {
-  const lower = header.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
-  const words = new Set(lower.split(/[^a-z0-9]+/));
-  const hasWord = (...names: string[]) => names.some(name => words.has(name));
-  if (samples.length === 0) return { type: 'String', rule: '10' };
-
-  // Sequence / ID
-  if (lower === 'id' || lower.endsWith('_id') || lower === 'index' || lower === 'seq') {
-    if (samples.length > 0 && samples.every((s) => /^\d+$/.test(s))) {
-      return { type: 'Sequence', rule: samples[0] || '1001' };
-    }
-    if (samples.some((s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s))) {
-      return { type: 'UUID', rule: '' };
-    }
-  }
-
-  // UUID
-  if (lower.includes('uuid') || lower.includes('guid') || samples.some((s) => /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(s))) {
-    return { type: 'UUID', rule: '' };
-  }
-
-  // Email
-  if (lower.includes('email') || samples.some((s) => s.includes('@') && s.includes('.'))) {
-    return { type: 'Entity', rule: 'email' };
-  }
-
-  // Name
-  if (lower.includes('name')) {
-    if (lower.includes('first')) return { type: 'Entity', rule: 'first_name' };
-    if (lower.includes('last')) return { type: 'Entity', rule: 'last_name' };
-    return { type: 'Entity', rule: 'full_name' };
-  }
-
-  // IP Address
-  if (hasWord('ip', 'ipv4') || lower.includes('address') && samples.some((s) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s))) {
-    return { type: 'Entity', rule: 'ip_address' };
-  }
-
-  // Country / City
-  if (lower.includes('country')) return { type: 'Entity', rule: 'country' };
-  if (lower.includes('city')) return { type: 'Entity', rule: 'city' };
-
-  // Timestamp / Date
-  if (hasWord('date', 'time', 'timestamp') || lower.endsWith('_at')) {
-    if (samples.some((s) => s.includes('T') || s.includes('Z'))) {
-      return { type: 'DateTime', rule: 'ISO' };
-    }
-    return { type: 'DateTime', rule: 'YYYY-MM-DD HH:mm:ss' };
-  }
-
-  // Boolean
-  if (lower.startsWith('is_') || lower.startsWith('has_') || samples.length > 0 && samples.every((s) => ['true', 'false', '0', '1', 'yes', 'no'].includes(s.toLowerCase()))) {
-    return { type: 'Boolean', rule: '50' };
-  }
-
-  // Float / Currency / Percentage
-  if (
-    hasWord('price', 'rate', 'temp', 'temperature', 'weight') ||
-    samples.some((s) => /^-?\d+\.\d+$/.test(s))
-  ) {
-    const nums = samples.map((s) => parseFloat(s)).filter((n) => !isNaN(n));
-    const min = nums.length > 0 ? Math.min(...nums) : 10;
-    const max = nums.length > 0 ? Math.max(...nums) : 100;
-    const decimals = Math.min(6, Math.max(2, ...samples.map(value => value.split('.')[1]?.length || 0)));
-    return { type: 'Float', rule: `${min}, ${max}, ${decimals}` };
-  }
-
-  // Integer
-  if (
-    hasWord('count', 'qty', 'quantity', 'age') ||
-    samples.length > 0 && samples.every((s) => /^-?\d+$/.test(s))
-  ) {
-    const nums = samples.map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
-    const min = nums.length > 0 ? Math.min(...nums) : 1;
-    const max = nums.length > 0 ? Math.max(...nums) : 50;
-    return { type: 'Int', rule: `${min}, ${max}` };
-  }
-
-  // Status / Set/Enum
-  if (lower === 'level' || lower === 'severity' || lower.includes('status') || lower.includes('category') || lower.includes('type') || lower.includes('method')) {
-    const uniqueValues = Array.from(new Set(samples)).slice(0, 5);
-    if (uniqueValues.length > 0 && uniqueValues.every(value => !value.includes(','))) {
-      return { type: 'Set/Enum', rule: uniqueValues.map((v) => `${v}:25`).join(', ') };
-    }
-  }
-
-  // Default string
-  return { type: 'String', rule: '10' };
 }
 
 /**
@@ -1165,15 +1065,15 @@ function getExtension(filename: string): string {
 
 function splitDelimitedLine(line: string, delimiter: string): string[] {
   const cells: string[] = [];
-  let cell = ''; let quoted = false;
+  let cell = ''; let quoted = false; let wasQuoted = false;
   for (let i = 0; i < line.length; i++) {
     if (line[i] === '"') {
       if (quoted && line[i + 1] === '"') { cell += '"'; i++; }
-      else quoted = !quoted;
-    } else if (line[i] === delimiter && !quoted) { cells.push(cell.trim()); cell = ''; }
+      else { quoted = !quoted; wasQuoted = true; }
+    } else if (line[i] === delimiter && !quoted) { cells.push(wasQuoted ? cell : cell.trim()); cell = ''; wasQuoted = false; }
     else cell += line[i];
   }
-  cells.push(cell.trim());
+  cells.push(wasQuoted ? cell : cell.trim());
   return cells;
 }
 
@@ -1397,7 +1297,11 @@ export function generateWorkspaceProfileBundle(
     samplesIncluded: includeSamples,
     fileProfiles: analysis.fileProfiles?.map(file => ({
       ...file,
-      columns: file.columns.map(column => ({ ...column, sampleValues: includeSamples ? column.sampleValues : [] })),
+      columns: file.columns.map(column => ({
+        ...column,
+        sampleValues: includeSamples ? column.sampleValues : [],
+        valueFrequencies: includeSamples ? column.valueFrequencies : undefined,
+      })),
       sampleRows: includeSamples ? file.sampleRows : [],
     })),
     samplePreview: {

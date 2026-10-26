@@ -95,7 +95,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
   };
 
   return (
-    <div className="min-h-screen bg-primary text-content flex flex-col font-sans select-none">
+    <div className="min-w-0 [overflow-wrap:anywhere] min-h-screen bg-primary text-content flex flex-col font-sans select-none">
       {/* Top Header Bar */}
       <header className="min-h-14 py-2 gap-2 border-b border-border-subtle bg-secondary/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-10 sticky top-0">
         <div className="flex items-center gap-3 min-w-0">
@@ -137,7 +137,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5">
+      <main className="min-w-0 flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 space-y-5">
         {/* Status Toast Notification */}
         {statusNotification && (
           <div role="status" className="p-3 rounded-xl bg-accent text-white text-xs font-medium flex items-center justify-between shadow-lg animate-in fade-in duration-200">
@@ -250,7 +250,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
             {/* 4 Forensic Diagnostic Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* Card 1: Files & Volume */}
-              <div className="p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
+              <div className="min-w-0 max-w-full p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-content-muted">
                   <span className="text-[10px] font-bold uppercase tracking-wider font-mono">{t('operator.filesVolume')}</span>
                   <FileSpreadsheet size={15} className="text-accent" />
@@ -270,7 +270,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
               </div>
 
               {/* Card 2: Format & Delimiter */}
-              <div className="p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
+              <div className="min-w-0 max-w-full p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-content-muted">
                   <span className="text-[10px] font-bold uppercase tracking-wider font-mono">{t('operator.formatDelimiter')}</span>
                   <FileText size={15} className="text-indigo-400" />
@@ -290,7 +290,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
               </div>
 
               {/* Card 3: Encoding & Language */}
-              <div className="p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
+              <div className="min-w-0 max-w-full p-4 rounded-xl bg-secondary border border-border-subtle shadow-2xs space-y-2">
                 <div className="flex items-center justify-between text-content-muted">
                   <span className="text-[10px] font-bold uppercase tracking-wider font-mono">{t('operator.encodingScript')}</span>
                   <Languages size={15} className="text-amber-400" />
@@ -347,7 +347,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
             <LogProfilePanel analysis={analysis} onSelectSchemaSource={monitor.selectSchemaSource} />
 
             {/* Inferred Schema Columns Pill Bar */}
-            <div className="p-4 rounded-xl bg-secondary border border-border-subtle space-y-2.5">
+            <div className="min-w-0 max-w-full p-4 rounded-xl bg-secondary border border-border-subtle space-y-2.5">
               <div className="flex flex-wrap gap-2 items-center justify-between">
                 <span className="text-xs font-bold text-content flex items-center gap-1.5">
                   <Sparkles size={13} className="text-accent" />
@@ -362,7 +362,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
                 {analysis.extractedColumns.map((col, idx) => (
                   <div
                     key={idx}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary border border-border-subtle text-xs font-mono"
+                    className="min-w-0 max-w-full inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary border border-border-subtle text-xs font-mono"
                   >
                     <span className="font-bold text-content">{col.name}</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-secondary text-accent font-semibold border border-border-subtle">
@@ -380,7 +380,7 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
 
             {/* Sample Raw Content Snippet Preview */}
             {analysis.sampleSnippet && (
-              <div className="p-4 rounded-xl bg-secondary border border-border-subtle space-y-2">
+              <div className="min-w-0 max-w-full p-4 rounded-xl bg-secondary border border-border-subtle space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-content-muted flex items-center gap-1.5 font-mono">
                     <FileText size={13} />
@@ -397,8 +397,8 @@ export const OperatorMonitorView: React.FC<Props> = ({ onOpenInDeveloperStudio }
             <ProfileExportControls analysis={analysis} folderPath={folderPath} />
 
             {/* Main Action Bar for Field Operator */}
-            <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border-2 border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
-              <div className="space-y-1 text-center sm:text-left">
+            <div className="min-w-0 p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border-2 border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+              <div className="min-w-0 space-y-1 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   <h3 className="font-bold text-base text-content">Analysis summary</h3>

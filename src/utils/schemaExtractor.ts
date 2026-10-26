@@ -733,7 +733,7 @@ export async function parseExcelOrCsvFile(file: File): Promise<ParsedWorkbook> {
 
   // 4. Spreadsheets: XLSX, XLS, CSV, TSV, TXT
   const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true, cellStyles: true });
 
   let fileFormat = 'csv';
   if (lowerName.endsWith('.xlsx')) fileFormat = 'xlsx';

@@ -1,4 +1,5 @@
 import { generateRegexString } from './regexSynthesizer';
+import { parseEnumRule } from './enumRules';
 import {
   createScriptContext,
   executeJavaScriptScript,
@@ -1252,14 +1253,7 @@ export function parseBaseConfigFromRule(
     }
     case 'Set/Enum': {
       const def = createDefaultBaseConfig('Set/Enum');
-      const rawItems = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-      const items = rawItems.map(item => {
-        if (item.includes(':')) {
-          const [v, w] = item.split(':').map(p => p.trim());
-          return { value: v, weight: parseInt(w, 10) || 10 };
-        }
-        return { value: item, weight: 10 };
-      });
+      const items = parseEnumRule(trimmed);
       return {
         type: 'Set/Enum',
         config: {

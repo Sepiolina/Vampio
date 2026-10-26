@@ -171,7 +171,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
             aria-labelledby="folder-monitor-title"
             tabIndex={-1}
             {...monitor.filePicker.dragProps}
-            className="bg-primary border border-border-subtle rounded-2xl w-full max-w-4xl h-[90vh] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative"
+            className="bg-primary border border-border-subtle rounded-2xl min-w-0 w-full max-w-4xl h-[90dvh] max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl overflow-hidden relative"
           >
             {/* Drag & Drop Visual Overlay */}
             {monitor.filePicker.isDraggingOver && (
@@ -194,7 +194,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
                 <div className="h-9 w-9 rounded-xl bg-accent text-white flex items-center justify-center shadow-xs flex-shrink-0">
                   <FolderLock size={18} style={{ color: '#ffffff' }} className="text-white" />
                 </div>
-                <div>
+                <div className="min-w-0 [overflow-wrap:anywhere]">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 id="folder-monitor-title" className="text-sm font-bold text-content">
                       Target Folder Behavior Monitor
@@ -223,6 +223,7 @@ export const FolderMonitorModal: React.FC<Props> = ({
               </div>
             </div>
 
+            <div data-monitor-scroll className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain">
             {/* Folder Target Status Strip */}
             <div className="shrink-0 px-4 sm:px-5 py-2.5 bg-secondary/70 border-b border-border-subtle flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex flex-wrap items-center gap-2.5 min-w-0 max-w-full">
@@ -303,25 +304,29 @@ export const FolderMonitorModal: React.FC<Props> = ({
                 tabs={[
                   {
                     id: 'recommendations',
-                    label: 'Smart Recommendations',
+                    label: <><span className="lg:hidden">Advice</span><span className="hidden lg:inline">Smart Recommendations</span></>,
+                    title: 'Smart Recommendations',
                     icon: <Sparkles size={13} />,
                     badge: monitor.analysis ? 'Ready' : undefined,
                   },
                   {
                     id: 'metrics',
-                    label: 'Behaviors & Files',
+                    label: <><span className="lg:hidden">Files</span><span className="hidden lg:inline">Behaviors & Files</span></>,
+                    title: 'Behaviors & Files',
                     icon: <HardDrive size={13} />,
                     badge: monitor.discoveredFiles.length > 0 ? monitor.discoveredFiles.length : undefined,
                   },
                   {
                     id: 'schema',
-                    label: 'Discovered Schema',
+                    label: <><span className="lg:hidden">Schema</span><span className="hidden lg:inline">Discovered Schema</span></>,
+                    title: 'Discovered Schema',
                     icon: <FileSpreadsheet size={13} />,
                     badge: monitor.analysis?.extractedColumns.length || undefined,
                   },
                   {
                     id: 'live_events',
-                    label: 'Live Watcher Log',
+                    label: <><span className="lg:hidden">Events</span><span className="hidden lg:inline">Live Watcher Log</span></>,
+                    title: 'Live Watcher Log',
                     icon: <Terminal size={13} />,
                     badge: monitor.events.length > 0 ? monitor.events.length : undefined,
                   },
@@ -330,13 +335,13 @@ export const FolderMonitorModal: React.FC<Props> = ({
                 onChange={(t) => setActiveTab(t as MonitorTab)}
                 layoutId="folder-monitor-tabs"
                 variant="pill"
-                className="overflow-x-auto"
+                className="min-w-0 max-w-full grid grid-cols-2 lg:flex overflow-visible [&_button]:min-w-0 [&_button]:justify-center"
                 size="xs"
               />
             </div>
 
             {/* Body Content */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4">
+            <div className="min-w-0 p-4 sm:p-5 space-y-4 [overflow-wrap:anywhere]">
               {activeTab === 'recommendations' && (
                 <FolderMonitorRecommendationsTab
                   analysis={monitor.analysis}
@@ -380,16 +385,16 @@ export const FolderMonitorModal: React.FC<Props> = ({
                 />
               )}
               {monitor.analysis && <ProfileExportControls analysis={monitor.analysis} folderPath={typeof monitor.folderHandle?.path === 'string' ? monitor.folderHandle.path : undefined} />}
+              <p className="flex items-start gap-2 text-content-muted text-[11px]">
+                <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                <span>Analyzed locally. Selecting a folder does not acquire an OS lock or verify write access.</span>
+              </p>
+            </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-border-subtle bg-secondary flex flex-wrap gap-3 items-center justify-between text-xs">
-              <div className="flex items-center gap-2 text-content-muted text-[11px]">
-                <ShieldCheck size={14} className="text-emerald-400" />
-                <span>Analyzed locally. Selecting a folder does not acquire an OS lock or verify write access.</span>
-              </div>
-
-              <div className="flex items-center gap-2">
+            <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-border-subtle bg-secondary flex flex-wrap gap-3 items-center justify-end text-xs">
+              <div className="flex flex-wrap justify-end items-center gap-2 min-w-0 max-w-full">
                 <button
                   type="button"
                   onClick={onClose}
@@ -403,9 +408,9 @@ export const FolderMonitorModal: React.FC<Props> = ({
                       type="button"
                       onClick={handleApplyAll}
                       disabled={!monitor.analysis.extractedColumns.length || monitor.isLoading}
-                      className="disabled:opacity-50 disabled:cursor-not-allowed px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                      className="disabled:opacity-50 disabled:cursor-not-allowed max-w-full min-w-0 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Sparkles size={13} />
+                      <Sparkles size={13} className="shrink-0" />
                       <span>Apply Recommendations</span>
                     </button>
                   </>

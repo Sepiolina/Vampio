@@ -531,6 +531,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
+        {format === 'csv' && sampleColumns.some(column => column.type === 'DateTime') && (
+          <p className="text-[11px] text-content-muted leading-relaxed">
+            Excel showing #######? AutoFit the date/time columns. CSV has no column sizing.{' '}
+            <button type="button" onClick={() => setFormat('xlsx')} className="text-accent underline underline-offset-2">Use XLSX with fitted columns</button>
+          </p>
+        )}
+
         {/* Section 3: Context-Adaptive Strategy Configuration */}
         {outputStrategy === 'single' && (
           <div className="space-y-2 p-3 bg-primary rounded-xl border border-border-subtle">

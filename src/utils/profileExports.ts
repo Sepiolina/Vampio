@@ -16,6 +16,16 @@ export interface SimulationTemplate {
     sourceFolder: string;
     observed: { encoding: string; encodingConfidence: number; newline: string; delimiter?: string; logFormat?: string };
     recommendedOutput: FolderAnalysisResult['suggestedMode'];
+    inference?: Array<{
+      name: string;
+      type: string;
+      reason?: string;
+      confidence?: number;
+      sampledRows?: number;
+      nonemptyRows?: number;
+      distinctValues?: number;
+      missingRatio?: number;
+    }>;
     limitations: string[];
     privacy: string;
   };
@@ -59,6 +69,16 @@ export function buildSimulationTemplate(analysis: FolderAnalysisResult): Simulat
       },
       recommendedOutput: { ...analysis.suggestedMode, format: getSimulationFormat(analysis),
         formatReason: `Normalized synthetic ${getSimulationFormat(analysis).toUpperCase()} output from the inspected schema sample; exact source bytes and arbitrary log layouts are not reproduced.` },
+      inference: analysis.extractedColumns.map(column => ({
+        name: column.name,
+        type: column.inferredType,
+        reason: column.inferenceReason,
+        confidence: column.inferenceConfidence,
+        sampledRows: column.sampleCount,
+        nonemptyRows: column.nonNullCount,
+        distinctValues: column.distinctCount,
+        missingRatio: column.nullRatio,
+      })),
       limitations: [...limitations],
       privacy: 'Raw snippets and sample rows are omitted. Column names and inferred enum values, constants, ranges, filenames and folder metadata may still reveal source information; review before sharing.',
     },
@@ -118,8 +138,9 @@ export function exportLogProfileMarkdown(analysis: FolderAnalysisResult, options
         profile.truncated ? 'Yes' : 'No', `${profile.readStatus}${profile.readError ? `: ${profile.readError}` : ''}`]),
     ) : 'Per-file profiles were not recorded by this analysis.',
     ...(analysis.fileProfiles || []).filter(profile => profile.columns.length).map(profile =>
-      `Fields in ${cell(profile.name)}:\n\n` + table(['Column', 'Inferred type', 'Generator rule'],
-        profile.columns.map(column => [column.name, column.inferredType, column.inferredRule]))),
+      `Fields in ${cell(profile.name)}:\n\n` + table(['Column', 'Inferred type', 'Generator rule', 'Reason / evidence'],
+        profile.columns.map(column => [column.name, column.inferredType, column.inferredRule,
+          column.inferenceReason ? `${column.inferenceReason} (${column.inferenceConfidence ?? '?'}% confidence; ${column.nonNullCount ?? 0}/${column.sampleCount ?? 0} nonempty; ${column.distinctCount ?? 0} distinct)` : 'Not recorded']))),
     '## Extracted schema and generator rules',
     `Template: ${cell(template.tableName)} (${cell(template.type)}; ${template.confidence}% confidence). ${cell(template.reason)}`,
     table(['Column', 'Generator type', 'Rule', 'Skip (%)'], template.columns.map(column => [column.name, column.type, column.rule, column.skip_pct])),

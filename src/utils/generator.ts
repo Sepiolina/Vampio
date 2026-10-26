@@ -2,6 +2,7 @@ import { ColumnSpec } from '../types';
 import { getCustomColumnTypes, getExamplePresetTypes, generateCustomTypeValue, getRegisteredCustomEntities } from './customTypesManager';
 import { getSynchronousRestApiValue, parseRestApiConfig } from './restApiManager';
 import { generateRegexString } from './regexSynthesizer';
+import { sampleEnumRule } from './enumRules';
 
 // Realistic datasets for Entity generator
 export const FIRST_NAMES = [
@@ -374,70 +375,27 @@ export class GeneratorEngine {
       return Math.floor(target.getTime() / 1000).toString();
     }
 
-    const padNum = (n: number) => n.toString().padStart(2, '0');
-    if (rule.toLowerCase() === 'date' || rule === 'YYYY-MM-DD') {
-      return `${target.getFullYear()}-${padNum(target.getMonth() + 1)}-${padNum(target.getDate())}`;
-    }
+    const format = rule.trim();
+    const alias = format.toLowerCase();
+    if (alias === 'iso') return target.toISOString();
 
-    if (rule.toLowerCase() === 'time') {
-      return target.toTimeString().split(' ')[0];
-    }
-
-    // Default: "YYYY-MM-DD HH:mm:ss"
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const y = target.getFullYear();
-    const m = pad(target.getMonth() + 1);
-    const d = pad(target.getDate());
-    const h = pad(target.getHours());
-    const min = pad(target.getMinutes());
-    const s = pad(target.getSeconds());
-
-    if (rule.toLowerCase() === 'iso') {
-      return target.toISOString();
-    }
-
-    return `${y}-${m}-${d} ${h}:${min}:${s}`;
+    const pad = (value: number, length = 2) => String(value).padStart(length, '0');
+    const tokens: Record<string, string> = {
+      YYYY: String(target.getFullYear()), MM: pad(target.getMonth() + 1), DD: pad(target.getDate()),
+      HH: pad(target.getHours()), mm: pad(target.getMinutes()), ss: pad(target.getSeconds()),
+      SSS: pad(target.getMilliseconds(), 3),
+    };
+    const requestedFormat = alias === 'time' ? 'HH:mm:ss' : alias === 'date' ? 'YYYY-MM-DD' : format;
+    // Preserve explicit inferred formats, including time-only values. Range aliases and
+    // unsupported formats retain the established full datetime fallback.
+    const outputFormat = /^(?:YYYY|MM|DD|HH|mm|ss|SSS|[-/: .T])+$/.test(requestedFormat)
+      && /YYYY|MM|DD|HH|mm|ss|SSS/.test(requestedFormat)
+      ? requestedFormat : 'YYYY-MM-DD HH:mm:ss';
+    return outputFormat.replace(/YYYY|SSS|MM|DD|HH|mm|ss/g, token => tokens[token]);
   }
 
   private generateEnum(rule: string): string {
-    if (!rule) return '';
-    // Check if weighted: e.g. "Active:70, Pending:20, Inactive:10"
-    const items = rule.split(',').map((s) => s.trim()).filter(Boolean);
-    if (items.length === 0) return '';
-
-    const weighted: { val: string; weight: number }[] = [];
-    let hasWeights = false;
-
-    for (const item of items) {
-      const colonIdx = item.lastIndexOf(':');
-      if (colonIdx > 0) {
-        const v = item.slice(0, colonIdx).trim();
-        const w = item.slice(colonIdx + 1).trim();
-        // The weight is the LAST ":number". A purely numeric suffix is always read as a weight
-        // (so "10:30" means value "10" with weight 30); non-numeric suffixes stay part of the value.
-        if (/^\d+(\.\d+)?$/.test(w) && parseFloat(w) > 0) {
-          hasWeights = true;
-          weighted.push({ val: v, weight: parseFloat(w) });
-          continue;
-        }
-      }
-      weighted.push({ val: item, weight: 1 });
-    }
-
-    if (hasWeights) {
-      const totalWeight = weighted.reduce((acc, curr) => acc + curr.weight, 0);
-      let randomVal = Math.random() * totalWeight;
-      for (const entry of weighted) {
-        if (randomVal < entry.weight) {
-          return entry.val;
-        }
-        randomVal -= entry.weight;
-      }
-      return weighted[0].val;
-    }
-
-    const randomIndex = Math.floor(Math.random() * items.length);
-    return items[randomIndex];
+    return sampleEnumRule(rule);
   }
 
   private generateRegexLike(pattern: string): string {
