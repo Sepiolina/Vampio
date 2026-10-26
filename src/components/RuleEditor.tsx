@@ -7,6 +7,7 @@ import { RestApiConfigModal } from './RestApiConfigModal';
 import { RestApiLatencyBadge } from './RestApiLatencyBadge';
 import { parseRestApiConfig, serializeRestApiConfig } from '../utils/restApiManager';
 import { useI18n } from '../i18n';
+import { parseEnumRule } from '../utils/enumRules';
 
 interface Props {
   col: ColumnSpec;
@@ -441,17 +442,24 @@ export const RuleEditor: React.FC<Props> = ({ col, onChange, availableColumns })
     }
 
     case 'Set/Enum': {
+      const choices = parseEnumRule(col.rule);
       return (
         <div className="flex flex-col gap-1.5 w-full min-w-0">
           <div className="flex items-center gap-2">
             <input
               type="text"
+              aria-label={`Enum choices for ${col.name}`}
               placeholder={t('ruleEditor.optionsPlaceholder')}
               value={col.rule}
               onChange={(e) => onChange(e.target.value)}
               className="w-full min-w-0 px-2.5 py-1.5 text-xs bg-primary border border-border-subtle rounded-md text-content font-mono focus:outline-none focus:border-accent"
             />
           </div>
+          {choices.length > 0 ? (
+            <p className="text-[11px] text-content-muted break-words">
+              {choices.length} choices; weights control how often each appears. {choices.slice(0, 8).map(choice => `${choice.value} (${choice.weight})`).join(' · ')}{choices.length > 8 ? ' · …' : ''}
+            </p>
+          ) : col.rule.trim() ? <p role="alert" className="text-[11px] text-amber-500">No valid choices. Check the values and weights.</p> : null}
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[10px] text-content-muted">{t('ruleEditor.presets')}</span>
             {ENUM_PRESETS.map((p) => (

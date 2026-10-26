@@ -31,3 +31,11 @@ JSONL and delimited files yield structured fields where recognized. Apache-style
 Simulation generates new values using the extracted rules. It does not replay exact original records, relationships, timing, legacy encoding, BOMs or arbitrary raw log layouts. Output uses UTF-8 and each selected format's serializer. Custom delimiters and exact text log layouts need a custom serializer. Template-only imports load columns and table name; their metadata documents suggested settings but does not apply them. The profile bundle is the main route for restoring simulation settings; review the destination before writing files.
 
 Profile imports restore the row count, interval, execution mode, filename pattern and selected schema. They start with a new browser download named for the simulation. Source directories are kept separate from output destinations, and source append suggestions become fresh output until you explicitly configure an append target.
+
+## Review column types
+
+Expand **How Enum, Regex and String are chosen** for the decision criteria, then inspect **Why this type?** beside each inferred field. Status values such as `OK`, `Error`, and `not OK` become enums with their observed frequencies even under unrelated column names. Repeated short categories favor Enum; mostly unique codes with a consistent shape favor Regex; free text and uncertain evidence stay String. Sample counts, distinct counts and confidence help distinguish a well-observed choice from a provisional one. Every observed enum label is retained, including labels with spaces or commas.
+
+After applying the schema, Developer Studio lets you change the type and generation rule. Exported profiles, simulation templates and Markdown reports retain the inference explanation. For detailed thresholds, see [Log profile exports](./log-profiles.md#column-inference-criteria).
+
+When opening generated CSV in Excel, `#######` is a spreadsheet display issue: CSV has no column widths. AutoFit the date/time columns or choose **Use XLSX with fitted columns** in the generation panel. Time-only source values now generate clock values instead of full timestamps.

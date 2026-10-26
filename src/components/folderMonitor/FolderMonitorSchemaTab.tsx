@@ -1,6 +1,7 @@
 import React from 'react';
 import { LogProfilePanel } from './LogProfilePanel';
 import { FolderAnalysisResult } from '../../utils/folderBehaviorAnalyzer';
+import { InferenceEvidence } from './InferenceDetails';
 
 export interface FolderMonitorSchemaTabProps {
   analysis: FolderAnalysisResult | null;
@@ -37,6 +38,7 @@ export const FolderMonitorSchemaTab: React.FC<FolderMonitorSchemaTabProps> = ({ 
               <th className="p-2.5">Inferred Type</th>
               <th className="p-2.5">Inferred Rule</th>
               <th className="p-2.5 pr-4">Sample Values Observed</th>
+              <th className="p-2.5 pr-4">Why this type?</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle/50 font-mono text-[11px]">
@@ -48,12 +50,13 @@ export const FolderMonitorSchemaTab: React.FC<FolderMonitorSchemaTabProps> = ({ 
                     {col.inferredType}
                   </span>
                 </td>
-                <td className="p-2.5 text-content-muted truncate max-w-[150px]">
+                <td title={col.inferredRule} className="p-2.5 text-content-muted truncate max-w-[150px]">
                   {col.inferredRule || 'Standard'}
                 </td>
                 <td className="p-2.5 pr-4 text-content-muted truncate max-w-[200px]">
                   {col.sampleValues.length > 0 ? col.sampleValues.join(', ') : 'Synthesized default'}
                 </td>
+                <td className="p-2.5 min-w-52"><InferenceEvidence column={col} /></td>
               </tr>
             ))}
           </tbody>

@@ -198,6 +198,31 @@ export function resolveMultiFilename(
   return resolved;
 }
 
+/** Size columns from displayed values without converting time strings to Excel serials. */
+function fitWorksheetColumns(ws: XLSX.WorkSheet): void {
+  const desiredWidths: number[] = [];
+  for (const address of Object.keys(ws)) {
+    if (address.startsWith('!')) continue;
+    const cell = ws[address] as XLSX.CellObject;
+    const column = XLSX.utils.decode_cell(address).c;
+    const text = XLSX.utils.format_cell(cell);
+    const length = text.split(/\r\n|\r|\n/).reduce((longest, line) => Math.max(longest,
+      Array.from(line).reduce((width, char) => width + (/[^\u0000-\u00ff]/.test(char) ? 2 : 1), 0)), 0);
+    // Very large messages should not produce an unusably wide worksheet.
+    desiredWidths[column] = Math.max(desiredWidths[column] || 10, Math.min(60, length + 2));
+  }
+  const columns = ws['!cols'] || [];
+  desiredWidths.forEach((desiredWidth, index) => {
+    const existing = columns[index];
+    // SheetJS exposes widths in characters or pixels depending on how the workbook was read.
+    const existingWidth = existing?.wch ?? (existing?.wpx !== undefined ? (existing.wpx - 5) / 7 : existing?.width ?? 0);
+    if (existingWidth >= desiredWidth) return;
+    const { width: _width, wpx: _wpx, ...attributes } = existing || {};
+    columns[index] = { ...attributes, wch: desiredWidth };
+  });
+  ws['!cols'] = columns;
+}
+
 /**
  * Excel builder using SheetJS (XLSX / XLS)
  */
@@ -210,6 +235,7 @@ export function formatExcelDataset(
   const colNames = specs.map((c) => c.name);
   const cleanSheetName = (sheetName || 'Data').replace(/[\\/?*[\]]/g, '_').slice(0, 31);
   const ws = XLSX.utils.json_to_sheet(rows, { header: colNames });
+  fitWorksheetColumns(ws);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, cleanSheetName);
   const out = XLSX.write(wb, { bookType, type: 'array' });
@@ -243,6 +269,7 @@ export function appendRowsToWorkbook(
       finalSheetName = `${desiredName.slice(0, 28)}_${counter++}`;
     }
     const ws = XLSX.utils.json_to_sheet(newRows, { header: colNames });
+    fitWorksheetColumns(ws);
     XLSX.utils.book_append_sheet(wb, ws, finalSheetName);
   } else {
     const sheetName = targetSheetName && wb.Sheets[targetSheetName]
@@ -252,6 +279,7 @@ export function appendRowsToWorkbook(
     let ws = wb.Sheets[sheetName];
     if (!ws) {
       ws = XLSX.utils.json_to_sheet(newRows, { header: colNames });
+      fitWorksheetColumns(ws);
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     } else {
       // Append rows to existing worksheet
@@ -260,6 +288,7 @@ export function appendRowsToWorkbook(
         skipHeader: true,
         origin: -1 // appends below the last row
       });
+      fitWorksheetColumns(ws);
     }
   }
 

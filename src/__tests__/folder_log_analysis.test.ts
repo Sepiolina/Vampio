@@ -142,11 +142,14 @@ describe('byte samples and log inference', () => {
     expect(result.extractedColumns.map(c => c.inferredType)).toEqual(['String', 'String', 'String']);
   });
 
-  it('retains colon-bearing enum values and falls back safely for comma-bearing values', () => {
+  it('retains colon and comma-bearing enum values with the lossless rule representation', () => {
     const result = analyze('events.jsonl', utf8('{"status":"stage:30","category":"one,two"}\n{"status":"stage:40","category":"three,four"}'));
-    expect(result.extractedColumns.find(c => c.name === 'category')?.inferredType).toBe('String');
+    expect(result.extractedColumns.find(c => c.name === 'category')?.inferredType).toBe('Set/Enum');
     const rows = new GeneratorEngine().generateBatch(result.suggestedTemplate.columns, 10);
-    rows.forEach(row => expect(['stage:30', 'stage:40']).toContain(row.status));
+    rows.forEach(row => {
+      expect(['stage:30', 'stage:40']).toContain(row.status);
+      expect(['one,two', 'three,four']).toContain(row.category);
+    });
   });
 
   it('retains partial text in the preview while excluding incomplete CSV record values', () => {
