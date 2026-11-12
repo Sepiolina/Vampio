@@ -7,7 +7,7 @@ import { decodeTextSample, detectNewlines } from './textDecoding';
 import { analyzeLogSample, DetectedLogFormat } from './logAnalysis';
 import { parseWorkspaceProfileBundle } from './workspaceProfile';
 import { getSimulationFormat } from './profileExports';
-import { ColumnInferenceMetadata, inferColumnValues, MAX_INFERENCE_RECORDS } from './columnInference';
+import { ColumnInferenceMetadata, inferColumnValues, MAX_INFERENCE_RECORDS, InferenceSensitivity, InferenceAlternative } from './columnInference';
 
 export interface DiscoveredFolderFile {
   name: string;
@@ -83,6 +83,8 @@ export interface ExtractedFolderColumn extends Partial<ColumnInferenceMetadata> 
   inferredType: ColumnType;
   inferredRule: string;
   sampleValues: string[];
+  alternateTypes?: InferenceAlternative[];
+  sensitivity?: InferenceSensitivity;
 }
 
 export interface SuggestedTemplateConfig {
@@ -379,14 +381,15 @@ export function analyzeFolderFiles(
   files: DiscoveredFolderFile[],
   folderName: string = 'locked_folder',
   existingWorkspaceColumns?: ColumnSpec[],
-  preferredSampleName?: string
+  preferredSampleName?: string,
+  options?: { sensitivity?: InferenceSensitivity }
 ): FolderAnalysisResult {
   files = files.map(file => {
     if (!file.rawBytes) return file;
     const decoded = decodeTextSample(file.rawBytes, file.truncated ?? file.size > file.rawBytes.length);
     return { ...file, sampleContent: decoded.text || undefined };
   });
-  const fileProfiles = files.map(profileFileSample);
+  const fileProfiles = files.map(file => profileFileSample(file, options?.sensitivity));
   const totalFiles = files.length;
   let totalSizeBytes = 0;
   let minSizeBytes = Infinity;
@@ -493,7 +496,13 @@ export function analyzeFolderFiles(
 
   for (const cand of sortedCandidates) {
     if (cand.sampleContent || cand.rawBytes) {
-      const cols = sniffColumnsFromContent(cand.name, completeTextForInference(cand, cand.sampleContent || ''), cand.rawBytes, cand.truncated ?? (cand.rawBytes ? cand.size > cand.rawBytes.length : false));
+      const cols = sniffColumnsFromContent(
+        cand.name,
+        completeTextForInference(cand, cand.sampleContent || ''),
+        cand.rawBytes,
+        cand.truncated ?? (cand.rawBytes ? cand.size > cand.rawBytes.length : false),
+        options?.sensitivity
+      );
       if (cols.length > 0) {
         extractedColumns = cols;
         sampleCandidate = cand;
@@ -773,7 +782,8 @@ function sniffColumnsFromContent(
   filename: string,
   content: string,
   rawBytes?: Uint8Array,
-  truncated = false
+  truncated = false,
+  sensitivity?: InferenceSensitivity
 ): ExtractedFolderColumn[] {
   const ext = getExtension(filename).toLowerCase();
 
@@ -799,7 +809,7 @@ function sniffColumnsFromContent(
             const dataRows = rows.slice(1, MAX_INFERENCE_RECORDS + 1);
             const seenNames = new Set<string>();
             return headers.map((header, colIdx) => {
-              const inference = inferColumnValues(header, dataRows.map(row => row?.[colIdx]));
+              const inference = inferColumnValues(header, dataRows.map(row => row?.[colIdx]), { sensitivity });
               const sanitized = sanitizeColumnName(header);
               let uniqueName = sanitized;
               let counter = 1;
@@ -822,7 +832,7 @@ function sniffColumnsFromContent(
   }
 
   const logSample = analyzeLogSample(content);
-  if (logSample.records.length) return extractColumnsFromObjects(logSample.records);
+  if (logSample.records.length) return extractColumnsFromObjects(logSample.records, sensitivity);
   if (rawBytes && decodeTextSample(rawBytes).binary) return [];
   const cleaned = content.replace(/^\uFEFF/, '').trim();
   if (!cleaned) return [];
@@ -840,9 +850,9 @@ function sniffColumnsFromContent(
       }
 
       if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
-        return extractColumnsFromObjects(data.slice(0, MAX_INFERENCE_RECORDS));
+        return extractColumnsFromObjects(data.slice(0, MAX_INFERENCE_RECORDS), sensitivity);
       } else if (data && typeof data === 'object' && !Array.isArray(data)) {
-        return extractColumnsFromObjects([data]);
+        return extractColumnsFromObjects([data], sensitivity);
       }
     } catch {
       // Fallback to regex key extraction
@@ -859,7 +869,7 @@ function sniffColumnsFromContent(
       } catch {}
     }
     if (parsedObjects.length > 0) {
-      return extractColumnsFromObjects(parsedObjects);
+      return extractColumnsFromObjects(parsedObjects, sensitivity);
     }
   }
 
@@ -906,7 +916,7 @@ function sniffColumnsFromContent(
 
       return rawHeaders.map((header, colIdx) => {
         const cleanH = header || `Column_${colIdx + 1}`;
-        const inference = inferColumnValues(cleanH, dataRows.map(row => row[colIdx]));
+        const inference = inferColumnValues(cleanH, dataRows.map(row => row[colIdx]), { sensitivity });
         const baseSanitized = sanitizeColumnName(cleanH);
         let uniqueName = baseSanitized;
         let counter = 1;
@@ -923,17 +933,17 @@ function sniffColumnsFromContent(
     }
   }
 
-  return [{ name: 'message', ...inferColumnValues('message', cleaned.split(/\r\n|\n|\r/)) }];
+  return [{ name: 'message', ...inferColumnValues('message', cleaned.split(/\r\n|\n|\r/), { sensitivity }) }];
 }
 
-function extractColumnsFromObjects(objects: Record<string, any>[]): ExtractedFolderColumn[] {
+function extractColumnsFromObjects(objects: Record<string, any>[], sensitivity?: InferenceSensitivity): ExtractedFolderColumn[] {
   objects = objects.slice(0, MAX_INFERENCE_RECORDS);
   const keysSet = new Set<string>();
   objects.forEach((obj) => Object.keys(obj || {}).forEach((k) => keysSet.add(k)));
 
   const seenNames = new Set<string>();
   return Array.from(keysSet).map((key) => {
-    const inference = inferColumnValues(key, objects.map(object => object[key]));
+    const inference = inferColumnValues(key, objects.map(object => object[key]), { sensitivity });
     const baseSanitized = sanitizeColumnName(key);
     let uniqueName = baseSanitized;
     let counter = 1;
@@ -942,12 +952,12 @@ function extractColumnsFromObjects(objects: Record<string, any>[]): ExtractedFol
     }
     seenNames.add(uniqueName.toLowerCase());
 
-    return {
-      name: uniqueName,
-      ...inference,
-    };
-  });
-}
+      return {
+        name: uniqueName,
+        ...inference,
+      };
+    });
+  }
 
 /**
  * Detects patterns like "orders_001.csv", "sensor-2026-09-22-01.json", "part-0.jsonl"
@@ -1371,14 +1381,14 @@ async function readNativeSample(path: string, limit: number): Promise<Uint8Array
   }
 }
 
-function profileFileSample(file: DiscoveredFolderFile): FileAnalysisProfile {
+function profileFileSample(file: DiscoveredFolderFile, sensitivity?: InferenceSensitivity): FileAnalysisProfile {
   const truncated = file.truncated ?? (file.rawBytes ? file.size > file.rawBytes.length : false);
   const decoded = file.rawBytes ? decodeTextSample(file.rawBytes, truncated) : undefined;
   const text = decoded?.text ?? file.sampleContent ?? '';
   const inferenceText = completeTextForInference(file, text);
   const log = analyzeLogSample(inferenceText);
   const spreadsheet = /\.xlsx?$/i.test(file.name);
-  const columns = decoded?.binary && !spreadsheet ? [] : sniffColumnsFromContent(file.name, inferenceText, file.rawBytes, truncated);
+  const columns = decoded?.binary && !spreadsheet ? [] : sniffColumnsFromContent(file.name, inferenceText, file.rawBytes, truncated, sensitivity);
   const delimiter = detectDelimiter(text.split(/\r\n|\n|\r/)).delimiter;
   const format = spreadsheet && columns.length ? 'spreadsheet' : decoded?.binary ? 'binary' : log.format === 'generic_text' && delimiter && delimiter !== ' ' ? 'delimited' : log.format;
   const keys = log.records.length ? Array.from(new Set(log.records.flatMap(Object.keys))) : [];

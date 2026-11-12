@@ -217,7 +217,8 @@ export const Header: React.FC<Props> = ({
         layoutId="workspace-main-tabs"
         variant="pill"
         size="xs"
-        className="order-last sm:order-none w-full sm:w-auto min-w-0 overflow-x-auto shrink-0 sm:shrink justify-start [&_button]:shrink-0 [&_button]:px-1.5 sm:[&_button]:px-2.5 [&_button]:min-h-7"
+        className="order-last sm:order-none w-full sm:w-auto min-w-0 h-8 max-h-8 overflow-x-auto overflow-y-hidden no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shrink-0 sm:shrink justify-start py-0.5 px-1 [&_button]:shrink-0 [&_button]:px-1.5 sm:[&_button]:px-2.5 [&_button]:h-6.5 [&_button]:min-h-[26px] [&_button]:max-h-[26px] [&_button]:py-0"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       />
 
       {/* Right: Status Indicators, Language & Theme */}

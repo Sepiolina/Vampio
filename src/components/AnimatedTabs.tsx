@@ -19,7 +19,9 @@ export interface AnimatedTabsProps<T extends string = string> {
   variant?: 'pill' | 'chip' | 'underline' | 'segmented';
   size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
+  style?: React.CSSProperties;
   fullWidth?: boolean;
+  onWheel?: (e: React.WheelEvent<HTMLDivElement>) => void;
 }
 
 export function AnimatedTabs<T extends string = string>({
@@ -30,12 +32,23 @@ export function AnimatedTabs<T extends string = string>({
   variant = 'pill',
   size = 'sm',
   className = '',
+  style,
   fullWidth = false,
+  onWheel,
 }: AnimatedTabsProps<T>) {
   const autoId = React.useId();
   const activeLayoutId = layoutId || `tabs-${variant}-${autoId}`;
   const enabledTabs = tabs.filter(tab => !tab.disabled);
   const tabStopId = enabledTabs.some(tab => tab.id === activeTab) ? activeTab : enabledTabs[0]?.id;
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    onWheel?.(event);
+    if (!event.defaultPrevented && event.deltaY !== 0 && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
+      const container = event.currentTarget;
+      if (container.scrollWidth > container.clientWidth) {
+        container.scrollLeft += event.deltaY;
+      }
+    }
+  };
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     if (target.getAttribute('role') !== 'tab' || !enabledTabs.length) return;
@@ -70,6 +83,8 @@ export function AnimatedTabs<T extends string = string>({
       <div
         role="tablist"
         onKeyDown={handleKeyDown}
+        onWheel={handleWheel}
+        style={style}
         className={cn('flex items-center gap-4 border-b border-border-subtle', className)}
       >
         {tabs.map((tab) => {
@@ -139,6 +154,8 @@ export function AnimatedTabs<T extends string = string>({
       <div
         role="tablist"
         onKeyDown={handleKeyDown}
+        onWheel={handleWheel}
+        style={style}
         className={cn('flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5', className)}
       >
         {tabs.map((tab) => {
@@ -207,6 +224,8 @@ export function AnimatedTabs<T extends string = string>({
     <div
       role="tablist"
       onKeyDown={handleKeyDown}
+      onWheel={handleWheel}
+      style={style}
       className={cn(
         'relative flex items-center bg-primary/95 border border-border-subtle p-1 rounded-xl gap-1 shadow-inner backdrop-blur-xs transition-colors duration-200',
         fullWidth && 'w-full',

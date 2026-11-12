@@ -6,7 +6,8 @@ import {
 import { createSerialScanner, diffFolderSnapshots, fileIdentity, monitorSourceKind, resolveSchemaSource, MonitorStatus } from '../utils/folderMonitorState';
 import { useFilePicker } from './useFilePicker';
 import { createVirtualDirectoryHandle, DirectorySelectionResult } from '../utils/fileSystem';
-import { ColumnSpec } from '../types';
+import { ColumnSpec, ColumnType } from '../types';
+import { InferenceSensitivity } from '../utils/columnInference';
 
 export interface UseFolderMonitorProps {
   isOpen: boolean;
@@ -22,6 +23,9 @@ export function useFolderMonitor({ isOpen, initialDirectoryHandle, initialFolder
   const [folderName, setFolderName] = useState(initialFolderName || initialDirectoryHandle?.name || '');
   const [discoveredFiles, setDiscoveredFiles] = useState<DiscoveredFolderFile[]>([]);
   const [analysis, setAnalysis] = useState<FolderAnalysisResult | null>(null);
+  const [sensitivity, setSensitivityState] = useState<InferenceSensitivity>('balanced');
+  const sensitivityRef = useRef<InferenceSensitivity>('balanced');
+  sensitivityRef.current = sensitivity;
   const [preferredSampleName, setPreferredSampleName] = useState<string | null>(null);
   const preferredSampleRef = useRef<string | null>(null);
   const filesRef = useRef<DiscoveredFolderFile[]>([]);
@@ -97,7 +101,7 @@ export function useFolderMonitor({ isOpen, initialDirectoryHandle, initialFolder
           setDiscoveredFiles(files);
           preferredSampleRef.current = resolveSchemaSource(files, preferredSampleRef.current);
           setPreferredSampleName(preferredSampleRef.current);
-          setAnalysis(analyzeFolderFiles(files, folderName || folderHandle.name || 'target_folder', columnsRef.current, preferredSampleRef.current || undefined));
+          setAnalysis(analyzeFolderFiles(files, folderName || folderHandle.name || 'target_folder', columnsRef.current, preferredSampleRef.current || undefined, { sensitivity: sensitivityRef.current }));
           setSelectedFileForPreview(selected => files.find(file => selected && fileIdentity(file) === fileIdentity(selected)) || files[0] || null);
           setLastScanAt(Date.now());
           setHasScanned(true);
@@ -137,14 +141,58 @@ export function useFolderMonitor({ isOpen, initialDirectoryHandle, initialFolder
   }, [folderHandle, folderName, isOpen, canPoll, sourceKind, pollIntervalMs, addEvent]);
 
   useEffect(() => {
-    setAnalysis(previous => previous ? analyzeFolderFiles(previous.files, previous.folderName, currentColumns, preferredSampleRef.current || undefined) : null);
+    setAnalysis(previous => previous ? analyzeFolderFiles(previous.files, previous.folderName, currentColumns, preferredSampleRef.current || undefined, { sensitivity: sensitivityRef.current }) : null);
   }, [currentColumns]);
+
+  const setSensitivity = useCallback((newSensitivity: InferenceSensitivity) => {
+    setSensitivityState(newSensitivity);
+    sensitivityRef.current = newSensitivity;
+    setAnalysis(previous => previous ? analyzeFolderFiles(previous.files, previous.folderName, columnsRef.current, preferredSampleRef.current || undefined, { sensitivity: newSensitivity }) : null);
+  }, []);
+
+  const updateColumnInference = useCallback((columnName: string, newType: ColumnType, newRule: string, reason?: string) => {
+    setAnalysis(previous => {
+      if (!previous) return null;
+      const updatedExtracted = previous.extractedColumns.map(col => {
+        if (col.name.toLowerCase() === columnName.toLowerCase()) {
+          return {
+            ...col,
+            inferredType: newType,
+            inferredRule: newRule,
+            inferenceReason: reason || `1-click switch to ${newType} (${newRule || 'standard rule'})`,
+          };
+        }
+        return col;
+      });
+
+      const updatedTemplateColumns = previous.suggestedTemplate.columns.map(col => {
+        if (col.name.toLowerCase() === columnName.toLowerCase()) {
+          return {
+            ...col,
+            type: newType,
+            rule: newRule,
+            notes: reason || `1-click switch to ${newType}`,
+          };
+        }
+        return col;
+      });
+
+      return {
+        ...previous,
+        extractedColumns: updatedExtracted,
+        suggestedTemplate: {
+          ...previous.suggestedTemplate,
+          columns: updatedTemplateColumns,
+        },
+      };
+    });
+  }, []);
 
   const selectSchemaSource = useCallback((name: string | null) => {
     const selected = resolveSchemaSource(filesRef.current, name);
     preferredSampleRef.current = selected;
     setPreferredSampleName(selected);
-    setAnalysis(previous => previous ? analyzeFolderFiles(previous.files, previous.folderName, columnsRef.current, selected || undefined) : null);
+    setAnalysis(previous => previous ? analyzeFolderFiles(previous.files, previous.folderName, columnsRef.current, selected || undefined, { sensitivity: sensitivityRef.current }) : null);
   }, []);
 
   const refresh = useCallback(async () => { await scopeRef.current?.scan(); }, []);
@@ -177,5 +225,6 @@ export function useFolderMonitor({ isOpen, initialDirectoryHandle, initialFolder
     addEvent, clearEvents, scanFolderHandle, processFilesBatch, handlePickDirectory, filePicker,
     sourceKind, canPoll, error: visibleError, status, lastScanAt, hasScanned, refresh,
     preferredSampleName, selectSchemaSource,
+    sensitivity, setSensitivity, updateColumnInference,
   };
 }

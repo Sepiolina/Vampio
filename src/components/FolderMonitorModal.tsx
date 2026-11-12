@@ -368,7 +368,13 @@ export const FolderMonitorModal: React.FC<Props> = ({
               )}
 
               {activeTab === 'schema' && (
-                <FolderMonitorSchemaTab analysis={monitor.analysis} onSelectSchemaSource={monitor.selectSchemaSource} />
+                <FolderMonitorSchemaTab
+                  analysis={monitor.analysis}
+                  onSelectSchemaSource={monitor.selectSchemaSource}
+                  sensitivity={monitor.sensitivity}
+                  onSensitivityChange={monitor.setSensitivity}
+                  onUpdateColumnType={monitor.updateColumnInference}
+                />
               )}
 
               {activeTab === 'live_events' && (

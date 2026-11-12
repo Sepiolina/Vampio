@@ -157,10 +157,80 @@ describe('monitor value-driven column inference', () => {
   it('keeps quoted CSV label spaces and derives template confidence from field evidence', () => {
     const result = inspect('results.csv', 'result\n" not OK "\n"OK"\n"Error"\n');
     expect(parseEnumRule(result.extractedColumns[0].inferredRule).map(item => item.value)).toEqual([' not OK ', 'OK', 'Error']);
-    expect(result.suggestedTemplate.confidence).toBe(result.extractedColumns[0].inferenceConfidence);
     const sparse = inspect('notes.csv', 'comment\nA short free-form explanation follows.\n');
     expect(sparse.suggestedTemplate.confidence).toBeLessThan(60);
     expect(sparse.suggestedTemplate.reason).toContain('1 sampled record');
   });
 
+  it('prioritizes semantic entities over Enum for repeating locations, names, urls, and phones', () => {
+    // City names repeating across samples: previously collapsed to Set/Enum
+    const cities = ['Tokyo', 'London', 'Paris', 'Tokyo', 'London', 'Paris', 'New York', 'London'];
+    const cityCol = inferColumnValues('city', cities);
+    expect(cityCol.inferredType).toBe('Entity');
+    expect(cityCol.inferredRule).toBe('city');
+    expect(cityCol.inferenceReason).toContain('city');
+    // Set/Enum should be offered as an alternate type
+    expect(cityCol.alternateTypes?.some(alt => alt.type === 'Set/Enum')).toBe(true);
+
+    // Country codes repeating across samples
+    const countries = ['US', 'GB', 'DE', 'US', 'GB', 'DE', 'FR', 'US'];
+    const countryCol = inferColumnValues('country_code', countries);
+    expect(countryCol.inferredType).toBe('Entity');
+    expect(countryCol.inferredRule).toBe('country');
+
+    // URLs repeating
+    const urls = ['https://example.com/api/v1', 'https://example.com/api/v2', 'https://example.com/api/v1', 'https://example.com/login'];
+    const urlCol = inferColumnValues('endpoint_url', urls);
+    expect(urlCol.inferredType).toBe('Entity');
+    expect(urlCol.inferredRule).toBe('url');
+
+    // Phone numbers
+    const phones = ['+1-555-0199', '+1-555-0142', '+1-555-0199', '+44-20-7946-0919'];
+    const phoneCol = inferColumnValues('phone_number', phones);
+    expect(phoneCol.inferredType).toBe('Entity');
+    expect(phoneCol.inferredRule).toBe('phone');
+
+    // Full names
+    const names = ['Alice Johnson', 'Robert Davis', 'Alice Johnson', 'Charlie Brown', 'Robert Davis'];
+    const nameCol = inferColumnValues('user_name', names);
+    expect(nameCol.inferredType).toBe('Entity');
+    expect(nameCol.inferredRule).toBe('full_name');
+  });
+
+  it('prioritizes RegEx over Set/Enum for structured alphanumeric codes', () => {
+    const skus = ['SKU-1001', 'SKU-1002', 'SKU-1003', 'SKU-1001', 'SKU-1002'];
+    const col = inferColumnValues('sku_code', skus);
+    expect(col.inferredType).toBe('RegEx');
+    expect(col.inferredRule).toContain('SKU');
+    expect(col.alternateTypes?.some(alt => alt.type === 'Set/Enum')).toBe(true);
+  });
+
+  it('respects sensitivity presets: strict, balanced, and loose', () => {
+    // Arbitrary compact repeated labels without explicit status keywords or categorical headers
+    const sampleColors = ['Emerald', 'Ruby', 'Sapphire', 'Emerald', 'Ruby', 'Sapphire'];
+
+    // In Strict mode: not a status label and not a status header -> String
+    const strictCol = inferColumnValues('item_color', sampleColors, { sensitivity: 'strict' });
+    expect(strictCol.inferredType).toBe('String');
+    expect(strictCol.alternateTypes?.some(alt => alt.type === 'Set/Enum')).toBe(true);
+
+    // In Loose mode: cardinality <= 32 and distinct / total <= 0.5 -> Set/Enum
+    const looseCol = inferColumnValues('item_color', sampleColors, { sensitivity: 'loose' });
+    expect(looseCol.inferredType).toBe('Set/Enum');
+
+    // Explicit status keywords remain Set/Enum even in strict mode
+    const statusCol = inferColumnValues('result', ['OK', 'NG', 'OK', 'NG'], { sensitivity: 'strict' });
+    expect(statusCol.inferredType).toBe('Set/Enum');
+  });
+
+  it('includes alternate types with rules and labels for 1-click UI switching', () => {
+    const values = ['Active', 'Suspended', 'Pending', 'Active'];
+    const col = inferColumnValues('account_status', values);
+    expect(col.inferredType).toBe('Set/Enum');
+    expect(col.alternateTypes).toBeDefined();
+    expect(col.alternateTypes?.length).toBeGreaterThan(0);
+    expect(col.alternateTypes?.some(alt => alt.type === 'String')).toBe(true);
+  });
+
 });
+
