@@ -37,7 +37,7 @@ interface Props {
   theme: ThemeId;
 }
 
-export const PreviewTable: React.FC<Props> = ({
+export const PreviewTable = React.memo<Props>(({
   columns,
   data,
   isStreaming,
@@ -1021,4 +1021,4 @@ export const PreviewTable: React.FC<Props> = ({
       )}
     </div>
   );
-};
+});

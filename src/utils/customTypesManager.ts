@@ -420,28 +420,43 @@ export function getExamplePresetTypes(): CustomColumnType[] {
   return EXAMPLE_PRESET_TYPES;
 }
 
+function getStorage(): Storage | null {
+  try {
+    if (typeof localStorage !== 'undefined') return localStorage;
+    if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
+    if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) return (globalThis as any).localStorage;
+  } catch {}
+  return null;
+}
+
+let cachedCustomTypes: CustomColumnType[] | null = null;
+let lastRawCustomTypesString: string | null = null;
+
 export function getCustomColumnTypes(): CustomColumnType[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const storage = getStorage();
+    const raw = storage ? storage.getItem(STORAGE_KEY) : null;
     if (!raw) {
-      // Do NOT pre-seed anything into user types! Keep schema and dropdown clean.
-      // Clean up any legacy v1 key if present
-      try {
-        localStorage.removeItem('vampio_custom_column_types_v1');
-      } catch {
-        // ignore
-      }
-      return [];
+      cachedCustomTypes = [];
+      lastRawCustomTypesString = null;
+      return cachedCustomTypes;
     }
+    if (raw === lastRawCustomTypesString && cachedCustomTypes !== null) {
+      return cachedCustomTypes;
+    }
+    lastRawCustomTypesString = raw;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      // Ensure only valid user-custom types are returned
-      return parsed.filter((t) => t && t.id && t.name);
+      cachedCustomTypes = parsed.filter((t) => t && t.id && t.name);
+      return cachedCustomTypes;
     }
-    return [];
+    cachedCustomTypes = [];
+    return cachedCustomTypes;
   } catch (err) {
     console.error('Failed to load custom column types:', err);
-    return [];
+    cachedCustomTypes = [];
+    lastRawCustomTypesString = null;
+    return cachedCustomTypes;
   }
 }
 
@@ -470,7 +485,14 @@ export function saveCustomColumnType(item: CustomColumnType): void {
   } else {
     updated = [{ ...item, isActive: item.isActive !== undefined ? item.isActive : true, isBuiltin: false }, ...current];
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  const serialized = JSON.stringify(updated);
+  cachedCustomTypes = updated;
+  lastRawCustomTypesString = serialized;
+  try {
+    getStorage()?.setItem(STORAGE_KEY, serialized);
+  } catch (err) {
+    console.warn('Failed to save custom column types:', err);
+  }
 }
 
 export function toggleCustomTypeActive(id: string): boolean {
@@ -483,7 +505,14 @@ export function toggleCustomTypeActive(id: string): boolean {
     }
     return t;
   });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  const serialized = JSON.stringify(updated);
+  cachedCustomTypes = updated;
+  lastRawCustomTypesString = serialized;
+  try {
+    getStorage()?.setItem(STORAGE_KEY, serialized);
+  } catch (err) {
+    console.warn('Failed to toggle custom type:', err);
+  }
   return nextState;
 }
 
@@ -495,7 +524,14 @@ export function setCustomTypeActive(id: string, active: boolean): void {
     }
     return t;
   });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  const serialized = JSON.stringify(updated);
+  cachedCustomTypes = updated;
+  lastRawCustomTypesString = serialized;
+  try {
+    getStorage()?.setItem(STORAGE_KEY, serialized);
+  } catch (err) {
+    console.warn('Failed to set custom type active:', err);
+  }
 }
 
 export function getActiveCustomColumnTypes(): CustomColumnType[] {
@@ -506,11 +542,24 @@ export function getActiveCustomColumnTypes(): CustomColumnType[] {
 export function deleteCustomColumnType(id: string): void {
   const current = getCustomColumnTypes();
   const updated = current.filter(t => t.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  const serialized = JSON.stringify(updated);
+  cachedCustomTypes = updated;
+  lastRawCustomTypesString = serialized;
+  try {
+    getStorage()?.setItem(STORAGE_KEY, serialized);
+  } catch (err) {
+    console.warn('Failed to delete custom type:', err);
+  }
 }
 
 export function clearAllCustomTypes(): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+  cachedCustomTypes = [];
+  lastRawCustomTypesString = null;
+  try {
+    getStorage()?.setItem(STORAGE_KEY, JSON.stringify([]));
+  } catch (err) {
+    console.warn('Failed to clear custom types:', err);
+  }
 }
 
 export function exportCustomColumnTypesJSON(): string {
@@ -872,45 +921,63 @@ export const DEFAULT_STARTER_ENTITIES: CustomEntityDataset[] = [
 
 export const CUSTOM_ENTITIES_STORAGE_KEY = 'data_forge_custom_entities_v1';
 
+let cachedCustomEntities: CustomEntityDataset[] | null = null;
+let lastRawEntitiesString: string | null = null;
+
 /**
  * Retrieves all registered custom entities from persistent storage.
  */
 export function getRegisteredCustomEntities(): CustomEntityDataset[] {
-  if (typeof window === 'undefined' || !window.localStorage) {
+  const storage = getStorage();
+  if (!storage) {
     return DEFAULT_STARTER_ENTITIES;
   }
   try {
-    const raw = localStorage.getItem(CUSTOM_ENTITIES_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
+    const raw = storage.getItem(CUSTOM_ENTITIES_STORAGE_KEY);
+    if (!raw) {
+      cachedCustomEntities = DEFAULT_STARTER_ENTITIES;
+      lastRawEntitiesString = null;
+      return cachedCustomEntities;
+    }
+    if (raw === lastRawEntitiesString && cachedCustomEntities !== null) {
+      return cachedCustomEntities;
+    }
+    lastRawEntitiesString = raw;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      cachedCustomEntities = parsed;
+      return cachedCustomEntities;
     }
   } catch (err) {
-    console.warn('Failed to parse custom entities from localStorage:', err);
+    console.warn('Failed to parse custom entities from storage:', err);
   }
-  return DEFAULT_STARTER_ENTITIES;
+  cachedCustomEntities = DEFAULT_STARTER_ENTITIES;
+  return cachedCustomEntities;
 }
 
 /**
  * Persists a new or updated custom entity dataset to registry.
  */
 export function saveCustomEntity(entity: CustomEntityDataset): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    const list = getRegisteredCustomEntities();
-    const idx = list.findIndex(e => e.id === entity.id);
-    let updated: CustomEntityDataset[];
-    if (idx >= 0) {
-      updated = [...list];
-      updated[idx] = { ...entity, updatedAt: Date.now() };
-    } else {
-      updated = [entity, ...list];
+  const list = getRegisteredCustomEntities();
+  const idx = list.findIndex(e => e.id === entity.id);
+  let updated: CustomEntityDataset[];
+  if (idx >= 0) {
+    updated = [...list];
+    updated[idx] = { ...entity, updatedAt: Date.now() };
+  } else {
+    updated = [entity, ...list];
+  }
+  const serialized = JSON.stringify(updated);
+  cachedCustomEntities = updated;
+  lastRawEntitiesString = serialized;
+  const storage = getStorage();
+  if (storage) {
+    try {
+      storage.setItem(CUSTOM_ENTITIES_STORAGE_KEY, serialized);
+    } catch (err) {
+      console.warn('Failed to save custom entity:', err);
     }
-    localStorage.setItem(CUSTOM_ENTITIES_STORAGE_KEY, JSON.stringify(updated));
-  } catch (err) {
-    console.warn('Failed to save custom entity:', err);
   }
 }
 
@@ -918,13 +985,18 @@ export function saveCustomEntity(entity: CustomEntityDataset): void {
  * Deletes a custom entity from registry.
  */
 export function deleteCustomEntity(id: string): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    const list = getRegisteredCustomEntities();
-    const updated = list.filter(e => e.id !== id);
-    localStorage.setItem(CUSTOM_ENTITIES_STORAGE_KEY, JSON.stringify(updated));
-  } catch (err) {
-    console.warn('Failed to delete custom entity:', err);
+  const list = getRegisteredCustomEntities();
+  const updated = list.filter(e => e.id !== id);
+  const serialized = JSON.stringify(updated);
+  cachedCustomEntities = updated;
+  lastRawEntitiesString = serialized;
+  const storage = getStorage();
+  if (storage) {
+    try {
+      storage.setItem(CUSTOM_ENTITIES_STORAGE_KEY, serialized);
+    } catch (err) {
+      console.warn('Failed to delete custom entity:', err);
+    }
   }
 }
 

@@ -146,7 +146,7 @@ html.theme-neon, body.theme-neon, .theme-neon {
   }
 
   /* Smooth, eye-safe theme change transition across surfaces, cards, borders, and text */
-  html, body, header, aside, main, table, th, td, tr, 
+  html, body, header, aside, main, 
   .bg-primary, .bg-secondary, .bg-tertiary,
   .text-content, .text-content-muted,
   .border-border-subtle, .border-primary, .border-secondary {

@@ -77,7 +77,7 @@ interface Props {
   setStatusMessage: (msg: string) => void;
 }
 
-export const Header: React.FC<Props> = ({
+export const Header = React.memo<Props>(({
   activeTab,
   setActiveTab,
   totalColumns,
@@ -436,4 +436,4 @@ export const Header: React.FC<Props> = ({
       </div>
     </header>
   );
-};
+});

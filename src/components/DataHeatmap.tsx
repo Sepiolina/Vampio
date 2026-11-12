@@ -24,7 +24,7 @@ interface DataHeatmapProps {
   isStreaming?: boolean;
 }
 
-export const DataHeatmap: React.FC<DataHeatmapProps> = ({ 
+export const DataHeatmap = React.memo<DataHeatmapProps>(({ 
   data, 
   columns, 
   theme, 
@@ -1054,4 +1054,4 @@ export const DataHeatmap: React.FC<DataHeatmapProps> = ({
       )}
     </div>
   );
-};
+});

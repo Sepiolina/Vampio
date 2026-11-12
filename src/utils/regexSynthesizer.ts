@@ -22,10 +22,16 @@ export function generateThaiNationalId(): string {
   return digits.join('');
 }
 
+const charSetCache = new Map<string, string>();
+
 /**
  * Expands a character set string (like "1-9A-HJ-NPR-Z", "a-f0-9", "0-9X") into a concrete pool of allowed characters.
  */
 export function expandCharacterSet(setStr: string, isNegated: boolean = false): string {
+  const cacheKey = `${isNegated ? '^' : ''}${setStr}`;
+  const cached = charSetCache.get(cacheKey);
+  if (cached) return cached;
+
   let pool = '';
   let i = 0;
 
@@ -73,13 +79,17 @@ export function expandCharacterSet(setStr: string, isNegated: boolean = false): 
   // Deduplicate pool
   const uniquePool = Array.from(new Set(pool.split(''))).join('');
 
+  let result = uniquePool;
   if (isNegated) {
     const allAscii = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()-_=+[]{}|;:,.<>?';
     const negated = allAscii.split('').filter((c) => !uniquePool.includes(c)).join('');
-    return negated.length > 0 ? negated : 'X';
+    result = negated.length > 0 ? negated : 'X';
   }
 
-  return uniquePool;
+  if (charSetCache.size < 300) {
+    charSetCache.set(cacheKey, result);
+  }
+  return result;
 }
 
 /**

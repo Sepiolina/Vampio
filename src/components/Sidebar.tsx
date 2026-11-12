@@ -93,7 +93,7 @@ interface SidebarProps {
   onStop: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+export const Sidebar = React.memo<SidebarProps>(({
   isOpen,
   onToggle,
   mode,
@@ -1473,4 +1473,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
     </aside>
   );
-};
+});

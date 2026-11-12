@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ColumnSpec, 
@@ -645,9 +645,11 @@ export default function App() {
   const continuousBufferRef = useRef<Record<string, unknown>[]>([]);
   const streamWriterRef = useRef<StreamFileWriter | null>(null);
   const multiStreamWriterRef = useRef<MultiFileStreamWriter | null>(null);
+  const lastUiUpdateRef = useRef<number>(0);
+  const pendingStreamRowsRef = useRef<Record<string, unknown>[]>([]);
 
   // Real-time preview generation whenever columns or previewCount changes
-  const refreshPreview = async () => {
+  const refreshPreview = useCallback(async () => {
     if (columns.length === 0) {
       setPreviewData([]);
       return;
@@ -661,13 +663,18 @@ export default function App() {
     const tempEngine = new GeneratorEngine();
     const rows = tempEngine.generateBatch(columns, previewCount);
     setPreviewData(rows);
-  };
-
-  useEffect(() => {
-    if (!isStreaming) {
-      refreshPreview();
-    }
   }, [columns, previewCount]);
+
+  // Debounce preview generation to ensure fast typing and smooth editing
+  useEffect(() => {
+    if (isStreaming) return;
+    const timer = window.setTimeout(() => {
+      refreshPreview();
+    }, 150);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [refreshPreview, isStreaming]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -795,25 +802,33 @@ export default function App() {
   };
 
   // Column Manipulations
-  const handleUpdateColumn = (updated: ColumnSpec) => {
-    setColumns(columns.map((c) => (c.id === updated.id ? updated : c)));
-  };
+  const handleUpdateColumn = useCallback((updated: ColumnSpec) => {
+    setColumns((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }, []);
 
-  const handleRemoveColumn = (id: string) => {
-    setColumns(columns.filter((c) => c.id !== id));
-  };
+  const handleRemoveColumn = useCallback((id: string) => {
+    setColumns((prev) => prev.filter((c) => c.id !== id));
+  }, []);
 
-  const handleDuplicateColumn = (col: ColumnSpec) => {
-    const newCol: ColumnSpec = {
-      ...col,
-      id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
-      name: `${col.name}_copy`,
-    };
-    const idx = columns.findIndex((c) => c.id === col.id);
-    const newCols = [...columns];
-    newCols.splice(idx + 1, 0, newCol);
-    setColumns(newCols);
-  };
+  const handleDuplicateColumn = useCallback((col: ColumnSpec) => {
+    setColumns((prev) => {
+      const idx = prev.findIndex((c) => c.id === col.id);
+      const newCol: ColumnSpec = {
+        ...col,
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+        name: `${col.name}_copy`,
+      };
+      const newCols = [...prev];
+      newCols.splice(idx + 1, 0, newCol);
+      return newCols;
+    });
+  }, []);
+
+  const handleColumnContextMenu = useCallback((e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, colId: id, type: 'column' });
+  }, []);
 
   const handleDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -1358,6 +1373,8 @@ export default function App() {
     continuousBufferRef.current = [];
     actionContinuousBufferRef.current = [];
     actionBatchIndexRef.current = 0;
+    lastUiUpdateRef.current = 0;
+    pendingStreamRowsRef.current = [];
     const streamEngine = new GeneratorEngine();
 
     const destLabel = activeMultiWriter && activeDir
@@ -1419,37 +1436,49 @@ export default function App() {
         }
       }
 
-      setPreviewData((prev) => [newRow, ...prev.slice(0, 49)]);
+      // Buffer rows and throttle React UI state updates to maintain fluid 60fps responsiveness
+      pendingStreamRowsRef.current.unshift(newRow);
+      if (pendingStreamRowsRef.current.length > 50) {
+        pendingStreamRowsRef.current.length = 50;
+      }
 
-      const elapsedSec = (performance.now() - streamingStartTimeRef.current) / 1000;
-      const rowsPerSec = Math.round(streamingRowCountRef.current / (elapsedSec || 0.001));
-      const currentBytes = activeMultiWriter
-        ? activeMultiWriter.getBytesWritten()
-        : activeStreamWriter
-        ? activeStreamWriter.getBytesWritten()
-        : streamingRowCountRef.current * 128;
+      const now = performance.now();
+      if (now - lastUiUpdateRef.current >= 80) {
+        lastUiUpdateRef.current = now;
+        const flushed = [...pendingStreamRowsRef.current];
+        pendingStreamRowsRef.current = [];
+        setPreviewData((prev) => [...flushed, ...prev].slice(0, 50));
 
-      setStats({
-        rowsGenerated: streamingRowCountRef.current,
-        rowsPerSec,
-        elapsedSeconds: Math.floor(elapsedSec),
-        fileSizeBytes: currentBytes,
-        isGenerating: true,
-      });
+        const elapsedSec = (now - streamingStartTimeRef.current) / 1000;
+        const rowsPerSec = Math.round(streamingRowCountRef.current / (elapsedSec || 0.001));
+        const currentBytes = activeMultiWriter
+          ? activeMultiWriter.getBytesWritten()
+          : activeStreamWriter
+          ? activeStreamWriter.getBytesWritten()
+          : streamingRowCountRef.current * 128;
 
-      const baseIndicator = activeMultiWriter && activeDir
-        ? `Multi-File (${activeMultiWriter.getFilesCount()} files in /${activeDir.name})`
-        : activeStreamWriter && activeDir
-        ? `Direct Disk: /${activeDir.name}/${fullFilename}`
-        : 'Buffer';
+        setStats({
+          rowsGenerated: streamingRowCountRef.current,
+          rowsPerSec,
+          elapsedSeconds: Math.floor(elapsedSec),
+          fileSizeBytes: currentBytes,
+          isGenerating: true,
+        });
 
-      const targetIndicator = actionConfig.enabled && actionConfig.endpointUrl.trim()
-        ? `${baseIndicator} + Action (${actionConfig.method})`
-        : baseIndicator;
+        const baseIndicator = activeMultiWriter && activeDir
+          ? `Multi-File (${activeMultiWriter.getFilesCount()} files in /${activeDir.name})`
+          : activeStreamWriter && activeDir
+          ? `Direct Disk: /${activeDir.name}/${fullFilename}`
+          : 'Buffer';
 
-      setStatusMessage(
-        `Streaming [${targetIndicator}]: ${streamingRowCountRef.current.toLocaleString()} rows (${rowsPerSec} rows/sec)`
-      );
+        const targetIndicator = actionConfig.enabled && actionConfig.endpointUrl.trim()
+          ? `${baseIndicator} + Action (${actionConfig.method})`
+          : baseIndicator;
+
+        setStatusMessage(
+          `Streaming [${targetIndicator}]: ${streamingRowCountRef.current.toLocaleString()} rows (${rowsPerSec} rows/sec)`
+        );
+      }
     }, Math.max(20, intervalMs));
   };
 
@@ -1459,6 +1488,13 @@ export default function App() {
       streamingTimerRef.current = null;
     }
     setIsStreaming(false);
+
+    if (pendingStreamRowsRef.current.length > 0) {
+      const flushed = [...pendingStreamRowsRef.current];
+      pendingStreamRowsRef.current = [];
+      setPreviewData((prev) => [...flushed, ...prev].slice(0, 50));
+    }
+    setStats((prev) => ({ ...prev, isGenerating: false }));
 
     if (actionConfig.enabled && actionConfig.mode === 'batch' && actionContinuousBufferRef.current.length > 0) {
       const remaining = [...actionContinuousBufferRef.current];
@@ -2092,11 +2128,7 @@ export default function App() {
                             onRemove={handleRemoveColumn}
                             onDuplicate={handleDuplicateColumn}
                             dragHandleProps={provided.dragHandleProps}
-                            onContextMenu={(e, id) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setContextMenu({ x: e.clientX, y: e.clientY, colId: id, type: 'column' });
-                            }}
+                            onContextMenu={handleColumnContextMenu}
                           />
                         </div>
                       )}

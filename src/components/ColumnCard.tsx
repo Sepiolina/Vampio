@@ -30,9 +30,10 @@ interface Props {
   onContextMenu?: (e: React.MouseEvent, id: string) => void;
 }
 
-export const ColumnCard: React.FC<Props> = ({
+export const ColumnCard = React.memo<Props>(({
   col,
   index,
+  totalColumns,
   columns,
   onUpdate,
   onRemove,
@@ -565,4 +566,23 @@ export const ColumnCard: React.FC<Props> = ({
       </AnimatePresence>
     </div>
   );
-};
+}, (prev, next) => {
+  if (prev.col !== next.col) return false;
+  if (prev.index !== next.index) return false;
+  if (prev.totalColumns !== next.totalColumns) return false;
+  if (prev.dragHandleProps !== next.dragHandleProps) return false;
+  if (prev.onContextMenu !== next.onContextMenu) return false;
+
+  // Check duplicate status
+  const prevDup = prev.columns.some(c => c.id !== prev.col.id && c.name.trim() === prev.col.name.trim() && prev.col.name.trim() !== '');
+  const nextDup = next.columns.some(c => c.id !== next.col.id && c.name.trim() === next.col.name.trim() && next.col.name.trim() !== '');
+  if (prevDup !== nextDup) return false;
+
+  // Check if other column names changed
+  if (prev.columns.length !== next.columns.length) return false;
+  const prevOthers = prev.columns.filter(c => c.id !== prev.col.id).map(c => c.name).join(',');
+  const nextOthers = next.columns.filter(c => c.id !== next.col.id).map(c => c.name).join(',');
+  if (prevOthers !== nextOthers) return false;
+
+  return true;
+});
